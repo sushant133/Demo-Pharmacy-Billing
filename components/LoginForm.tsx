@@ -18,8 +18,14 @@ import type { ApiResponse } from "@/lib/api";
  * toggle lets someone check a password they are typing with a queue waiting;
  * and a failed submit puts focus back where the fix is.
  */
-export function LoginForm({ next }: { next: string }) {
-  const [email, setEmail] = useState("");
+export function LoginForm({
+  next,
+  demo,
+}: {
+  next: string;
+  demo?: { email: string; password: string } | null;
+}) {
+  const [email, setEmail] = useState(demo?.email ?? "");
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -210,6 +216,32 @@ export function LoginForm({ next }: { next: string }) {
           </p>
         ) : null}
       </div>
+
+      {demo ? (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3 text-xs text-slate-600">
+          <p className="font-medium text-slate-700">Demo counter login</p>
+          <p className="mt-1 leading-relaxed">
+            Email <span className="tnum font-medium text-slate-800">{demo.email}</span>
+            <span className="mx-1.5 text-slate-300">·</span>
+            Password <span className="font-medium text-slate-800">{demo.password}</span>
+          </p>
+          <p className="mt-1 text-[11px] text-slate-500">
+            This is the staff account, not the MongoDB Atlas user.
+          </p>
+          <button
+            type="button"
+            className="mt-2 text-[11px] font-medium text-brand-700 hover:text-brand-800"
+            onClick={() => {
+              setEmail(demo.email);
+              setPassword(demo.password);
+              setFormError(null);
+              setErrors({});
+            }}
+          >
+            Fill demo login
+          </button>
+        </div>
+      ) : null}
 
       <button
         type="submit"

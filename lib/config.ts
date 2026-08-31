@@ -9,11 +9,51 @@ function num(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+/** Strip wrapping quotes some editors / dotenv leave on values. */
+export function unquoteEnv(value: string | undefined): string {
+  const trimmed = (value ?? "").trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+/**
+ * Database name from a Mongo URI path, if present.
+ * Atlas host-list URIs often omit it (`...27017/?ssl=true`), which would
+ * otherwise land Mongoose in the `test` database.
+ */
+export function dbNameFromMongoUri(uri: string): string | undefined {
+  const withoutProtocol = uri.replace(/^mongodb(\+srv)?:\/\//i, "");
+  const at = withoutProtocol.lastIndexOf("@");
+  const rest = at >= 0 ? withoutProtocol.slice(at + 1) : withoutProtocol;
+  const slash = rest.indexOf("/");
+  if (slash < 0) return undefined;
+  const afterSlash = rest.slice(slash + 1);
+  const q = afterSlash.indexOf("?");
+  const name = (q >= 0 ? afterSlash.slice(0, q) : afterSlash)
+    .replace(/\/+$/, "")
+    .trim();
+  return name || undefined;
+}
+
 const isProd = process.env.NODE_ENV === "production";
+
+const mongoUri =
+  unquoteEnv(process.env.MONGODB_URI) ||
+  "mongodb://127.0.0.1:27017/mantrapharma";
+const mongoDb =
+  unquoteEnv(process.env.MONGODB_DB) ||
+  dbNameFromMongoUri(mongoUri) ||
+  "mantrapharma";
 
 export const config = {
   isProd,
-  mongoUri: process.env.MONGODB_URI ?? "mongodb://127.0.0.1:27017/mantrapharma",
+  mongoUri,
+  mongoDb,
   authSecret: process.env.AUTH_SECRET ?? "",
   sessionTtlSeconds: num(process.env.AUTH_SESSION_TTL, 60 * 60 * 12),
   vatRate: num(process.env.VAT_RATE, 0.13),

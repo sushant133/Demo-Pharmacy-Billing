@@ -96,7 +96,20 @@ export default async function LoginPage({
               </p>
 
               <div className="mt-6">
-                <LoginForm next={next} />
+                <LoginForm
+                  next={next}
+                  demo={
+                    config.isProd
+                      ? null
+                      : {
+                          email:
+                            process.env.SEED_ADMIN_EMAIL ??
+                            "admin@mantrapharma.local",
+                          password:
+                            process.env.SEED_ADMIN_PASSWORD ?? "Admin@123",
+                        }
+                  }
+                />
               </div>
             </div>
 

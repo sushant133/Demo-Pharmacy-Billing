@@ -26,19 +26,39 @@ const cache: MongooseCache = (globalForMongoose.__mongooseCache ??= {
 });
 
 export async function connectDB(): Promise<typeof mongoose> {
-  if (cache.conn) return cache.conn;
+  // Drop a cached pool that landed in the wrong database (common after an
+  // env change + Fast Refresh: globalThis survives, process.env does not
+  // get a new process). Without this, login looks in `test` and 401s.
+  if (cache.conn) {
+    const ready = cache.conn.connection.readyState === 1;
+    const sameDb = cache.conn.connection.name === config.mongoDb;
+    if (ready && sameDb) return cache.conn;
+    try {
+      await cache.conn.disconnect();
+    } catch {
+      // The old socket is already gone; keep going and open a new pool.
+    }
+    cache.conn = null;
+    cache.promise = null;
+  }
 
   if (!cache.promise) {
     mongoose.set("strictQuery", true);
     cache.promise = mongoose
       .connect(config.mongoUri, {
+        dbName: config.mongoDb,
         bufferCommands: false,
         maxPoolSize: 10,
         minPoolSize: 1,
-        serverSelectionTimeoutMS: 5_000,
+        // Atlas (and any remote replica set) can take longer than a local mongod.
+        serverSelectionTimeoutMS: 20_000,
         // Schemas already declare indexes. Building them on every process
         // start makes the first click after boot take seconds.
         autoIndex: false,
+      })
+      .then((conn) => {
+        console.info(`[mongo] connected to ${conn.connection.name}`);
+        return conn;
       })
       .catch((err: unknown) => {
         // Clear the promise so the next request retries instead of reusing a
