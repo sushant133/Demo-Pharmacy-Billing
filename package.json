@@ -1,0 +1,48 @@
+{
+  "name": "mantra-pharma",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "seed": "tsx scripts/seed.ts",
+    "seed:fresh": "tsx scripts/seed.ts --fresh",
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:phase2": "node scripts/smoke-phase2.mjs",
+    "smoke:phase3": "node scripts/smoke-phase3.mjs",
+    "backfill:cogs": "tsx scripts/backfill-cogs.ts",
+    "backfill:branches": "tsx scripts/backfill-branches.ts",
+    "migrate:roles": "tsx scripts/migrate-roles.ts"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "exceljs": "^4.4.0",
+    "jose": "^5.9.6",
+    "mongoose": "^8.9.5",
+    "next": "^15.5.24",
+    "pdfkit": "^0.15.2",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.6",
+    "@tailwindcss/postcss": "^4.1.13",
+    "@types/node": "^22.10.7",
+    "@types/pdfkit": "^0.17.6",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "dotenv": "^16.4.7",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^15.5.24",
+    "tailwindcss": "^4.1.13",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}

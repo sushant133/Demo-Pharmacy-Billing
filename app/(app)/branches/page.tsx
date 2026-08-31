@@ -1,0 +1,125 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { requirePagePermission } from "@/lib/auth";
+import { listBranches } from "@/lib/branches";
+import { integer, money } from "@/lib/format";
+import { BranchFormPanel } from "@/components/branches/BranchFormPanel";
+import {
+  Badge,
+  Card,
+  EmptyState,
+  PageHeader,
+  StatCard,
+  TableWrap,
+} from "@/components/ui";
+
+export const metadata: Metadata = { title: "Branches" };
+export const dynamic = "force-dynamic";
+
+/**
+ * Branch registry.
+ *
+ * Each outlet holds its own stock. This screen is where an admin names them,
+ * assigns the default, and closes one once its lots and staff have moved.
+ */
+export default async function BranchesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ new?: string; edit?: string }>;
+}) {
+  await requirePagePermission("branch:manage");
+  const params = await searchParams;
+  const branches = await listBranches(true);
+
+  const editing = params.edit
+    ? (branches.find((branch) => branch.id === params.edit) ?? null)
+    : null;
+
+  const active = branches.filter((branch) => branch.isActive);
+  const stockValue = branches.reduce((sum, branch) => sum + branch.stockValue, 0);
+
+  return (
+    <>
+      <PageHeader
+        title="Branches"
+        subtitle="Each outlet has its own stock. Sales and receipts land where the user stands."
+        actions={
+          <Link href="/branches?new=1" className="btn-primary">
+            Add branch
+          </Link>
+        }
+      />
+
+      <div className="mb-5 grid gap-3 sm:grid-cols-3">
+        <StatCard label="Outlets" value={integer(active.length)} />
+        <StatCard label="Closed" value={integer(branches.length - active.length)} />
+        <StatCard label="Stock at cost" value={money(stockValue)} />
+      </div>
+
+      <Card>
+        {branches.length === 0 ? (
+          <EmptyState
+            title="No branches yet"
+            description="Add the first outlet. Existing stock and users will attach to it."
+          />
+        ) : (
+          <TableWrap>
+            <thead>
+              <tr>
+                <th className="th">Branch</th>
+                <th className="th text-right">Lots</th>
+                <th className="th text-right">Units</th>
+                <th className="th text-right">Stock value</th>
+                <th className="th text-right">Staff</th>
+                <th className="th" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {branches.map((branch) => (
+                <tr key={branch.id} className="hover:bg-slate-50">
+                  <td className="td">
+                    <p className="font-medium text-slate-900">{branch.name}</p>
+                    <p className="text-xs text-slate-500">
+                      {branch.code}
+                      {branch.address ? ` · ${branch.address}` : ""}
+                    </p>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {branch.isDefault ? <Badge tone="brand">Default</Badge> : null}
+                      {branch.isActive ? null : <Badge tone="slate">Closed</Badge>}
+                    </div>
+                  </td>
+                  <td className="td tnum text-right">{integer(branch.lotCount)}</td>
+                  <td className="td tnum text-right">{integer(branch.unitCount)}</td>
+                  <td className="td tnum text-right">{money(branch.stockValue)}</td>
+                  <td className="td tnum text-right">{integer(branch.staffCount)}</td>
+                  <td className="td text-right">
+                    <Link href={`/branches?edit=${branch.id}`} className="text-sm font-medium text-brand-700">
+                      Edit
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </TableWrap>
+        )}
+      </Card>
+
+      {params.new === "1" ? <BranchFormPanel branch={null} /> : null}
+      {editing ? (
+        <BranchFormPanel
+          branch={{
+            id: editing.id,
+            code: editing.code,
+            name: editing.name,
+            address: editing.address,
+            phone: editing.phone,
+            panNo: editing.panNo,
+            notes: editing.notes,
+            isDefault: editing.isDefault,
+            isActive: editing.isActive,
+          }}
+        />
+      ) : null}
+    </>
+  );
+}

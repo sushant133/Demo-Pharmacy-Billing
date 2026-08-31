@@ -1,0 +1,475 @@
+@import "tailwindcss";
+
+/*
+  Design intent
+  -------------
+  Pharmacy staff use this for eight hours straight, so the UI optimises for
+  scanning and typing, not decoration: a calm slate ground, one confident
+  teal accent, generous hit targets, and tabular figures everywhere a number
+  appears so columns line up as they change.
+*/
+
+@theme {
+  --color-brand-50: oklch(0.977 0.018 186);
+  --color-brand-100: oklch(0.949 0.04 186);
+  --color-brand-200: oklch(0.902 0.07 186);
+  --color-brand-300: oklch(0.83 0.1 186);
+  --color-brand-400: oklch(0.75 0.12 187);
+  --color-brand-500: oklch(0.68 0.13 188);
+  --color-brand-600: oklch(0.58 0.115 190);
+  --color-brand-700: oklch(0.49 0.095 191);
+  --color-brand-800: oklch(0.41 0.076 192);
+  --color-brand-900: oklch(0.35 0.06 193);
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, "Noto Sans Devanagari", sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono",
+    monospace;
+
+  /*
+    Chart palette. Slots are assigned in fixed order and never cycled, so a
+    series keeps its colour when another is filtered out. Validated for
+    colour-vision deficiency against the white chart surface (worst adjacent
+    pair: normal-vision dE 33.6, protan dE 24.7 - both clear of the floors).
+  */
+  --color-series-1: #2a78d6; /* blue   - revenue */
+  --color-series-2: #eb6834; /* orange - profit  */
+  --color-series-3: #1baf7a; /* aqua            */
+  --color-series-4: #7c5cbf; /* violet          */
+  --color-series-5: #5b6b7a; /* slate           */
+  --color-chart-grid: #e7e5e4;
+  --color-chart-surface: #ffffff;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-slate-100 text-slate-900 antialiased;
+    font-family: var(--font-sans);
+  }
+
+  /* Numbers in tables must not jitter as they update. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Consistent keyboard focus, since this UI is driven largely by keyboard. */
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand-600;
+  }
+
+  /* Chrome/Safari strip number spinners; they slow down quantity entry. */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-xl border border-slate-200 bg-white shadow-sm;
+  }
+
+  .input {
+    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm
+           text-slate-900 placeholder:text-slate-400
+           focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20
+           focus:outline-none disabled:bg-slate-50 disabled:text-slate-500;
+  }
+
+  .label {
+    @apply mb-1.5 block text-xs font-medium text-slate-600;
+  }
+
+  /*
+    Tailwind v4 resolves @apply against real utilities only, so each button
+    variant spells out the shared base rather than @apply-ing `.btn`.
+  */
+  .btn,
+  .btn-primary,
+  .btn-secondary,
+  .btn-ghost,
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2
+           text-sm font-medium transition-colors
+           disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply bg-brand-600 text-white hover:bg-brand-700 active:bg-brand-800;
+  }
+
+  .btn-secondary {
+    @apply border border-slate-300 bg-white text-slate-700 hover:bg-slate-50;
+  }
+
+  .btn-ghost {
+    @apply text-slate-600 hover:bg-slate-100 hover:text-slate-900;
+  }
+
+  .btn-danger {
+    @apply bg-rose-600 text-white hover:bg-rose-700;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs
+           font-medium ring-1 ring-inset;
+  }
+
+  /*
+    Table density.
+    ---------------
+    These lists are read by someone at a counter hunting for one row, not
+    browsing. Enterprise table guidance puts a compact row at 40-44px for
+    people who live in the data all day, against 48-56px for occasional
+    reading; these were nearer 60px once a second line of type was in them,
+    which cost roughly one row in six on a laptop screen.
+
+    The header carries its own bottom rule rather than leaning on a border on
+    `thead`, so it reads as a header at any density.
+
+    (A sticky header would help more still, but every list wraps its table in a
+    card with `overflow-hidden` for corner clipping, and an `overflow` ancestor
+    is what `position: sticky` sticks to - so that needs the cards reworked
+    first, not a class here.)
+  */
+  .th {
+    @apply border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-left text-xs
+           font-semibold tracking-wide text-slate-500 uppercase;
+  }
+
+  .td {
+    @apply px-4 py-2.5 text-sm text-slate-700;
+  }
+}
+
+/*
+  Sign-in screen.
+  ---------------
+  The one screen a stranger sees, and the screen staff meet at the start of
+  every shift. It is asked to do two things at once: get a password typed
+  quickly under counter lighting, and say plainly which shop's terminal this
+  is - a pharmacy runs on regulated, auditable records, and the software should
+  look like it knows that.
+
+  The motif is a blister pack: a staggered grid of pill wells, drawn as two
+  offset dot layers, at an opacity low enough to read as texture rather than
+  decoration.
+*/
+
+.login-ground {
+  background-color: var(--color-slate-950);
+  background-image:
+    radial-gradient(
+      110% 80% at 92% 8%,
+      color-mix(in oklab, var(--color-brand-500) 26%, transparent),
+      transparent 62%
+    ),
+    radial-gradient(
+      80% 60% at 0% 100%,
+      color-mix(in oklab, var(--color-brand-800) 42%, transparent),
+      transparent 70%
+    );
+}
+
+.login-blister {
+  background-image:
+    radial-gradient(circle, rgb(255 255 255 / 0.055) 20%, transparent 21%),
+    radial-gradient(circle, rgb(255 255 255 / 0.055) 20%, transparent 21%);
+  background-size: 44px 44px;
+  background-position: 0 0, 22px 22px;
+}
+
+/* Hairline separators inside the brand panel's feature list. */
+.login-rule {
+  background-image: linear-gradient(
+    to right,
+    rgb(255 255 255 / 0.14),
+    rgb(255 255 255 / 0)
+  );
+  height: 1px;
+}
+
+/*
+  The card is the terminal. A slightly deeper shadow than the rest of the app's
+  cards, because here it is the only object on the screen and has to read as
+  the thing you act on.
+*/
+.login-card {
+  @apply rounded-2xl border border-slate-200 bg-white;
+  box-shadow:
+    0 1px 2px rgb(15 23 42 / 0.04),
+    0 12px 32px -12px rgb(15 23 42 / 0.18);
+}
+
+/*
+  Taller and larger-typed than the app's standard .input: this is the one form
+  people type into with a queue waiting, often on a shared counter screen.
+*/
+.login-input {
+  @apply w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5
+         text-[15px] text-slate-900 placeholder:text-slate-400
+         focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25
+         focus:outline-none disabled:bg-slate-50 disabled:text-slate-500;
+}
+
+.login-input[aria-invalid="true"] {
+  @apply border-rose-400 focus:border-rose-500 focus:ring-rose-500/25;
+}
+
+/*
+  Dashboard hero. Same blister texture as the sign-in panel so the morning
+  screen feels like the rest of the product, not a different app.
+*/
+.dash-hero,
+.pos-till {
+  background-color: var(--color-slate-900);
+  background-image:
+    radial-gradient(
+      90% 80% at 100% 0%,
+      color-mix(in oklab, var(--color-brand-500) 32%, transparent),
+      transparent 58%
+    ),
+    radial-gradient(
+      70% 70% at 0% 100%,
+      color-mix(in oklab, var(--color-brand-800) 48%, transparent),
+      transparent 68%
+    );
+}
+
+/* Counter search: taller than a normal input, queue-waiting size. */
+.pos-search {
+  @apply w-full rounded-xl border border-slate-300 bg-white py-3 pr-16 pl-11
+         text-[15px] text-slate-900 placeholder:text-slate-400
+         focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20
+         focus:outline-none;
+}
+
+/*
+  80mm thermal tax invoice. The printable width of an 80mm roll is ~72mm;
+  58mm printers still fit because the layout is a single column.
+*/
+.receipt-page {
+  min-height: 100dvh;
+  background: #f1f5f9;
+  padding: 1.5rem 0;
+}
+
+.receipt-toolbar {
+  display: flex;
+  max-width: 80mm;
+  margin: 0 auto 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0.5rem;
+}
+
+.receipt {
+  width: 80mm;
+  margin: 0 auto;
+  background: #fff;
+  color: #111;
+  padding: 4mm 3mm 6mm;
+  font-size: 11px;
+  line-height: 1.35;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.12);
+}
+
+.receipt-head {
+  text-align: center;
+  border-bottom: 1px dashed #111;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+}
+
+.receipt-kicker {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.receipt-shop {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 2px 0;
+}
+
+.receipt-pan {
+  font-weight: 700;
+  margin-top: 2px;
+}
+
+.receipt-copy {
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin: 4px 0;
+}
+
+.receipt-copy.reprint {
+  border: 1px solid #111;
+  padding: 2px 0;
+}
+
+.receipt-void {
+  text-align: center;
+  font-weight: 700;
+  border: 2px solid #111;
+  padding: 4px;
+  margin: 6px 0;
+}
+
+.receipt-meta {
+  display: grid;
+  gap: 2px;
+  border-bottom: 1px dashed #111;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+}
+
+.receipt-meta div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.receipt-meta dt {
+  color: #444;
+}
+
+.receipt-meta dd {
+  font-weight: 600;
+  text-align: right;
+}
+
+.receipt-party {
+  border-bottom: 1px dashed #111;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+}
+
+.receipt-party .k {
+  color: #444;
+  margin-right: 4px;
+}
+
+.receipt-lines {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 6px;
+}
+
+.receipt-lines th {
+  font-size: 10px;
+  text-transform: uppercase;
+  border-bottom: 1px solid #111;
+  padding: 2px 0;
+}
+
+.receipt-lines td {
+  padding: 3px 0;
+  vertical-align: top;
+}
+
+.receipt-lines .left {
+  text-align: left;
+}
+
+.receipt-lines .right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.receipt-lines .muted {
+  color: #444;
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.receipt-totals {
+  border-top: 1px dashed #111;
+  padding-top: 4px;
+}
+
+.receipt-totals div {
+  display: flex;
+  justify-content: space-between;
+}
+
+.receipt-totals .grand {
+  border-top: 1px solid #111;
+  margin-top: 4px;
+  padding-top: 4px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.receipt-words {
+  margin: 6px 0;
+  font-size: 10px;
+  font-style: italic;
+}
+
+.receipt-note {
+  font-size: 10px;
+}
+
+.receipt-foot {
+  border-top: 1px dashed #111;
+  margin-top: 8px;
+  padding-top: 6px;
+  text-align: center;
+}
+
+.receipt-foot .sign {
+  margin: 10px 0 6px;
+}
+
+.receipt-foot .tiny {
+  font-size: 9px;
+  color: #444;
+}
+
+@media print {
+  @page {
+    size: 80mm auto;
+    margin: 2mm;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .receipt-page {
+    background: #fff;
+    padding: 0;
+    min-height: 0;
+  }
+
+  .receipt {
+    width: 76mm;
+    margin: 0;
+    padding: 0;
+    box-shadow: none;
+  }
+}
