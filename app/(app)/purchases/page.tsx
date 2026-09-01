@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Types } from "mongoose";
 import { requirePagePermission } from "@/lib/auth";
 import { branchFilter, resolveViewScope } from "@/lib/branch-scope";
-import { connectDB } from "@/lib/db";
+import { withDbRead } from "@/lib/db";
 import { dateRangeFromStrings } from "@/lib/dates";
 import { formatDate, integer, money } from "@/lib/format";
 import { can } from "@/lib/roles";
@@ -55,83 +55,93 @@ export default async function PurchasesPage({
 }) {
   const user = await requirePagePermission("purchase:read");
   const params = await searchParams;
-  await connectDB();
-  const scope = await resolveViewScope(user, params.branch);
 
   const page = Math.max(1, Number(params.page) || 1);
   const status = (params.status ?? "all") as (typeof STATUS_TABS)[number]["value"];
   const canWrite = can(user.role, "purchase:write");
 
-  const filter: Record<string, unknown> = { ...branchFilter(scope) };
-  if (status !== "all") filter.status = status;
+  const { purchases, total, purchased, paid, units, suppliers } = await withDbRead(
+    async () => {
+      const scope = await resolveViewScope(user, params.branch);
+      const filter: Record<string, unknown> = { ...branchFilter(scope) };
+      if (status !== "all") filter.status = status;
 
-  if (params.paymentStatus && params.paymentStatus !== "all") {
-    filter.paymentStatus = params.paymentStatus;
-    filter.status = status !== "all" ? status : "posted";
-  }
+      if (params.paymentStatus && params.paymentStatus !== "all") {
+        filter.paymentStatus = params.paymentStatus;
+        filter.status = status !== "all" ? status : "posted";
+      }
 
-  if (params.supplierId && Types.ObjectId.isValid(params.supplierId)) {
-    filter.supplierId = new Types.ObjectId(params.supplierId);
-  }
+      if (params.supplierId && Types.ObjectId.isValid(params.supplierId)) {
+        filter.supplierId = new Types.ObjectId(params.supplierId);
+      }
 
-  const { start, end } = dateRangeFromStrings(params.from, params.to);
-  if (start || end) {
-    const range: Record<string, Date> = {};
-    if (start) range.$gte = start;
-    if (end) range.$lt = end;
-    filter.receivedDate = range;
-  }
+      const { start, end } = dateRangeFromStrings(params.from, params.to);
+      if (start || end) {
+        const range: Record<string, Date> = {};
+        if (start) range.$gte = start;
+        if (end) range.$lt = end;
+        filter.receivedDate = range;
+      }
 
-  if (params.q?.trim()) {
-    const safe = params.q.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const pattern = new RegExp(safe, "i");
-    filter.$or = [
-      { grnNo: pattern },
-      { invoiceNo: pattern },
-      { supplierName: pattern },
-      { "items.medicineName": pattern },
-      { "items.batchNumber": pattern },
-    ];
-  }
+      if (params.q?.trim()) {
+        const safe = params.q.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const pattern = new RegExp(safe, "i");
+        filter.$or = [
+          { grnNo: pattern },
+          { invoiceNo: pattern },
+          { supplierName: pattern },
+          { "items.medicineName": pattern },
+          { "items.batchNumber": pattern },
+        ];
+      }
 
-  const [purchases, total, summaryAgg, suppliers] = await Promise.all([
-    Purchase.find(filter)
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * PAGE_SIZE)
-      .limit(PAGE_SIZE)
-      .lean(),
-    Purchase.countDocuments(filter),
-    Purchase.aggregate([
-      { $match: { ...filter, status: "posted" } },
-      {
-        $group: {
-          _id: null,
-          purchased: { $sum: "$totalAmount" },
-          paid: { $sum: "$amountPaid" },
-          units: {
-            $sum: {
-              $sum: {
-                $map: {
-                  input: "$items",
-                  as: "item",
-                  in: { $add: ["$$item.quantity", "$$item.freeQuantity"] },
+      const [purchases, total, summaryAgg, suppliers] = await Promise.all([
+        Purchase.find(filter)
+          .sort({ createdAt: -1 })
+          .skip((page - 1) * PAGE_SIZE)
+          .limit(PAGE_SIZE)
+          .lean(),
+        Purchase.countDocuments(filter),
+        Purchase.aggregate([
+          { $match: { ...filter, status: "posted" } },
+          {
+            $group: {
+              _id: null,
+              purchased: { $sum: "$totalAmount" },
+              paid: { $sum: "$amountPaid" },
+              units: {
+                $sum: {
+                  $sum: {
+                    $map: {
+                      input: "$items",
+                      as: "item",
+                      in: { $add: ["$$item.quantity", "$$item.freeQuantity"] },
+                    },
+                  },
                 },
               },
             },
           },
-        },
-      },
-    ]),
-    Supplier.find().sort({ name: 1 }).select("name").limit(300).lean(),
-  ]);
+        ]),
+        Supplier.find().sort({ name: 1 }).select("name").limit(300).lean(),
+      ]);
 
-  const summary = (summaryAgg[0] ?? {}) as {
-    purchased?: number;
-    paid?: number;
-    units?: number;
-  };
-  const purchased = summary.purchased ?? 0;
-  const paid = summary.paid ?? 0;
+      const summary = (summaryAgg[0] ?? {}) as {
+        purchased?: number;
+        paid?: number;
+        units?: number;
+      };
+
+      return {
+        purchases,
+        total,
+        purchased: summary.purchased ?? 0,
+        paid: summary.paid ?? 0,
+        units: summary.units ?? 0,
+        suppliers,
+      };
+    },
+  );
 
   const baseQuery = new URLSearchParams();
   if (status !== "all") baseQuery.set("status", status);
@@ -165,7 +175,7 @@ export default async function PurchasesPage({
           value={money(purchased - paid)}
           tone={purchased - paid > 0 ? "warning" : "default"}
         />
-        <StatCard label="Units received" value={integer(summary.units ?? 0)} />
+        <StatCard label="Units received" value={integer(units)} />
       </div>
 
       <Card className="mb-4 p-4">

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePagePermission } from "@/lib/auth";
+import { withDbRead } from "@/lib/db";
 import { listBranches } from "@/lib/branches";
 import { integer, money } from "@/lib/format";
 import { BranchFormPanel } from "@/components/branches/BranchFormPanel";
@@ -29,7 +30,7 @@ export default async function BranchesPage({
 }) {
   await requirePagePermission("branch:manage");
   const params = await searchParams;
-  const branches = await listBranches(true);
+  const branches = await withDbRead(() => listBranches(true));
 
   const editing = params.edit
     ? (branches.find((branch) => branch.id === params.edit) ?? null)

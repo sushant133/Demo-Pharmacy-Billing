@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePagePermission } from "@/lib/auth";
+import { withDbRead } from "@/lib/db";
 import { resolveViewScope } from "@/lib/branch-scope";
 import { formatExpiry, integer, money } from "@/lib/format";
 import { can } from "@/lib/roles";
@@ -51,7 +52,7 @@ export default async function AlertsPage({
 }) {
   const user = await requirePagePermission("report:read");
   const params = await searchParams;
-  const scope = await resolveViewScope(user, params.branch);
+  const scope = await withDbRead(() => resolveViewScope(user, params.branch));
 
   const tab = (TABS.find((t) => t.key === params.tab)?.key ?? "expiry") as TabKey;
   const page = Math.max(1, Number(params.page) || 1);
@@ -59,21 +60,23 @@ export default async function AlertsPage({
   const canBuy = can(user.role, "purchase:write");
 
   // Both sides are needed for the tab counts, whichever tab is showing.
-  const [expiry, stock] = await Promise.all([
-    getExpiryAlerts({
-      severity: params.severity as ExpirySeverity | undefined,
-      page: tab === "expiry" ? page : 1,
-      pageSize: PAGE_SIZE,
-      scope,
-    }),
-    getStockAlerts({
-      severity: tab === "stock" ? (params.severity as StockSeverity | undefined) : undefined,
-      deadOnly: tab === "dead",
-      page: tab === "expiry" ? 1 : page,
-      pageSize: PAGE_SIZE,
-      scope,
-    }),
-  ]);
+  const [expiry, stock] = await withDbRead(() =>
+    Promise.all([
+      getExpiryAlerts({
+        severity: params.severity as ExpirySeverity | undefined,
+        page: tab === "expiry" ? page : 1,
+        pageSize: PAGE_SIZE,
+        scope,
+      }),
+      getStockAlerts({
+        severity: tab === "stock" ? (params.severity as StockSeverity | undefined) : undefined,
+        deadOnly: tab === "dead",
+        page: tab === "expiry" ? 1 : page,
+        pageSize: PAGE_SIZE,
+        scope,
+      }),
+    ]),
+  );
 
   const urgent =
     expiry.counts.expired +

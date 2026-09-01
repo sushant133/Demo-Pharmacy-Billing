@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePagePermission } from "@/lib/auth";
 import { branchFilter, resolveViewScope } from "@/lib/branch-scope";
-import { connectDB } from "@/lib/db";
+import { withDbRead } from "@/lib/db";
 import { dateRangeFromStrings, toDateInputValue } from "@/lib/dates";
 import { formatDateTime, integer, money } from "@/lib/format";
 import { Sale, PAYMENT_MODES, PAYMENT_MODE_LABELS, type PaymentMode } from "@/models/Sale";
@@ -33,8 +33,6 @@ export default async function SalesPage({
 }) {
   const user = await requirePagePermission("sale:read");
   const params = await searchParams;
-  await connectDB();
-  const scope = await resolveViewScope(user, params.branch);
 
   const page = Math.max(1, Number(params.page) || 1);
   const today = toDateInputValue();
@@ -42,56 +40,63 @@ export default async function SalesPage({
   const from = params.from ?? today;
   const to = params.to ?? today;
 
-  const filter: Record<string, unknown> = { ...branchFilter(scope) };
-  const { start, end } = dateRangeFromStrings(from, to);
-  if (start || end) {
-    const range: Record<string, Date> = {};
-    if (start) range.$gte = start;
-    if (end) range.$lt = end;
-    filter.createdAt = range;
-  }
+  const { sales, total, summary } = await withDbRead(async () => {
+    const scope = await resolveViewScope(user, params.branch);
+    const filter: Record<string, unknown> = { ...branchFilter(scope) };
+    const { start, end } = dateRangeFromStrings(from, to);
+    if (start || end) {
+      const range: Record<string, Date> = {};
+      if (start) range.$gte = start;
+      if (end) range.$lt = end;
+      filter.createdAt = range;
+    }
 
-  if (params.paymentMode && PAYMENT_MODES.includes(params.paymentMode as PaymentMode)) {
-    filter.paymentMode = params.paymentMode;
-  }
+    if (params.paymentMode && PAYMENT_MODES.includes(params.paymentMode as PaymentMode)) {
+      filter.paymentMode = params.paymentMode;
+    }
 
-  if (params.q?.trim()) {
-    const safe = params.q.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const pattern = new RegExp(safe, "i");
-    filter.$or = [
-      { billNo: pattern },
-      { customerName: pattern },
-      { "items.medicineName": pattern },
-    ];
-  }
+    if (params.q?.trim()) {
+      const safe = params.q.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const pattern = new RegExp(safe, "i");
+      filter.$or = [
+        { billNo: pattern },
+        { customerName: pattern },
+        { "items.medicineName": pattern },
+      ];
+    }
 
-  const [sales, total, summaryAgg] = await Promise.all([
-    Sale.find(filter)
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * PAGE_SIZE)
-      .limit(PAGE_SIZE)
-      .lean(),
-    Sale.countDocuments(filter),
-    Sale.aggregate([
-      { $match: { ...filter, voidedAt: null } },
-      {
-        $group: {
-          _id: null,
-          gross: { $sum: "$totalAmount" },
-          vat: { $sum: "$vatAmount" },
-          discount: { $sum: "$discount" },
-          units: { $sum: { $sum: "$items.quantity" } },
+    const [sales, total, summaryAgg] = await Promise.all([
+      Sale.find(filter)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * PAGE_SIZE)
+        .limit(PAGE_SIZE)
+        .lean(),
+      Sale.countDocuments(filter),
+      Sale.aggregate([
+        { $match: { ...filter, voidedAt: null } },
+        {
+          $group: {
+            _id: null,
+            gross: { $sum: "$totalAmount" },
+            vat: { $sum: "$vatAmount" },
+            discount: { $sum: "$discount" },
+            units: { $sum: { $sum: "$items.quantity" } },
+          },
         },
-      },
-    ]),
-  ]);
+      ]),
+    ]);
 
-  const summary = (summaryAgg[0] ?? {}) as {
-    gross?: number;
-    vat?: number;
-    discount?: number;
-    units?: number;
-  };
+    return {
+      sales,
+      total,
+      summary: (summaryAgg[0] ?? {}) as {
+        gross?: number;
+        vat?: number;
+        discount?: number;
+        units?: number;
+      },
+    };
+  });
 
   // Preserve every filter except `page` when paginating.
   const baseQuery = new URLSearchParams();

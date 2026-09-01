@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requirePagePermission } from "@/lib/auth";
 import { assertVisibleInScope, resolveViewScope } from "@/lib/branch-scope";
-import { connectDB } from "@/lib/db";
+import { withDbRead } from "@/lib/db";
 import { formatDateTime, formatExpiry, money } from "@/lib/format";
 import { can } from "@/lib/roles";
 import { Sale, PAYMENT_MODE_LABELS, type PaymentMode } from "@/models/Sale";
@@ -27,19 +27,21 @@ export default async function SaleDetailPage({
 }) {
   const session = await requirePagePermission("sale:read");
   const { id } = await params;
-  await connectDB();
 
-  const sale = await Sale.findOne(
-    objectIdSchema.safeParse(id).success ? { _id: id } : { billNo: id.toUpperCase() },
-  ).lean();
+  const sale = await withDbRead(async () => {
+    const sale = await Sale.findOne(
+      objectIdSchema.safeParse(id).success ? { _id: id } : { billNo: id.toUpperCase() },
+    ).lean();
 
-  if (!sale) notFound();
-  const scope = await resolveViewScope(session);
-  try {
-    assertVisibleInScope(sale.branchId, scope);
-  } catch {
-    notFound();
-  }
+    if (!sale) notFound();
+    const scope = await resolveViewScope(session);
+    try {
+      assertVisibleInScope(sale.branchId, scope);
+    } catch {
+      notFound();
+    }
+    return sale;
+  });
 
   const units = sale.items.reduce((sum, item) => sum + item.quantity, 0);
   const voided = Boolean(sale.voidedAt);

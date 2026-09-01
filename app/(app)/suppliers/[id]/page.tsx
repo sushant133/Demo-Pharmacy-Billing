@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requirePagePermission } from "@/lib/auth";
-import { connectDB } from "@/lib/db";
+import { withDbRead } from "@/lib/db";
 import { toDateInputValue } from "@/lib/dates";
 import { formatDate, integer, money } from "@/lib/format";
 import { round2 } from "@/lib/purchase-math";
@@ -37,25 +37,28 @@ export default async function SupplierDetailPage({
 }) {
   const user = await requirePagePermission("supplier:read");
   const [{ id }, query] = await Promise.all([params, searchParams]);
-  await connectDB();
 
   const parsed = objectIdSchema.safeParse(id);
   if (!parsed.success) notFound();
 
-  const supplier = await Supplier.findById(parsed.data).lean();
-  if (!supplier) notFound();
+  const { supplier, balance, purchases, payments } = await withDbRead(async () => {
+    const supplier = await Supplier.findById(parsed.data).lean();
+    if (!supplier) notFound();
 
-  const [balance, purchases, payments] = await Promise.all([
-    getSupplierBalance(parsed.data),
-    Purchase.find({ supplierId: supplier._id })
-      .sort({ createdAt: -1 })
-      .limit(50)
-      .lean(),
-    SupplierPayment.find({ supplierId: supplier._id })
-      .sort({ paidOn: -1, createdAt: -1 })
-      .limit(50)
-      .lean(),
-  ]);
+    const [balance, purchases, payments] = await Promise.all([
+      getSupplierBalance(parsed.data),
+      Purchase.find({ supplierId: supplier._id })
+        .sort({ createdAt: -1 })
+        .limit(50)
+        .lean(),
+      SupplierPayment.find({ supplierId: supplier._id })
+        .sort({ paidOn: -1, createdAt: -1 })
+        .limit(50)
+        .lean(),
+    ]);
+
+    return { supplier, balance, purchases, payments };
+  });
 
   const canWrite = can(user.role, "supplier:write");
   const canPay = can(user.role, "payment:write");

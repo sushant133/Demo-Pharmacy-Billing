@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePagePermission } from "@/lib/auth";
+import { withDbRead } from "@/lib/db";
 import { resolveViewScope } from "@/lib/branch-scope";
 import { dateRangeFromStrings } from "@/lib/dates";
 import { integer, money } from "@/lib/format";
@@ -38,7 +39,7 @@ export default async function ReportsPage({
 }) {
   const user = await requirePagePermission("report:financial");
   const params = await searchParams;
-  const scope = await resolveViewScope(user, params.branch);
+  const scope = await withDbRead(() => resolveViewScope(user, params.branch));
 
   const range = resolveRange(params);
   const { start, end } = dateRangeFromStrings(range.from, range.to);
@@ -48,13 +49,15 @@ export default async function ReportsPage({
   const rankBy =
     params.by === "revenue" ? "revenue" : params.by === "units" ? "units" : "profit";
 
-  const [summary, series, topMedicines, paymentMix, stockFlow] = await Promise.all([
-    getProfitSummary(from, to, scope),
-    getSalesSeries(from, to, granularityFor(from, to), scope),
-    getMedicinePerformance(from, to, { limit: 8, by: rankBy, scope }),
-    getPaymentMix(from, to, scope),
-    getPurchaseVsSales(from, to, scope),
-  ]);
+  const [summary, series, topMedicines, paymentMix, stockFlow] = await withDbRead(() =>
+    Promise.all([
+      getProfitSummary(from, to, scope),
+      getSalesSeries(from, to, granularityFor(from, to), scope),
+      getMedicinePerformance(from, to, { limit: 8, by: rankBy, scope }),
+      getPaymentMix(from, to, scope),
+      getPurchaseVsSales(from, to, scope),
+    ]),
+  );
 
   const canExport = can(user.role, "report:export");
   const exportQuery = `from=${range.from}&to=${range.to}`;

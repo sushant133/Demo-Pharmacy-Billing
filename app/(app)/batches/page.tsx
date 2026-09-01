@@ -4,8 +4,8 @@ import { Types } from "mongoose";
 import { requirePagePermission } from "@/lib/auth";
 import { branchFilter, resolveViewScope } from "@/lib/branch-scope";
 import { config } from "@/lib/config";
-import { connectDB } from "@/lib/db";
-import { addDays } from "@/lib/dates";
+import { withDbRead } from "@/lib/db";
+import { addDays, dateInputValue } from "@/lib/dates";
 import { describeExpiry, expiryTone, formatDate, integer, money } from "@/lib/format";
 import { can } from "@/lib/roles";
 import { Batch } from "@/models/Batch";
@@ -46,69 +46,75 @@ export default async function BatchesPage({
 }) {
   const user = await requirePagePermission("batch:read");
   const params = await searchParams;
-  await connectDB();
-  const scope = await resolveViewScope(user, params.branch);
 
   const page = Math.max(1, Number(params.page) || 1);
   const status = (params.status ?? "all") as (typeof STATUS_TABS)[number]["value"];
   const editable = can(user.role, "batch:write");
 
   const now = new Date();
-  const filter: Record<string, unknown> = { ...branchFilter(scope) };
 
-  if (status === "in-stock") {
-    filter.quantity = { $gt: 0 };
-    filter.expiryDate = { $gte: now };
-  } else if (status === "expiring") {
-    filter.quantity = { $gt: 0 };
-    filter.expiryDate = { $gte: now, $lte: addDays(now, config.expiryAlertDays) };
-  } else if (status === "expired") {
-    filter.expiryDate = { $lt: now };
-  }
+  const { batches, total, totals } = await withDbRead(async () => {
+    const scope = await resolveViewScope(user, params.branch);
+    const filter: Record<string, unknown> = { ...branchFilter(scope) };
 
-  if (params.medicineId && Types.ObjectId.isValid(params.medicineId)) {
-    filter.medicineId = new Types.ObjectId(params.medicineId);
-  }
+    if (status === "in-stock") {
+      filter.quantity = { $gt: 0 };
+      filter.expiryDate = { $gte: now };
+    } else if (status === "expiring") {
+      filter.quantity = { $gt: 0 };
+      filter.expiryDate = { $gte: now, $lte: addDays(now, config.expiryAlertDays) };
+    } else if (status === "expired") {
+      filter.expiryDate = { $lt: now };
+    }
 
-  if (params.q?.trim()) {
-    const safe = params.q.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const pattern = new RegExp(safe, "i");
-    const matching = await Medicine.find({
-      $or: [{ name: pattern }, { genericName: pattern }],
-    })
-      .select("_id")
-      .lean();
+    if (params.medicineId && Types.ObjectId.isValid(params.medicineId)) {
+      filter.medicineId = new Types.ObjectId(params.medicineId);
+    }
 
-    filter.$or = [
-      { batchNumber: pattern },
-      { medicineId: { $in: matching.map((medicine) => medicine._id) } },
-    ];
-  }
+    if (params.q?.trim()) {
+      const safe = params.q.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const pattern = new RegExp(safe, "i");
+      const matching = await Medicine.find({
+        $or: [{ name: pattern }, { genericName: pattern }],
+      })
+        .select("_id")
+        .lean();
 
-  const [batches, total, valueAgg] = await Promise.all([
-    Batch.find(filter)
-      .sort({ expiryDate: 1 })
-      .skip((page - 1) * PAGE_SIZE)
-      .limit(PAGE_SIZE)
-      .populate<{ medicineId: { _id: Types.ObjectId; name: string; unit?: string } }>(
-        "medicineId",
-        "name unit",
-      )
-      .lean(),
-    Batch.countDocuments(filter),
-    Batch.aggregate([
-      { $match: { ...filter, quantity: { $gt: 0 } } },
-      {
-        $group: {
-          _id: null,
-          value: { $sum: { $multiply: ["$quantity", "$costPrice"] } },
-          units: { $sum: "$quantity" },
+      filter.$or = [
+        { batchNumber: pattern },
+        { medicineId: { $in: matching.map((medicine) => medicine._id) } },
+      ];
+    }
+
+    const [batches, total, valueAgg] = await Promise.all([
+      Batch.find(filter)
+        .sort({ expiryDate: 1 })
+        .skip((page - 1) * PAGE_SIZE)
+        .limit(PAGE_SIZE)
+        .populate<{ medicineId: { _id: Types.ObjectId; name: string; unit?: string } }>(
+          "medicineId",
+          "name unit",
+        )
+        .lean(),
+      Batch.countDocuments(filter),
+      Batch.aggregate([
+        { $match: { ...filter, quantity: { $gt: 0 } } },
+        {
+          $group: {
+            _id: null,
+            value: { $sum: { $multiply: ["$quantity", "$costPrice"] } },
+            units: { $sum: "$quantity" },
+          },
         },
-      },
-    ]),
-  ]);
+      ]),
+    ]);
 
-  const totals = (valueAgg[0] ?? {}) as { value?: number; units?: number };
+    return {
+      batches,
+      total,
+      totals: (valueAgg[0] ?? {}) as { value?: number; units?: number },
+    };
+  });
 
   const editing = params.edit
     ? batches.find((batch) => String(batch._id) === params.edit)
@@ -337,10 +343,8 @@ export default async function BatchesPage({
               (editing.medicineId as unknown as { name?: string } | null)?.name ??
               "Unknown medicine",
             batchNumber: editing.batchNumber,
-            mfgDate: editing.mfgDate
-              ? new Date(editing.mfgDate).toISOString().slice(0, 10)
-              : "",
-            expiryDate: new Date(editing.expiryDate).toISOString().slice(0, 10),
+            mfgDate: dateInputValue(editing.mfgDate),
+            expiryDate: dateInputValue(editing.expiryDate),
             quantity: editing.quantity,
             costPrice: editing.costPrice,
             salePrice: editing.salePrice,

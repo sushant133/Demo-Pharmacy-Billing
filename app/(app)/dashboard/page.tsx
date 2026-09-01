@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePagePermission } from "@/lib/auth";
+import { withDbRead } from "@/lib/db";
 import { resolveViewScope } from "@/lib/branch-scope";
 import { adToBs, formatBs } from "@/lib/bs-date";
 import { config } from "@/lib/config";
@@ -70,7 +71,7 @@ export default async function DashboardPage({
 
   const today = localDayRange();
   const showMoney = can(user.role, "report:financial");
-  const scope = await resolveViewScope(user);
+  const scope = await withDbRead(() => resolveViewScope(user));
   const trendStart = startOfLocalDay(addDays(new Date(), -(TREND_DAYS - 1)));
   const emptySeries = Promise.resolve([]);
   const emptyMix = Promise.resolve([]);
@@ -86,20 +87,22 @@ export default async function DashboardPage({
     topMedicines,
     categories,
     stockFlow,
-  ] = await Promise.all([
-    getDashboardSummary(scope),
-    getExpiryAlerts({ pageSize: 5, scope }),
-    getStockAlerts({ pageSize: 6, scope }),
-    showMoney ? getProfitSummary(today.start, today.end, scope) : Promise.resolve(null),
-    showMoney ? getSalesSeries(trendStart, today.end, "day", scope) : emptySeries,
-    getPaymentMix(today.start, today.end, scope),
-    getHourlySales(today.start, today.end, scope),
-    showMoney
-      ? getMedicinePerformance(trendStart, today.end, { limit: 6, by: "revenue", scope })
-      : emptyMix,
-    showMoney ? getCategoryMix(trendStart, today.end, scope, 5) : emptyMix,
-    showMoney ? getPurchaseVsSales(trendStart, today.end, scope) : Promise.resolve(null),
-  ]);
+  ] = await withDbRead(() =>
+    Promise.all([
+      getDashboardSummary(scope),
+      getExpiryAlerts({ pageSize: 5, scope }),
+      getStockAlerts({ pageSize: 6, scope }),
+      showMoney ? getProfitSummary(today.start, today.end, scope) : Promise.resolve(null),
+      showMoney ? getSalesSeries(trendStart, today.end, "day", scope) : emptySeries,
+      getPaymentMix(today.start, today.end, scope),
+      getHourlySales(today.start, today.end, scope),
+      showMoney
+        ? getMedicinePerformance(trendStart, today.end, { limit: 6, by: "revenue", scope })
+        : emptyMix,
+      showMoney ? getCategoryMix(trendStart, today.end, scope, 5) : emptyMix,
+      showMoney ? getPurchaseVsSales(trendStart, today.end, scope) : Promise.resolve(null),
+    ]),
+  );
 
   const firstName = user.name.split(" ")[0] ?? user.name;
   const now = new Date();

@@ -1,6 +1,6 @@
 import { created, ok, parseJson, parseQuery, withRoute } from "@/lib/api";
 import { requirePermission } from "@/lib/auth";
-import { connectDB } from "@/lib/db";
+import { connectDB, withDbWrite } from "@/lib/db";
 import { round2 } from "@/lib/purchase-math";
 import { getBalancesFor } from "@/lib/suppliers";
 import { Supplier } from "@/models/Supplier";
@@ -88,8 +88,19 @@ export const GET = withRoute(async (req) => {
 export const POST = withRoute(async (req) => {
   await requirePermission("supplier:write");
   const input = await parseJson(req, supplierSchema);
-  await connectDB();
 
-  const supplier = await Supplier.create(input);
-  return created({ id: String(supplier._id), ...supplier.toJSON() });
+  const supplier = await withDbWrite(() => Supplier.create(input));
+  return created({
+    id: String(supplier._id),
+    name: supplier.name,
+    contactPerson: supplier.contactPerson ?? "",
+    phone: supplier.phone ?? "",
+    email: supplier.email ?? "",
+    address: supplier.address ?? "",
+    panNo: supplier.panNo ?? "",
+    paymentTermsDays: supplier.paymentTermsDays ?? 0,
+    openingBalance: supplier.openingBalance ?? 0,
+    notes: supplier.notes ?? "",
+    isActive: supplier.isActive !== false,
+  });
 });

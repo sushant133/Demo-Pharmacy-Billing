@@ -2,7 +2,7 @@ import { Types } from "mongoose";
 import { branchForWrite } from "@/lib/branches";
 import { created, ok, parseJson, parseQuery, withRoute } from "@/lib/api";
 import { requirePermission } from "@/lib/auth";
-import { connectDB } from "@/lib/db";
+import { connectDB, withDbWrite } from "@/lib/db";
 import { Batch } from "@/models/Batch";
 import { Medicine } from "@/models/Medicine";
 import { medicineQuerySchema, medicineSchema } from "@/lib/validation";
@@ -121,8 +121,19 @@ export const GET = withRoute(async (req) => {
 export const POST = withRoute(async (req) => {
   await requirePermission("medicine:write");
   const input = await parseJson(req, medicineSchema);
-  await connectDB();
 
-  const medicine = await Medicine.create(input);
-  return created({ id: String(medicine._id), ...medicine.toJSON() });
+  const medicine = await withDbWrite(() => Medicine.create(input));
+  return created({
+    id: String(medicine._id),
+    name: medicine.name,
+    genericName: medicine.genericName ?? "",
+    saltComposition: medicine.saltComposition ?? "",
+    manufacturer: medicine.manufacturer ?? "",
+    category: medicine.category ?? "Other",
+    unit: medicine.unit ?? "tablet",
+    packSize: medicine.packSize ?? "",
+    requiresPrescription: Boolean(medicine.requiresPrescription),
+    reorderLevel: medicine.reorderLevel ?? null,
+    isActive: medicine.isActive !== false,
+  });
 });

@@ -3,8 +3,8 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { requirePagePermission } from "@/lib/auth";
 import { config } from "@/lib/config";
-import { connectDB } from "@/lib/db";
-import { toDateInputValue } from "@/lib/dates";
+import { withDbRead } from "@/lib/db";
+import { dateInputValue, toDateInputValue } from "@/lib/dates";
 import { can } from "@/lib/roles";
 import { Medicine } from "@/models/Medicine";
 import { Purchase } from "@/models/Purchase";
@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
 
 /** Date input values want YYYY-MM-DD; stored dates are instants. */
 function dateInput(value: Date | null | undefined): string {
-  return value ? toDateInputValue(new Date(value)) : "";
+  return dateInputValue(value);
 }
 
 /**
@@ -35,30 +35,33 @@ export default async function EditPurchasePage({
 }) {
   const user = await requirePagePermission("purchase:write");
   const { id } = await params;
-  await connectDB();
 
   const purchaseId = objectIdSchema.safeParse(id);
   if (!purchaseId.success) notFound();
 
-  const purchase = await Purchase.findById(purchaseId.data).lean();
-  if (!purchase) notFound();
+  const { purchase, suppliers, medicines } = await withDbRead(async () => {
+    const purchase = await Purchase.findById(purchaseId.data).lean();
+    if (!purchase) notFound();
 
-  // Anything already posted or cancelled is immutable - send them to the
-  // detail view rather than showing a form that could not be saved.
-  if (purchase.status !== "draft") redirect(`/purchases/${String(purchase._id)}`);
+    // Anything already posted or cancelled is immutable - send them to the
+    // detail view rather than showing a form that could not be saved.
+    if (purchase.status !== "draft") redirect(`/purchases/${String(purchase._id)}`);
 
-  const [suppliers, medicines] = await Promise.all([
-    Supplier.find({ isActive: { $ne: false } })
-      .sort({ name: 1 })
-      .select("name paymentTermsDays")
-      .limit(500)
-      .lean(),
-    Medicine.find({ isActive: { $ne: false } })
-      .sort({ name: 1 })
-      .select("name unit manufacturer")
-      .limit(1000)
-      .lean(),
-  ]);
+    const [suppliers, medicines] = await Promise.all([
+      Supplier.find({ isActive: { $ne: false } })
+        .sort({ name: 1 })
+        .select("name paymentTermsDays")
+        .limit(500)
+        .lean(),
+      Medicine.find({ isActive: { $ne: false } })
+        .sort({ name: 1 })
+        .select("name unit manufacturer")
+        .limit(1000)
+        .lean(),
+    ]);
+
+    return { purchase, suppliers, medicines };
+  });
 
   return (
     <>

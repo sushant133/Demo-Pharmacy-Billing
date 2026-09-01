@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requirePagePermission } from "@/lib/auth";
 import { assertVisibleInScope, resolveViewScope } from "@/lib/branch-scope";
-import { connectDB } from "@/lib/db";
+import { withDbRead } from "@/lib/db";
 import { formatDate, formatDateTime, formatExpiry, integer, money } from "@/lib/format";
 import { can } from "@/lib/roles";
 import {
@@ -34,23 +34,26 @@ export default async function PurchaseDetailPage({
 }) {
   const user = await requirePagePermission("purchase:read");
   const { id } = await params;
-  await connectDB();
 
-  const purchase = await Purchase.findOne(
-    objectIdSchema.safeParse(id).success ? { _id: id } : { grnNo: id.toUpperCase() },
-  ).lean();
+  const { purchase, payments } = await withDbRead(async () => {
+    const purchase = await Purchase.findOne(
+      objectIdSchema.safeParse(id).success ? { _id: id } : { grnNo: id.toUpperCase() },
+    ).lean();
 
-  if (!purchase) notFound();
-  const scope = await resolveViewScope(user);
-  try {
-    assertVisibleInScope(purchase.branchId, scope);
-  } catch {
-    notFound();
-  }
+    if (!purchase) notFound();
+    const scope = await resolveViewScope(user);
+    try {
+      assertVisibleInScope(purchase.branchId, scope);
+    } catch {
+      notFound();
+    }
 
-  const payments = await SupplierPayment.find({ purchaseId: purchase._id })
-    .sort({ paidOn: -1 })
-    .lean();
+    const payments = await SupplierPayment.find({ purchaseId: purchase._id })
+      .sort({ paidOn: -1 })
+      .lean();
+
+    return { purchase, payments };
+  });
 
   const units = purchase.items.reduce(
     (sum, item) => sum + item.quantity + item.freeQuantity,

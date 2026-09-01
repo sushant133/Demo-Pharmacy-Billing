@@ -3,7 +3,7 @@ import Link from "next/link";
 import { requirePagePermission } from "@/lib/auth";
 import { branchFilter, resolveViewScope } from "@/lib/branch-scope";
 import { config } from "@/lib/config";
-import { connectDB } from "@/lib/db";
+import { withDbRead } from "@/lib/db";
 import { formatExpiry, integer } from "@/lib/format";
 import { can } from "@/lib/roles";
 import { getLowStock } from "@/lib/reports";
@@ -39,15 +39,16 @@ export default async function MedicinesPage({
 }) {
   const user = await requirePagePermission("medicine:read");
   const params = await searchParams;
-  await connectDB();
-  const scope = await resolveViewScope(user, params.branch);
 
   const page = Math.max(1, Number(params.page) || 1);
   const lowStockView = params.view === "low-stock";
   const editable = can(user.role, "medicine:write");
 
   if (lowStockView) {
-    const { rows, total } = await getLowStock({ page, pageSize: PAGE_SIZE, scope });
+    const { rows, total } = await withDbRead(async () => {
+      const scope = await resolveViewScope(user, params.branch);
+      return getLowStock({ page, pageSize: PAGE_SIZE, scope });
+    });
 
     return (
       <>
@@ -132,58 +133,66 @@ export default async function MedicinesPage({
   }
 
   // ---- Full catalogue ------------------------------------------------------
-  const filter: Record<string, unknown> = {};
-  if (params.category) filter.category = params.category;
-  if (params.q?.trim()) {
-    const safe = params.q.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const pattern = new RegExp(safe, "i");
-    filter.$or = [
-      { name: pattern },
-      { genericName: pattern },
-      { saltComposition: pattern },
-      { manufacturer: pattern },
-    ];
-  }
+  const { medicines, total, stock } = await withDbRead(async () => {
+    const scope = await resolveViewScope(user, params.branch);
 
-  const [medicines, total] = await Promise.all([
-    Medicine.find(filter)
-      .sort({ name: 1 })
-      .skip((page - 1) * PAGE_SIZE)
-      .limit(PAGE_SIZE)
-      .lean(),
-    Medicine.countDocuments(filter),
-  ]);
+    const filter: Record<string, unknown> = {};
+    if (params.category) filter.category = params.category;
+    if (params.q?.trim()) {
+      const safe = params.q.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const pattern = new RegExp(safe, "i");
+      filter.$or = [
+        { name: pattern },
+        { genericName: pattern },
+        { saltComposition: pattern },
+        { manufacturer: pattern },
+      ];
+    }
 
-  // One aggregate for the whole page's stock, rather than a query per row.
-  const now = new Date();
-  const stockRows = await Batch.aggregate<{
-    _id: unknown;
-    quantity: number;
-    nearestExpiry: Date | null;
-  }>([
-    {
-      $match: {
-        medicineId: { $in: medicines.map((medicine) => medicine._id) },
-        quantity: { $gt: 0 },
-        expiryDate: { $gte: now },
-        ...branchFilter(scope),
+    const [medicines, total] = await Promise.all([
+      Medicine.find(filter)
+        .sort({ name: 1 })
+        .skip((page - 1) * PAGE_SIZE)
+        .limit(PAGE_SIZE)
+        .lean(),
+      Medicine.countDocuments(filter),
+    ]);
+
+    // One aggregate for the whole page's stock, rather than a query per row.
+    const now = new Date();
+    const stockRows = await Batch.aggregate<{
+      _id: unknown;
+      quantity: number;
+      nearestExpiry: Date | null;
+    }>([
+      {
+        $match: {
+          medicineId: { $in: medicines.map((medicine) => medicine._id) },
+          quantity: { $gt: 0 },
+          expiryDate: { $gte: now },
+          ...branchFilter(scope),
+        },
       },
-    },
-    {
-      $group: {
-        _id: "$medicineId",
-        quantity: { $sum: "$quantity" },
-        nearestExpiry: { $min: "$expiryDate" },
+      {
+        $group: {
+          _id: "$medicineId",
+          quantity: { $sum: "$quantity" },
+          nearestExpiry: { $min: "$expiryDate" },
+        },
       },
-    },
-  ]);
+    ]);
 
-  const stock = new Map(
-    stockRows.map((row) => [
-      String(row._id),
-      { quantity: row.quantity, nearestExpiry: row.nearestExpiry },
-    ]),
-  );
+    return {
+      medicines,
+      total,
+      stock: new Map(
+        stockRows.map((row) => [
+          String(row._id),
+          { quantity: row.quantity, nearestExpiry: row.nearestExpiry },
+        ]),
+      ),
+    };
+  });
 
   const editing = params.edit
     ? medicines.find((medicine) => String(medicine._id) === params.edit)

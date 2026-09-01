@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePagePermission } from "@/lib/auth";
-import { connectDB } from "@/lib/db";
+import { withDbRead } from "@/lib/db";
 import { integer, money } from "@/lib/format";
 import { round2 } from "@/lib/purchase-math";
 import { can } from "@/lib/roles";
@@ -51,7 +51,6 @@ export default async function SuppliersPage({
 }) {
   const user = await requirePagePermission("supplier:read");
   const params = await searchParams;
-  await connectDB();
 
   const page = Math.max(1, Number(params.page) || 1);
   const status = (params.status ?? "all") as (typeof TABS)[number]["value"];
@@ -75,17 +74,19 @@ export default async function SuppliersPage({
   // "Owing" filters on a derived value, so that page needs the full set first.
   const fetchAll = status === "owing";
 
-  const [docs, total, payables] = await Promise.all([
-    Supplier.find(filter)
-      .sort({ name: 1 })
-      .skip(fetchAll ? 0 : (page - 1) * PAGE_SIZE)
-      .limit(fetchAll ? 1000 : PAGE_SIZE)
-      .lean(),
-    Supplier.countDocuments(filter),
-    getTotalPayables(),
-  ]);
-
-  const balances = await getBalancesFor(docs.map((doc) => doc._id));
+  const [docs, total, payables, balances] = await withDbRead(async () => {
+    const [docs, total, payables] = await Promise.all([
+      Supplier.find(filter)
+        .sort({ name: 1 })
+        .skip(fetchAll ? 0 : (page - 1) * PAGE_SIZE)
+        .limit(fetchAll ? 1000 : PAGE_SIZE)
+        .lean(),
+      Supplier.countDocuments(filter),
+      getTotalPayables(),
+    ]);
+    const balances = await getBalancesFor(docs.map((doc) => doc._id));
+    return [docs, total, payables, balances] as const;
+  });
 
   let rows = docs.map((doc) => {
     const balance = balances.get(String(doc._id)) ?? { purchased: 0, paid: 0 };

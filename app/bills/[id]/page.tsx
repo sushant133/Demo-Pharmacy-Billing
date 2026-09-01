@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { requirePageSession } from "@/lib/auth";
 import { assertVisibleInScope, resolveViewScope } from "@/lib/branch-scope";
 import { adToBs, formatBs, formatBsIso, nepaliFiscalYear } from "@/lib/bs-date";
-import { connectDB } from "@/lib/db";
+import { withDbRead } from "@/lib/db";
 import { getSettings, printedIssuer } from "@/lib/settings";
 import { localParts } from "@/lib/dates";
 import { formatDateTime, formatExpiry, money } from "@/lib/format";
@@ -35,21 +35,23 @@ export default async function BillPage({
 }) {
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const user = await requirePageSession(`/bills/${id}`);
-  await connectDB();
 
-  const sale = await Sale.findOne(
-    objectIdSchema.safeParse(id).success
-      ? { _id: id }
-      : { billNo: decodeURIComponent(id).toUpperCase() },
-  ).lean();
+  const sale = await withDbRead(async () => {
+    const sale = await Sale.findOne(
+      objectIdSchema.safeParse(id).success
+        ? { _id: id }
+        : { billNo: decodeURIComponent(id).toUpperCase() },
+    ).lean();
 
-  if (!sale) notFound();
-  const scope = await resolveViewScope(user);
-  try {
-    assertVisibleInScope(sale.branchId, scope);
-  } catch {
-    notFound();
-  }
+    if (!sale) notFound();
+    const scope = await resolveViewScope(user);
+    try {
+      assertVisibleInScope(sale.branchId, scope);
+    } catch {
+      notFound();
+    }
+    return sale;
+  });
 
   // Settings for a single-shop pharmacy; the issuing outlet's own identity
   // once a second branch is open. See `printedIssuer`.

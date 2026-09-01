@@ -128,6 +128,20 @@ export function toDateInputValue(
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
+/**
+ * YYYY-MM-DD for a date input, or empty when the value is missing/invalid.
+ * Never throws - `toISOString()` on an Invalid Date is a RangeError that
+ * becomes an unhandled Server Component crash in production.
+ */
+export function dateInputValue(
+  value: Date | string | number | null | undefined,
+): string {
+  if (value === null || value === undefined || value === "") return "";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return toDateInputValue(date);
+}
+
 /** `date` + n days, as a new Date. */
 export function addDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * 86_400_000);

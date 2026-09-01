@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePagePermission } from "@/lib/auth";
+import { withDbRead } from "@/lib/db";
 import { getSettings, vatPercent } from "@/lib/settings";
 import { PageHeader } from "@/components/ui";
 import { SettingsForm } from "@/components/settings/SettingsForm";
@@ -18,7 +19,7 @@ export const dynamic = "force-dynamic";
  */
 export default async function SettingsPage() {
   await requirePagePermission("settings:manage");
-  const settings = await getSettings();
+  const settings = await withDbRead(() => getSettings());
 
   return (
     <>

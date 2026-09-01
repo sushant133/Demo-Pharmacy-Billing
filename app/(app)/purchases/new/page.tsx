@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePagePermission } from "@/lib/auth";
 import { config } from "@/lib/config";
-import { connectDB } from "@/lib/db";
+import { withDbRead } from "@/lib/db";
 import { toDateInputValue } from "@/lib/dates";
 import { can } from "@/lib/roles";
 import { Medicine } from "@/models/Medicine";
@@ -23,20 +23,21 @@ export const dynamic = "force-dynamic";
  */
 export default async function NewPurchasePage() {
   const user = await requirePagePermission("purchase:write");
-  await connectDB();
 
-  const [suppliers, medicines] = await Promise.all([
-    Supplier.find({ isActive: { $ne: false } })
-      .sort({ name: 1 })
-      .select("name paymentTermsDays")
-      .limit(500)
-      .lean(),
-    Medicine.find({ isActive: { $ne: false } })
-      .sort({ name: 1 })
-      .select("name unit manufacturer")
-      .limit(1000)
-      .lean(),
-  ]);
+  const [suppliers, medicines] = await withDbRead(() =>
+    Promise.all([
+      Supplier.find({ isActive: { $ne: false } })
+        .sort({ name: 1 })
+        .select("name paymentTermsDays")
+        .limit(500)
+        .lean(),
+      Medicine.find({ isActive: { $ne: false } })
+        .sort({ name: 1 })
+        .select("name unit manufacturer")
+        .limit(1000)
+        .lean(),
+    ]),
+  );
 
   if (suppliers.length === 0) {
     return (
