@@ -213,33 +213,56 @@ export async function closeBranch(id: string) {
  */
 export async function branchForWrite(user: SessionUser) {
   const viewing = await resolveViewScope(user);
-  let id = writeBranchId(user, viewing);
 
-  // The token's branch is a snapshot taken at sign-in. When it carries none,
-  // the database may well know one - a session signed before the outlet was
-  // assigned should not lock the counter until it expires.
-  if (!id) id = await storedBranchId(user);
+  // Candidates in order of authority: the outlet the switcher or token names,
+  // then whatever the user document says.
+  //
+  // A branch id that resolves to nothing is stepped over rather than thrown
+  // on. Both of these are snapshots that can outlive what they point at - a
+  // token is signed once a shift, and a user's branchId survives the branch
+  // being deleted or the database being reseeded - and a counter should not be
+  // locked out of billing because a stale id names an outlet that is simply
+  // not there any more.
+  //
+  // A branch that IS there but closed is a different matter and still stops
+  // the sale: falling through to another outlet would quietly record the bill,
+  // and move the stock, at a shop the customer never visited.
+  const candidates = [writeBranchId(user, viewing), await storedBranchId(user)];
+
+  for (const id of candidates) {
+    if (!id) continue;
+
+    const branch = await Branch.findById(id).lean();
+    if (!branch) continue;
+
+    if (branch.isActive === false) {
+      throw ApiError.conflict(
+        `${branch.name} is closed, so it cannot record sales or receive stock. Switch to an open outlet.`,
+      );
+    }
+
+    return {
+      id: branch._id as Types.ObjectId,
+      name: branch.name,
+      code: branch.code,
+    };
+  }
 
   // A shop that has not set its branches up yet still has to be able to sell,
   // so an unattached admin gets the default outlet, creating it if this is the
   // first thing that ever needed one.
-  if (!id && user.role === "admin") {
+  if (user.role === "admin") {
     const fallback = await ensureDefaultBranch();
-    id = fallback._id as Types.ObjectId;
+    return {
+      id: fallback._id as Types.ObjectId,
+      name: fallback.name,
+      code: fallback.code,
+    };
   }
 
-  if (!id) {
-    throw ApiError.badRequest(
-      "Your account is not attached to a branch, so it cannot record stock movements. Ask an administrator to assign one.",
-    );
-  }
-
-  const branch = await requireActiveBranch(id);
-  return {
-    id: branch._id as Types.ObjectId,
-    name: branch.name,
-    code: branch.code,
-  };
+  throw ApiError.badRequest(
+    "Your account is not attached to a branch, so it cannot record stock movements. Ask an administrator to assign one.",
+  );
 }
 
 /**
