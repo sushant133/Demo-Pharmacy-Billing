@@ -1,11 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { apiFetch } from "@/lib/client";
 import { Field, SlideOver } from "@/components/SlideOver";
 import { medicineSchema } from "@/lib/validation";
-import { MEDICINE_CATEGORIES, MEDICINE_UNITS } from "@/lib/constants";
+import { MEDICINE_UNITS, mergeMedicineCategories } from "@/lib/constants";
+import { canSellLoose, resolveUnitsPerStrip, unitWord } from "@/lib/pack";
 
 /**
  * Add / edit a catalogue entry.
@@ -23,6 +24,7 @@ export interface MedicineFormValues {
   category: string;
   unit: string;
   packSize: string;
+  unitsPerStrip: number | null;
   requiresPrescription: boolean;
   reorderLevel: number | null;
   isActive: boolean;
@@ -31,21 +33,40 @@ export interface MedicineFormValues {
 export function MedicineFormPanel({
   medicine,
   canDelete,
+  extraCategories = [],
 }: {
   medicine: MedicineFormValues | null;
   canDelete: boolean;
+  extraCategories?: string[];
 }) {
   const router = useRouter();
   const isEdit = Boolean(medicine);
+  const categories = mergeMedicineCategories(extraCategories);
+  const knownCategory =
+    medicine?.category && categories.includes(medicine.category)
+      ? medicine.category
+      : "Other";
 
   const [values, setValues] = useState({
     name: medicine?.name ?? "",
     genericName: medicine?.genericName ?? "",
     saltComposition: medicine?.saltComposition ?? "",
     manufacturer: medicine?.manufacturer ?? "",
-    category: medicine?.category ?? "Other",
+    category: knownCategory,
+    categoryCustom:
+      knownCategory === "Other" &&
+      medicine?.category &&
+      medicine.category !== "Other"
+        ? medicine.category
+        : "",
     unit: medicine?.unit ?? "tablet",
     packSize: medicine?.packSize ?? "",
+    unitsPerStrip:
+      medicine?.unitsPerStrip != null
+        ? String(medicine.unitsPerStrip)
+        : medicine && resolveUnitsPerStrip(medicine.unit, medicine.packSize) > 1
+          ? String(resolveUnitsPerStrip(medicine.unit, medicine.packSize))
+          : "",
     requiresPrescription: medicine?.requiresPrescription ?? false,
     reorderLevel: medicine?.reorderLevel?.toString() ?? "",
     isActive: medicine?.isActive ?? true,
@@ -54,6 +75,7 @@ export function MedicineFormPanel({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const inflight = useRef(false);
 
   const close = useCallback(() => {
     router.push("/medicines");
@@ -64,10 +86,28 @@ export function MedicineFormPanel({
     setValues((current) => ({ ...current, [key]: value }));
   }
 
+  function setPackSize(packSize: string) {
+    setValues((current) => {
+      const guessed = resolveUnitsPerStrip(current.unit, packSize, null);
+      const stripEmpty = current.unitsPerStrip.trim() === "";
+      return {
+        ...current,
+        packSize,
+        unitsPerStrip:
+          stripEmpty && guessed > 1 ? String(guessed) : current.unitsPerStrip,
+      };
+    });
+  }
+
   async function save() {
+    if (inflight.current) return;
     setFormError(null);
 
-    const parsed = medicineSchema.safeParse(values);
+    const category =
+      values.category === "Other" && values.categoryCustom.trim()
+        ? values.categoryCustom.trim()
+        : values.category;
+    const parsed = medicineSchema.safeParse({ ...values, category });
     if (!parsed.success) {
       const fieldErrors: Record<string, string> = {};
       for (const issue of parsed.error.issues) {
@@ -79,6 +119,7 @@ export function MedicineFormPanel({
     }
 
     setErrors({});
+    inflight.current = true;
     setSaving(true);
 
     const result = await apiFetch(
@@ -87,6 +128,7 @@ export function MedicineFormPanel({
     );
 
     if (!result.ok) {
+      inflight.current = false;
       setFormError(result.message);
       setSaving(false);
       return;
@@ -96,7 +138,8 @@ export function MedicineFormPanel({
   }
 
   async function remove() {
-    if (!medicine) return;
+    if (!medicine || inflight.current) return;
+    inflight.current = true;
     setSaving(true);
     setFormError(null);
 
@@ -106,6 +149,7 @@ export function MedicineFormPanel({
     );
 
     if (!result.ok) {
+      inflight.current = false;
       setFormError(result.message);
       setSaving(false);
       return;
@@ -209,7 +253,7 @@ export function MedicineFormPanel({
               onChange={(event) => set("category", event.target.value)}
               className="input"
             >
-              {MEDICINE_CATEGORIES.map((category) => (
+              {categories.map((category) => (
                 <option key={category} value={category}>
                   {category}
                 </option>
@@ -221,7 +265,14 @@ export function MedicineFormPanel({
             <select
               id="unit"
               value={values.unit}
-              onChange={(event) => set("unit", event.target.value)}
+              onChange={(event) => {
+                const unit = event.target.value;
+                setValues((current) => ({
+                  ...current,
+                  unit,
+                  unitsPerStrip: canSellLoose(unit) ? current.unitsPerStrip : "",
+                }));
+              }}
               className="input capitalize"
             >
               {MEDICINE_UNITS.map((unit) => (
@@ -233,17 +284,35 @@ export function MedicineFormPanel({
           </Field>
         </div>
 
+        {values.category === "Other" ? (
+          <Field
+            label="Category name"
+            htmlFor="categoryCustom"
+            error={errors.category}
+            hint="Optional. Leave blank to keep Other, or type a name such as Ayurvedic."
+          >
+            <input
+              id="categoryCustom"
+              value={values.categoryCustom}
+              onChange={(event) => set("categoryCustom", event.target.value)}
+              placeholder="e.g. Ayurvedic"
+              className="input"
+            />
+          </Field>
+        ) : null}
+
         <div className="grid grid-cols-2 gap-3">
           <Field
             label="Pack size"
             htmlFor="packSize"
             error={errors.packSize}
-            hint="e.g. 10x10, 100ml"
+            hint="What the box says, e.g. 10x10, 1x10, 5x2, 100ml."
           >
             <input
               id="packSize"
               value={values.packSize}
-              onChange={(event) => set("packSize", event.target.value)}
+              onChange={(event) => setPackSize(event.target.value)}
+              placeholder="1x10"
               className="input"
             />
           </Field>
@@ -264,6 +333,26 @@ export function MedicineFormPanel({
             />
           </Field>
         </div>
+
+        {canSellLoose(values.unit) ? (
+          <Field
+            label={`${unitWord(values.unit, 2)} in one strip`}
+            htmlFor="unitsPerStrip"
+            error={errors.unitsPerStrip}
+            hint="Pantop strip of 10 → 10. A 5×2 strip is also 10. Staff then type 4 to sell four, or 6 to take six back."
+          >
+            <input
+              id="unitsPerStrip"
+              type="number"
+              min={1}
+              max={1000}
+              value={values.unitsPerStrip}
+              onChange={(event) => set("unitsPerStrip", event.target.value)}
+              placeholder="10"
+              className="input tnum"
+            />
+          </Field>
+        ) : null}
 
         <label className="flex items-center gap-2.5 text-sm text-slate-700">
           <input

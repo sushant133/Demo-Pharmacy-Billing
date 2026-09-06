@@ -19,6 +19,7 @@ import {
 import { Purchase } from "@/models/Purchase";
 import { Supplier } from "@/models/Supplier";
 import { SupplierPayment } from "@/models/SupplierPayment";
+import { pharmacyFilter, pharmacyObjectId } from "@/lib/tenant";
 import { objectIdSchema } from "@/lib/validation";
 import { Badge, Card, EmptyState, PageHeader, StatCard, TableWrap } from "@/components/ui";
 import { SupplierFormPanel } from "@/components/suppliers/SupplierFormPanel";
@@ -42,16 +43,19 @@ export default async function SupplierDetailPage({
   if (!parsed.success) notFound();
 
   const { supplier, balance, purchases, payments } = await withDbRead(async () => {
-    const supplier = await Supplier.findById(parsed.data).lean();
+    const supplier = await Supplier.findOne({
+      _id: parsed.data,
+      ...pharmacyFilter(user),
+    }).lean();
     if (!supplier) notFound();
 
     const [balance, purchases, payments] = await Promise.all([
-      getSupplierBalance(parsed.data),
-      Purchase.find({ supplierId: supplier._id })
+      getSupplierBalance(parsed.data, pharmacyObjectId(user)),
+      Purchase.find({ supplierId: supplier._id, ...pharmacyFilter(user) })
         .sort({ createdAt: -1 })
         .limit(50)
         .lean(),
-      SupplierPayment.find({ supplierId: supplier._id })
+      SupplierPayment.find({ supplierId: supplier._id, ...pharmacyFilter(user) })
         .sort({ paidOn: -1, createdAt: -1 })
         .limit(50)
         .lean(),

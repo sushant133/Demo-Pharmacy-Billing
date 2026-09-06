@@ -10,26 +10,44 @@ import {
 } from "@/lib/roles";
 
 describe("ROLES", () => {
-  it("is the single counter role", () => {
-    expect(ROLES).toEqual(["admin"]);
+  it("is the platform operator and the pharmacy owner", () => {
+    expect(ROLES).toEqual(["superadmin", "admin"]);
   });
 
-  it("does not recognise the roles that were folded into it", () => {
+  it("does not recognise the roles that were folded into admin", () => {
     expect(isRole("pharmacist")).toBe(false);
     expect(isRole("cashier")).toBe(false);
     expect(isRole("admin")).toBe(true);
+    expect(isRole("superadmin")).toBe(true);
   });
 });
 
 describe("admin", () => {
-  it("can do every job in the shop, including billing and dispensing", () => {
+  it("can do every job in the shop, but cannot create other pharmacies", () => {
     for (const permission of PERMISSIONS) {
-      expect(can("admin", permission), permission).toBe(true);
+      if (permission === "pharmacy:manage") {
+        expect(can("admin", permission), permission).toBe(false);
+      } else {
+        expect(can("admin", permission), permission).toBe(true);
+      }
     }
   });
 
   it("opens on the till", () => {
     expect(homePath("admin")).toBe("/billing");
+  });
+});
+
+describe("superadmin", () => {
+  it("can only manage pharmacies", () => {
+    expect(can("superadmin", "pharmacy:manage")).toBe(true);
+    expect(can("superadmin", "sale:create")).toBe(false);
+    expect(can("superadmin", "medicine:read")).toBe(false);
+    expect(can("superadmin", "report:financial")).toBe(false);
+  });
+
+  it("opens on the platform panel", () => {
+    expect(homePath("superadmin")).toBe("/superadmin");
   });
 });
 
@@ -39,8 +57,9 @@ describe("normalizeRole", () => {
     expect(normalizeRole("cashier")).toBe("admin");
   });
 
-  it("passes admin straight through", () => {
+  it("passes admin and superadmin straight through", () => {
     expect(normalizeRole("admin")).toBe("admin");
+    expect(normalizeRole("superadmin")).toBe("superadmin");
   });
 
   it("refuses anything that was never a role", () => {
@@ -66,10 +85,10 @@ describe("PERMISSIONS", () => {
       "report:financial",
       "branch:manage",
       "user:manage",
+      "pharmacy:manage",
     ];
     for (const permission of needed) {
       expect(PERMISSIONS).toContain(permission);
-      expect(can("admin", permission)).toBe(true);
     }
   });
 });

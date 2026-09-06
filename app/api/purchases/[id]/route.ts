@@ -5,6 +5,7 @@ import { connectDB } from "@/lib/db";
 import { deleteDraftPurchase, updateDraftPurchase } from "@/lib/purchases";
 import { Purchase } from "@/models/Purchase";
 import { SupplierPayment } from "@/models/SupplierPayment";
+import { pharmacyFilter } from "@/lib/tenant";
 import { objectIdSchema, purchaseSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
@@ -20,8 +21,8 @@ export const GET = withRoute<Ctx>(async (_req, ctx) => {
   const scope = await resolveViewScope(user);
 
   const query = objectIdSchema.safeParse(id).success
-    ? { _id: id }
-    : { grnNo: id.toUpperCase() };
+    ? { _id: id, ...pharmacyFilter(user) }
+    : { grnNo: id.toUpperCase(), ...pharmacyFilter(user) };
 
   const purchase = await Purchase.findOne(query).lean();
   if (!purchase) throw ApiError.notFound("No purchase found with that number.");
@@ -95,9 +96,9 @@ export const PATCH = withRoute<Ctx>(async (req, ctx) => {
 
 /** DELETE /api/purchases/:id - drafts only; posted GRNs are cancelled. */
 export const DELETE = withRoute<Ctx>(async (_req, ctx) => {
-  await requirePermission("purchase:write");
+  const user = await requirePermission("purchase:write");
   const { id } = await ctx.params;
 
-  const result = await deleteDraftPurchase(objectIdSchema.parse(id));
+  const result = await deleteDraftPurchase(objectIdSchema.parse(id), user);
   return ok({ id, deleted: true, message: `${result.grnNo} was deleted.` });
 });

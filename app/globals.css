@@ -249,7 +249,7 @@
 /* Counter search: taller than a normal input, queue-waiting size. */
 .pos-search {
   @apply w-full rounded-xl border border-slate-300 bg-white py-3 pr-16 pl-11
-         text-[15px] text-slate-900 placeholder:text-slate-400
+         text-base text-slate-900 placeholder:text-slate-400
          focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20
          focus:outline-none;
 }
@@ -261,16 +261,32 @@
 .receipt-page {
   min-height: 100dvh;
   background: #f1f5f9;
-  padding: 1.5rem 0;
+  padding: 1rem 0.75rem 5rem;
 }
 
 .receipt-toolbar {
   display: flex;
-  max-width: 80mm;
+  max-width: 22rem;
   margin: 0 auto 1rem;
   align-items: center;
   justify-content: space-between;
-  padding: 0 0.5rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0 0.25rem;
+}
+
+.receipt-print-actions {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.5rem 0 0.75rem;
+}
+
+.receipt-print-hint {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.4;
+  color: #64748b;
+  text-align: center;
 }
 
 .receipt {

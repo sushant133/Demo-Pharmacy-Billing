@@ -13,8 +13,10 @@ import {
   type PaymentStatus,
   type PurchaseStatus,
 } from "@/lib/constants";
+import { pharmacyFilter } from "@/lib/tenant";
 import { Purchase } from "@/models/Purchase";
 import { Supplier } from "@/models/Supplier";
+import { DualDateField } from "@/components/DualDateField";
 import {
   Badge,
   Card,
@@ -63,7 +65,10 @@ export default async function PurchasesPage({
   const { purchases, total, purchased, paid, units, suppliers } = await withDbRead(
     async () => {
       const scope = await resolveViewScope(user, params.branch);
-      const filter: Record<string, unknown> = { ...branchFilter(scope) };
+      const filter: Record<string, unknown> = {
+        ...pharmacyFilter(user),
+        ...branchFilter(scope),
+      };
       if (status !== "all") filter.status = status;
 
       if (params.paymentStatus && params.paymentStatus !== "all") {
@@ -123,7 +128,7 @@ export default async function PurchasesPage({
             },
           },
         ]),
-        Supplier.find().sort({ name: 1 }).select("name").limit(300).lean(),
+        Supplier.find(pharmacyFilter(user)).sort({ name: 1 }).select("name").limit(300).lean(),
       ]);
 
       const summary = (summaryAgg[0] ?? {}) as {
@@ -203,83 +208,84 @@ export default async function PurchasesPage({
           })}
         </div>
 
-        <form method="get" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <form method="get" className="space-y-3">
           {status !== "all" ? <input type="hidden" name="status" value={status} /> : null}
-          <div>
-            <label htmlFor="supplierId" className="label">
-              Supplier
-            </label>
-            <select
-              id="supplierId"
-              name="supplierId"
-              defaultValue={params.supplierId ?? ""}
-              className="input"
-            >
-              <option value="">All suppliers</option>
-              {suppliers.map((supplier) => (
-                <option key={String(supplier._id)} value={String(supplier._id)}>
-                  {supplier.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label htmlFor="paymentStatus" className="label">
-              Payment
-            </label>
-            <select
-              id="paymentStatus"
-              name="paymentStatus"
-              defaultValue={params.paymentStatus ?? ""}
-              className="input"
-            >
-              <option value="">Any</option>
-              <option value="unpaid">Unpaid</option>
-              <option value="partial">Partly paid</option>
-              <option value="paid">Paid</option>
-            </select>
-          </div>
-          <div>
-            <label htmlFor="from" className="label">
-              From
-            </label>
-            <input
-              id="from"
-              type="date"
-              name="from"
-              defaultValue={params.from ?? ""}
-              className="input"
-            />
-          </div>
-          <div>
-            <label htmlFor="to" className="label">
-              To
-            </label>
-            <input
-              id="to"
-              type="date"
-              name="to"
-              defaultValue={params.to ?? ""}
-              className="input"
-            />
-          </div>
-          <div className="flex items-end gap-2">
-            <button type="submit" className="btn-primary flex-1">
-              Filter
-            </button>
-            <Link href="/purchases" className="btn-secondary">
-              Reset
-            </Link>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label htmlFor="supplierId" className="label">
+                Supplier
+              </label>
+              <select
+                id="supplierId"
+                name="supplierId"
+                defaultValue={params.supplierId ?? ""}
+                className="input"
+              >
+                <option value="">All suppliers</option>
+                {suppliers.map((supplier) => (
+                  <option key={String(supplier._id)} value={String(supplier._id)}>
+                    {supplier.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="paymentStatus" className="label">
+                Payment
+              </label>
+              <select
+                id="paymentStatus"
+                name="paymentStatus"
+                defaultValue={params.paymentStatus ?? ""}
+                className="input"
+              >
+                <option value="">Any</option>
+                <option value="unpaid">Unpaid</option>
+                <option value="partial">Partly paid</option>
+                <option value="paid">Paid</option>
+              </select>
+            </div>
           </div>
 
-          <div className="sm:col-span-2 lg:col-span-5">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="min-w-0">
+              <p className="label">From</p>
+              <DualDateField
+                id="from"
+                name="from"
+                defaultValue={params.from ?? ""}
+                compact
+                aria-label="From"
+              />
+            </div>
+            <div className="min-w-0">
+              <p className="label">To</p>
+              <DualDateField
+                id="to"
+                name="to"
+                defaultValue={params.to ?? ""}
+                compact
+                aria-label="To"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <input
               name="q"
               defaultValue={params.q ?? ""}
               placeholder="Search GRN no, supplier invoice, medicine or batch number"
-              className="input"
+              className="input min-w-0 flex-1"
               aria-label="Search purchases"
             />
+            <div className="flex shrink-0 gap-2">
+              <button type="submit" className="btn-primary">
+                Filter
+              </button>
+              <Link href="/purchases" className="btn-secondary">
+                Reset
+              </Link>
+            </div>
           </div>
         </form>
       </Card>

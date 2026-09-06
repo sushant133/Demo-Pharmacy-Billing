@@ -25,8 +25,10 @@ import type { SessionUser } from "@/lib/session";
  * what to move. Read paths take the first; write paths take the second.
  */
 
-/** A resolved viewing scope. `branchId: null` means every branch. */
+/** A resolved viewing scope. `branchId: null` means every branch of this pharmacy. */
 export interface BranchScope {
+  /** Always set for a pharmacy session. Isolates one vendor from another. */
+  pharmacyId: Types.ObjectId | null;
   branchId: Types.ObjectId | null;
   /** Null when the scope is "all branches". */
   code: string | null;
@@ -105,9 +107,18 @@ export async function storedBranchId(
  * downstream, and a stale token must never quietly widen one counter into
  * another shop's stock.
  */
+function pharmacyIdOf(user: SessionUser): Types.ObjectId | null {
+  return user.pharmacyId && Types.ObjectId.isValid(user.pharmacyId)
+    ? new Types.ObjectId(user.pharmacyId)
+    : null;
+}
+
 async function ownScope(user: SessionUser): Promise<BranchScope> {
+  const pharmacyId = pharmacyIdOf(user);
+
   if (user.branchId && Types.ObjectId.isValid(user.branchId)) {
     return {
+      pharmacyId,
       branchId: new Types.ObjectId(user.branchId),
       code: user.branchCode || null,
       label: user.branchName || user.branchCode || "Your branch",
@@ -118,6 +129,7 @@ async function ownScope(user: SessionUser): Promise<BranchScope> {
   const id = await storedBranchId(user);
   if (!id) {
     return {
+      pharmacyId,
       branchId: null,
       code: null,
       label: user.role === "admin" ? "All branches" : "No branch assigned",
@@ -127,6 +139,7 @@ async function ownScope(user: SessionUser): Promise<BranchScope> {
 
   const branch = await Branch.findById(id).select("code name").lean();
   return {
+    pharmacyId,
     branchId: id,
     code: branch?.code ?? null,
     label: branch?.name ?? "Your branch",
@@ -176,11 +189,21 @@ export async function resolveViewScope(
   if (!wanted) return { ...own, switchable: true };
 
   if (wanted === ALL_BRANCHES) {
-    return { branchId: null, code: null, label: "All branches", switchable: true };
+    return {
+      pharmacyId: own.pharmacyId,
+      branchId: null,
+      code: null,
+      label: "All branches",
+      switchable: true,
+    };
   }
 
   await connectDB();
-  const branch = await Branch.findOne({ code: wanted, isActive: true })
+  const branch = await Branch.findOne({
+    code: wanted,
+    isActive: true,
+    ...(own.pharmacyId ? { pharmacyId: own.pharmacyId } : {}),
+  })
     .select("_id code name")
     .lean();
 
@@ -189,6 +212,7 @@ export async function resolveViewScope(
   if (!branch) return { ...own, switchable: true };
 
   return {
+    pharmacyId: own.pharmacyId,
     branchId: branch._id,
     code: branch.code,
     label: branch.name,
@@ -197,15 +221,22 @@ export async function resolveViewScope(
 }
 
 /**
- * Spread into a Mongoose filter to scope it. Empty for "all branches", which
- * is what makes a single query serve both the per-branch and whole-business
- * views.
+ * Spread into a Mongoose filter to scope it.
+ *
+ * A named branch adds `branchId`. "All branches" omits it so one query serves
+ * both the per-outlet and whole-pharmacy views — but `pharmacyId` is always
+ * applied when the scope has one, so "all branches" never means every vendor.
  */
 export function branchFilter(
   scope?: BranchScope | null,
   field = "branchId",
 ): Record<string, unknown> {
-  return scope?.branchId ? { [field]: scope.branchId } : {};
+  // Never return an unscoped match. An omitted or untenanted scope must hide
+  // every vendor's stock, not mix them.
+  if (!scope?.pharmacyId) return { pharmacyId: { $in: [] } };
+  const filter: Record<string, unknown> = { pharmacyId: scope.pharmacyId };
+  if (scope.branchId) filter[field] = scope.branchId;
+  return filter;
 }
 
 /** The same thing as an aggregation `$match` stage body. */
@@ -247,10 +278,16 @@ export async function switchableBranches(
 ): Promise<Array<{ id: string; code: string; name: string }>> {
   if (!canSwitchBranch(user)) return [];
 
-  return onceTtl("switchable-branches", 30_000, async () => {
+  const pharmacyId = pharmacyIdOf(user);
+  const cacheKey = `switchable-branches:${pharmacyId ?? "none"}`;
+
+  return onceTtl(cacheKey, 30_000, async () => {
     await connectDB();
 
-    const docs = await Branch.find({ isActive: true })
+    const docs = await Branch.find({
+      isActive: true,
+      ...(pharmacyId ? { pharmacyId } : {}),
+    })
       .sort({ name: 1 })
       .select("_id code name")
       .lean();

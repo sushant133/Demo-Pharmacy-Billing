@@ -10,8 +10,8 @@ type Ctx = { params: Promise<{ id: string }> };
 
 /** POST /api/branches/:id/default - make this the fallback outlet. */
 export const POST = withRoute<Ctx>(async (_req, ctx) => {
-  await requirePermission("branch:manage");
+  const user = await requirePermission("branch:manage");
   const { id } = await ctx.params;
-  const result = await setDefaultBranch(objectIdSchema.parse(id));
+  const result = await setDefaultBranch(user, objectIdSchema.parse(id));
   return ok(result);
 });

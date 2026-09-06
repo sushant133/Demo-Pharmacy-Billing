@@ -16,6 +16,7 @@ import {
 } from "@/lib/constants";
 import { Purchase } from "@/models/Purchase";
 import { SupplierPayment } from "@/models/SupplierPayment";
+import { pharmacyFilter } from "@/lib/tenant";
 import { objectIdSchema } from "@/lib/validation";
 import { Badge, Card, PageHeader, TableWrap } from "@/components/ui";
 import { PurchaseActions } from "@/components/purchases/PurchaseActions";
@@ -37,7 +38,9 @@ export default async function PurchaseDetailPage({
 
   const { purchase, payments } = await withDbRead(async () => {
     const purchase = await Purchase.findOne(
-      objectIdSchema.safeParse(id).success ? { _id: id } : { grnNo: id.toUpperCase() },
+      objectIdSchema.safeParse(id).success
+        ? { _id: id, ...pharmacyFilter(user) }
+        : { grnNo: id.toUpperCase(), ...pharmacyFilter(user) },
     ).lean();
 
     if (!purchase) notFound();
@@ -48,7 +51,10 @@ export default async function PurchaseDetailPage({
       notFound();
     }
 
-    const payments = await SupplierPayment.find({ purchaseId: purchase._id })
+    const payments = await SupplierPayment.find({
+      purchaseId: purchase._id,
+      ...pharmacyFilter(user),
+    })
       .sort({ paidOn: -1 })
       .lean();
 

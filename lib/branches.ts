@@ -4,6 +4,7 @@ import { resolveViewScope, storedBranchId, writeBranchId } from "@/lib/branch-sc
 import { connectDB } from "@/lib/db";
 import { getSettings } from "@/lib/settings";
 import type { SessionUser } from "@/lib/session";
+import { pharmacyFilter, pharmacyObjectId } from "@/lib/tenant";
 import { sessionOption, withTransaction } from "@/lib/transaction";
 import { Batch } from "@/models/Batch";
 import { Branch } from "@/models/Branch";
@@ -38,11 +39,13 @@ export interface BranchSummary {
 }
 
 export async function listBranches(
+  user: SessionUser,
   includeInactive = false,
 ): Promise<BranchSummary[]> {
   await connectDB();
 
-  const filter = includeInactive ? {} : { isActive: true };
+  const filter: Record<string, unknown> = { ...pharmacyFilter(user) };
+  if (!includeInactive) filter.isActive = true;
   const branches = await Branch.find(filter).sort({ name: 1 }).lean();
   if (branches.length === 0) return [];
 
@@ -91,19 +94,20 @@ export async function listBranches(
   });
 }
 
-export async function createBranch(input: BranchInput) {
+export async function createBranch(user: SessionUser, input: BranchInput) {
   await connectDB();
+  const pharmacyId = pharmacyObjectId(user);
 
   return withTransaction(async ({ session }) => {
     const [branch] = await Branch.create(
-      [{ ...input, isDefault: false }],
+      [{ ...input, pharmacyId, isDefault: false }],
       sessionOption(session),
     );
     if (!branch) throw new Error("Branch was not created.");
 
     // The very first branch has to be the default, or nothing has anywhere to
     // go: new users, the seed and the migration all fall back to it.
-    const count = await Branch.countDocuments().session(session);
+    const count = await Branch.countDocuments({ pharmacyId }).session(session);
     if (count === 1) {
       await Branch.updateOne(
         { _id: branch._id },
@@ -117,11 +121,15 @@ export async function createBranch(input: BranchInput) {
   });
 }
 
-export async function updateBranch(id: string, input: BranchInput) {
+export async function updateBranch(
+  user: SessionUser,
+  id: string,
+  input: BranchInput,
+) {
   await connectDB();
 
-  const branch = await Branch.findByIdAndUpdate(
-    id,
+  const branch = await Branch.findOneAndUpdate(
+    { _id: id, ...pharmacyFilter(user) },
     { $set: input },
     { new: true, runValidators: true },
   );
@@ -131,11 +139,13 @@ export async function updateBranch(id: string, input: BranchInput) {
 }
 
 /** Exactly one branch carries the default flag, so setting it clears the rest. */
-export async function setDefaultBranch(id: string) {
+export async function setDefaultBranch(user: SessionUser, id: string) {
   await connectDB();
 
   return withTransaction(async ({ session }) => {
-    const branch = await Branch.findById(id).session(session);
+    const branch = await Branch.findOne({ _id: id, ...pharmacyFilter(user) }).session(
+      session,
+    );
     if (!branch) throw ApiError.notFound("That branch no longer exists.");
     if (branch.isActive === false) {
       throw ApiError.conflict(
@@ -144,7 +154,7 @@ export async function setDefaultBranch(id: string) {
     }
 
     await Branch.updateMany(
-      { _id: { $ne: branch._id } },
+      { pharmacyId: branch.pharmacyId, _id: { $ne: branch._id } },
       { $set: { isDefault: false } },
       sessionOption(session),
     );
@@ -165,10 +175,10 @@ export async function setDefaultBranch(id: string) {
  * reprint and its GRNs must still reconcile. Stock and staff have to be moved
  * out first, because a closed branch holding lots is stock nobody is counting.
  */
-export async function closeBranch(id: string) {
+export async function closeBranch(user: SessionUser, id: string) {
   await connectDB();
 
-  const branch = await Branch.findById(id);
+  const branch = await Branch.findOne({ _id: id, ...pharmacyFilter(user) });
   if (!branch) throw ApiError.notFound("That branch no longer exists.");
 
   if (branch.isDefault) {
@@ -232,7 +242,10 @@ export async function branchForWrite(user: SessionUser) {
   for (const id of candidates) {
     if (!id) continue;
 
-    const branch = await Branch.findById(id).lean();
+    const branchFilter = user.pharmacyId
+      ? { _id: id, pharmacyId: pharmacyObjectId(user) }
+      : { _id: id };
+    const branch = await Branch.findOne(branchFilter).lean();
     if (!branch) continue;
 
     if (branch.isActive === false) {
@@ -251,8 +264,8 @@ export async function branchForWrite(user: SessionUser) {
   // A shop that has not set its branches up yet still has to be able to sell,
   // so an unattached admin gets the default outlet, creating it if this is the
   // first thing that ever needed one.
-  if (user.role === "admin") {
-    const fallback = await ensureDefaultBranch();
+  if (user.role === "admin" && user.pharmacyId) {
+    const fallback = await ensureDefaultBranch(user.pharmacyId);
     return {
       id: fallback._id as Types.ObjectId,
       name: fallback.name,
@@ -271,12 +284,14 @@ export async function branchForWrite(user: SessionUser) {
  * Used by the seed and the backfill so a shop that has not created branches
  * yet still has somewhere for existing users and lots to belong.
  */
-export async function ensureDefaultBranch() {
+export async function ensureDefaultBranch(pharmacyId: string | Types.ObjectId) {
   await connectDB();
+  const id =
+    typeof pharmacyId === "string" ? new Types.ObjectId(pharmacyId) : pharmacyId;
 
   const current =
-    (await Branch.findOne({ isDefault: true, isActive: true })) ??
-    (await Branch.findOne({ isActive: true }).sort({ createdAt: 1 }));
+    (await Branch.findOne({ pharmacyId: id, isDefault: true, isActive: true })) ??
+    (await Branch.findOne({ pharmacyId: id, isActive: true }).sort({ createdAt: 1 }));
 
   if (current) {
     if (!current.isDefault) {
@@ -288,9 +303,10 @@ export async function ensureDefaultBranch() {
 
   // The first outlet inherits the shop's own details, so a single-branch
   // pharmacy never has to type its name twice.
-  const shop = await getSettings();
+  const shop = await getSettings(id);
   const [created] = await Branch.create([
     {
+      pharmacyId: id,
       code: "main",
       name: shop.businessName,
       address: [shop.address, shop.city].filter(Boolean).join(", "),
@@ -306,12 +322,14 @@ export async function ensureDefaultBranch() {
 }
 
 /** The fallback branch for anything that did not name one. */
-export async function defaultBranch() {
+export async function defaultBranch(pharmacyId: string | Types.ObjectId) {
   await connectDB();
+  const id =
+    typeof pharmacyId === "string" ? new Types.ObjectId(pharmacyId) : pharmacyId;
 
   const branch =
-    (await Branch.findOne({ isDefault: true, isActive: true }).lean()) ??
-    (await Branch.findOne({ isActive: true }).sort({ createdAt: 1 }).lean());
+    (await Branch.findOne({ pharmacyId: id, isDefault: true, isActive: true }).lean()) ??
+    (await Branch.findOne({ pharmacyId: id, isActive: true }).sort({ createdAt: 1 }).lean());
 
   if (!branch) {
     throw ApiError.badRequest(
@@ -322,10 +340,15 @@ export async function defaultBranch() {
 }
 
 /** Resolve a branch by id, refusing closed ones for write paths. */
-export async function requireActiveBranch(id: string | Types.ObjectId) {
+export async function requireActiveBranch(
+  id: string | Types.ObjectId,
+  pharmacyId?: string | Types.ObjectId,
+) {
   await connectDB();
 
-  const branch = await Branch.findById(id).lean();
+  const filter: Record<string, unknown> = { _id: id };
+  if (pharmacyId) filter.pharmacyId = pharmacyId;
+  const branch = await Branch.findOne(filter).lean();
   if (!branch) throw ApiError.notFound("That branch no longer exists.");
   if (branch.isActive === false) {
     throw ApiError.conflict(`${branch.name} is closed and cannot receive stock.`);
@@ -334,16 +357,34 @@ export async function requireActiveBranch(id: string | Types.ObjectId) {
 }
 
 /** What one branch has been up to, for its detail screen. */
-export async function branchActivity(id: string | Types.ObjectId) {
+export async function branchActivity(
+  id: string | Types.ObjectId,
+  pharmacyId?: string | Types.ObjectId,
+) {
   await connectDB();
   const branchId = new Types.ObjectId(String(id));
+  const scoped: Record<string, unknown> = { branchId };
+  if (pharmacyId) scoped.pharmacyId = pharmacyId;
 
   const [sales, purchases] = await Promise.all([
     Sale.aggregate<{ bills: number; revenue: number }>([
-      { $match: { branchId, voidedAt: null } },
-      { $group: { _id: null, bills: { $sum: 1 }, revenue: { $sum: "$taxableAmount" } } },
+      { $match: { ...scoped, voidedAt: null } },
+      {
+        $group: {
+          _id: null,
+          bills: { $sum: 1 },
+          revenue: {
+            $sum: {
+              $subtract: [
+                "$taxableAmount",
+                { $ifNull: ["$returnedTaxable", 0] },
+              ],
+            },
+          },
+        },
+      },
     ]),
-    Purchase.countDocuments({ branchId, status: "posted" }),
+    Purchase.countDocuments({ ...scoped, status: "posted" }),
   ]);
 
   return {

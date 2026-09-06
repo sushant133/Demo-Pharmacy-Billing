@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { getSession } from "@/lib/auth";
 import { getSettings } from "@/lib/settings";
 import "./globals.css";
 
@@ -10,21 +11,36 @@ import "./globals.css";
  * over, least of all the sign-in page.
  */
 export async function generateMetadata(): Promise<Metadata> {
-  const { businessName } = await getSettings();
+  const session = await getSession();
+
+  let titleName = "Pharmacy";
+  if (session?.role === "superadmin") {
+    titleName = "MantraSphere";
+  } else if (session?.pharmacyId) {
+    const settings = await getSettings(session.pharmacyId, session.pharmacyName);
+    titleName = settings.businessName.trim() || session.pharmacyName.trim() || "Pharmacy";
+  }
 
   return {
     title: {
-      default: `${businessName} - Pharmacy Management`,
-      template: `%s | ${businessName}`,
+      default: titleName,
+      template: `%s | ${titleName}`,
     },
     description:
       "Point of sale and inventory management for pharmacies: FEFO batch dispensing, expiry tracking and VAT billing.",
+    appleWebApp: {
+      capable: true,
+      title: titleName,
+      statusBarStyle: "default",
+    },
+    formatDetection: { telephone: false },
   };
 }
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  viewportFit: "cover",
   themeColor: "#0f766e",
 };
 

@@ -2,10 +2,12 @@ import { Types } from "mongoose";
 import { ApiError } from "@/lib/api";
 import { getSettings } from "@/lib/settings";
 import { connectDB } from "@/lib/db";
+import { pharmacyFilter, pharmacyObjectId } from "@/lib/tenant";
 import {
   allocateFefo,
   calculateTotals,
   describeShortfall,
+  FefoError,
   planStockReturn,
   round2,
   type AllocatableBatch,
@@ -13,6 +15,7 @@ import {
   type StockReturn,
 } from "@/lib/fefo";
 import { branchForWrite } from "@/lib/branches";
+import { planSaleReturn } from "@/lib/sale-return";
 import { sessionOption, withTransaction } from "@/lib/transaction";
 import { Batch } from "@/models/Batch";
 import { Medicine } from "@/models/Medicine";
@@ -21,7 +24,7 @@ import { formatBillNo, nextSequence } from "@/models/Counter";
 import { Customer } from "@/models/Customer";
 import { adToBs, nepaliFiscalYear } from "@/lib/bs-date";
 import { localParts } from "@/lib/dates";
-import type { CreateSaleInput } from "@/lib/validation";
+import type { CreateSaleInput, ReturnSaleInput } from "@/lib/validation";
 import type { SessionUser } from "@/lib/session";
 
 /**
@@ -90,10 +93,12 @@ async function buildPlan(
   input: Pick<CreateSaleInput, "items" | "discount" | "discountPercent">,
   asOf: Date,
   branchId: Types.ObjectId,
+  pharmacyId: Types.ObjectId,
 ): Promise<PlanInternals> {
   const medicineIds = [...new Set(input.items.map((item) => item.medicineId))];
 
   const medicines = await Medicine.find({
+    pharmacyId,
     _id: { $in: medicineIds.map((id) => new Types.ObjectId(id)) },
   })
     .select("_id name unit isActive")
@@ -123,6 +128,7 @@ async function buildPlan(
   // Only lots with stock are worth loading; expired ones are still fetched so
   // FEFO can explain "you have stock, but all of it has expired".
   const batches = await Batch.find({
+    pharmacyId,
     branchId,
     medicineId: { $in: medicineIds.map((id) => new Types.ObjectId(id)) },
     quantity: { $gt: 0 },
@@ -159,7 +165,7 @@ async function buildPlan(
   // The VAT rate comes from Settings, so a shop that is not VAT registered, or
   // that is charged at another rate, bills correctly without a redeploy. Past
   // bills are untouched: each sale stores the rate it was charged at.
-  const { vatRate } = await getSettings();
+  const { vatRate } = await getSettings(pharmacyId);
   const totals = calculateTotals({
     grossSubtotal,
     discount: input.discount ?? 0,
@@ -211,7 +217,12 @@ export async function planSale(
 ): Promise<SalePlan> {
   await connectDB();
   const branch = await branchForWrite(user);
-  const { plan } = await buildPlan(input, new Date(), branch.id);
+  const { plan } = await buildPlan(
+    input,
+    new Date(),
+    branch.id,
+    pharmacyObjectId(user),
+  );
   return plan;
 }
 
@@ -239,13 +250,19 @@ export async function createSale(
 
   return withTransaction(async ({ session, onRollback }) => {
     const branch = await branchForWrite(user);
+    const pharmacyId = pharmacyObjectId(user);
     // Re-plan inside the transaction: the cart preview may be stale.
-    const { plan, allocation } = await buildPlan(input, new Date(), branch.id);
+    const { plan, allocation } = await buildPlan(
+      input,
+      new Date(),
+      branch.id,
+      pharmacyId,
+    );
 
     for (const line of allocation) {
       for (const pick of line.picks) {
         const updated = await Batch.findOneAndUpdate(
-          { _id: pick.batchId, quantity: { $gte: pick.quantity } },
+          { _id: pick.batchId, pharmacyId, quantity: { $gte: pick.quantity } },
           { $inc: { quantity: -pick.quantity } },
           { new: true, ...sessionOption(session) },
         );
@@ -260,7 +277,7 @@ export async function createSale(
         // Only used on standalone MongoDB; a real transaction aborts instead.
         onRollback(() =>
           Batch.updateOne(
-            { _id: pick.batchId },
+            { _id: pick.batchId, pharmacyId },
             { $inc: { quantity: pick.quantity } },
           ).exec(),
         );
@@ -271,14 +288,17 @@ export async function createSale(
     const local = localParts(issuedAt);
     const bs = adToBs(local.year, local.month, local.day);
     const fiscalYear = nepaliFiscalYear(bs);
-    const seq = await nextSequence(`sale:${fiscalYear}`, session);
+    const seq = await nextSequence(`${String(pharmacyId)}:sale:${fiscalYear}`, session);
     const billNo = formatBillNo(seq, fiscalYear);
 
     let customerPan = input.customerPan ?? "";
     let customerAddress = input.customerAddress ?? "";
     let customerPhone = input.customerPhone ?? "";
     if (input.customerId) {
-      const saved = await Customer.findById(input.customerId)
+      const saved = await Customer.findOne({
+        _id: input.customerId,
+        pharmacyId,
+      })
         .select("panNo address phone name")
         .session(session)
         .lean();
@@ -308,6 +328,7 @@ export async function createSale(
     const [sale] = await Sale.create(
       [
         {
+          pharmacyId,
           billNo,
           billSeq: seq,
           fiscalYear,
@@ -388,8 +409,29 @@ export async function voidSale(
   return withTransaction(async ({ session, onRollback }) => {
     const voidedAt = new Date();
 
+    const existing = await Sale.findOne({
+      _id: id,
+      ...pharmacyFilter(user),
+    })
+      .select("billNo voidedAt returnedUnits")
+      .lean();
+    if (!existing) throw ApiError.notFound("That bill no longer exists.");
+    if (existing.voidedAt) {
+      throw ApiError.conflict(`${existing.billNo} has already been voided.`);
+    }
+    if ((existing.returnedUnits ?? 0) > 0) {
+      throw ApiError.conflict(
+        `${existing.billNo} already has customer returns. Record further returns instead of voiding.`,
+      );
+    }
+
     const sale = await Sale.findOneAndUpdate(
-      { _id: id, voidedAt: null },
+      {
+        _id: id,
+        voidedAt: null,
+        ...pharmacyFilter(user),
+        $nor: [{ returnedUnits: { $gt: 0 } }],
+      },
       {
         $set: {
           voidedAt,
@@ -403,7 +445,9 @@ export async function voidSale(
 
     if (!sale) {
       // Either the bill is gone or someone got there first; say which.
-      const existing = await Sale.findById(id).select("billNo voidedAt").lean();
+      const existing = await Sale.findOne({ _id: id, ...pharmacyFilter(user) })
+        .select("billNo voidedAt")
+        .lean();
       if (!existing) throw ApiError.notFound("That bill no longer exists.");
       throw ApiError.conflict(`${existing.billNo} has already been voided.`);
     }
@@ -430,7 +474,7 @@ export async function voidSale(
 
     for (const entry of returns) {
       const updated = await Batch.findOneAndUpdate(
-        { _id: entry.batchId },
+        { _id: entry.batchId, ...pharmacyFilter(user) },
         { $inc: { quantity: entry.quantity } },
         { new: true, ...sessionOption(session) },
       );
@@ -447,7 +491,7 @@ export async function voidSale(
       restored.push(entry);
       onRollback(() =>
         Batch.updateOne(
-          { _id: entry.batchId },
+          { _id: entry.batchId, ...pharmacyFilter(user) },
           { $inc: { quantity: -entry.quantity } },
         ).exec(),
       );
@@ -457,6 +501,167 @@ export async function voidSale(
       id: String(sale._id),
       billNo: sale.billNo,
       voidedAt,
+      restored,
+      unreturned,
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Customer returns
+// ---------------------------------------------------------------------------
+
+export interface RecordedReturn {
+  id: string;
+  billNo: string;
+  units: number;
+  totalAmount: number;
+  restored: StockReturn[];
+  unreturned: StockReturn[];
+}
+
+/**
+ * Put selected units from a live bill back on the lots they came from.
+ *
+ * The bill stays: it was a real sale. The return is a dated correction on it,
+ * stock is incremented, and running totals are what reports subtract.
+ */
+export async function returnSaleItems(
+  id: string,
+  input: ReturnSaleInput,
+  user: SessionUser,
+): Promise<RecordedReturn> {
+  await connectDB();
+
+  return withTransaction(async ({ session, onRollback }) => {
+    const sale = await Sale.findOne({
+      _id: id,
+      voidedAt: null,
+      ...pharmacyFilter(user),
+    }).session(session);
+
+    if (!sale) {
+      const existing = await Sale.findOne({ _id: id, ...pharmacyFilter(user) })
+        .select("billNo voidedAt")
+        .lean();
+      if (!existing) throw ApiError.notFound("That bill no longer exists.");
+      throw ApiError.conflict(`${existing.billNo} has been voided and cannot take a return.`);
+    }
+
+    let plan;
+    try {
+      plan = planSaleReturn(
+        {
+          items: sale.items.map((item) => ({
+            quantity: item.quantity,
+            returnedQuantity: item.returnedQuantity ?? 0,
+            unitPrice: item.unitPrice,
+            subtotal: item.subtotal,
+            unitCost: item.unitCost ?? 0,
+            lineCost: item.lineCost ?? 0,
+            medicineId: String(item.medicineId),
+            medicineName: item.medicineName,
+            batchId: String(item.batchId),
+            batchNumber: item.batchNumber,
+          })),
+          subtotal: sale.subtotal,
+          discount: sale.discount,
+          vatRate: sale.vatRate,
+        },
+        input.items,
+      );
+    } catch (error) {
+      if (error instanceof FefoError) throw ApiError.badRequest(error.message);
+      throw error;
+    }
+
+    const returnedAt = new Date();
+    const pharmacyId = pharmacyObjectId(user);
+
+    const restored: StockReturn[] = [];
+    const unreturned: StockReturn[] = [];
+    const stockMoves = planStockReturn(
+      plan.items.map((item) => ({
+        batchId: item.batchId,
+        batchNumber: item.batchNumber,
+        quantity: item.quantity,
+      })),
+    );
+
+    for (const entry of stockMoves) {
+      const updated = await Batch.findOneAndUpdate(
+        { _id: entry.batchId, pharmacyId },
+        { $inc: { quantity: entry.quantity } },
+        { new: true, ...sessionOption(session) },
+      );
+
+      if (!updated) {
+        unreturned.push(entry);
+        continue;
+      }
+
+      restored.push(entry);
+      onRollback(() =>
+        Batch.updateOne(
+          { _id: entry.batchId, pharmacyId },
+          { $inc: { quantity: -entry.quantity } },
+        ).exec(),
+      );
+    }
+
+    for (const item of plan.items) {
+      const line = sale.items[item.lineIndex];
+      if (!line) continue;
+      line.returnedQuantity = (line.returnedQuantity ?? 0) + item.quantity;
+    }
+
+    if (!sale.returns) sale.set("returns", []);
+    sale.returns.push({
+      returnedAt,
+      returnedBy: new Types.ObjectId(user.id),
+      returnedByName: user.name,
+      reason: input.reason,
+      items: plan.items.map((item) => ({
+        lineIndex: item.lineIndex,
+        medicineId: new Types.ObjectId(item.medicineId),
+        batchId: new Types.ObjectId(item.batchId),
+        medicineName: item.medicineName,
+        batchNumber: item.batchNumber,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        unitCost: item.unitCost,
+        subtotal: item.subtotal,
+        discount: item.discount,
+        taxableAmount: item.taxableAmount,
+        vatAmount: item.vatAmount,
+        totalAmount: item.totalAmount,
+        lineCost: item.lineCost,
+      })),
+      units: plan.units,
+      subtotal: plan.subtotal,
+      discount: plan.discount,
+      taxableAmount: plan.taxableAmount,
+      vatAmount: plan.vatAmount,
+      totalAmount: plan.totalAmount,
+      totalCost: plan.totalCost,
+    });
+
+    sale.returnedUnits = (sale.returnedUnits ?? 0) + plan.units;
+    sale.returnedDiscount = round2((sale.returnedDiscount ?? 0) + plan.discount);
+    sale.returnedTaxable = round2((sale.returnedTaxable ?? 0) + plan.taxableAmount);
+    sale.returnedVat = round2((sale.returnedVat ?? 0) + plan.vatAmount);
+    sale.returnedTotal = round2((sale.returnedTotal ?? 0) + plan.totalAmount);
+    sale.returnedCost = round2((sale.returnedCost ?? 0) + plan.totalCost);
+    sale.markModified("items");
+    sale.markModified("returns");
+
+    await sale.save({ session: session ?? undefined });
+
+    return {
+      id: String(sale._id),
+      billNo: sale.billNo,
+      units: plan.units,
+      totalAmount: plan.totalAmount,
       restored,
       unreturned,
     };

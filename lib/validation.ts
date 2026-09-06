@@ -56,12 +56,23 @@ export const medicineSchema = z.object({
   category: z.string().trim().max(80).default("Other"),
   unit: z.enum(MEDICINE_UNITS).default("tablet"),
   packSize: z.string().trim().max(60).default(""),
+  unitsPerStrip: z
+    .union([
+      numberFromInput("Tablets in one strip must be a whole number.")
+        .int("Tablets in one strip must be a whole number.")
+        .min(1, "A strip has at least 1.")
+        .max(1000, "That strip is too large."),
+      z.literal("").transform(() => null),
+      z.null(),
+    ])
+    .optional()
+    .transform((value) => (value === undefined ? null : value)),
   requiresPrescription: z.coerce.boolean().default(false),
   reorderLevel: z
     .union([
-      numberFromInput("Reorder level must be a number.").int().min(0),
       z.literal("").transform(() => null),
       z.null(),
+      numberFromInput("Reorder level must be a number.").int().min(0),
     ])
     .optional()
     .transform((value) => (value === undefined ? null : value)),
@@ -208,6 +219,26 @@ export const voidSaleSchema = z.object({
     .max(300),
 });
 
+export const returnSaleItemSchema = z.object({
+  lineIndex: z.coerce.number().int().min(0, "That item is not on this bill."),
+  quantity: z.coerce
+    .number()
+    .int("Quantity must be a whole number.")
+    .positive("Quantity must be at least 1."),
+});
+
+export const returnSaleSchema = z.object({
+  items: z
+    .array(returnSaleItemSchema)
+    .min(1, "Choose at least one medicine to return."),
+  reason: z
+    .string()
+    .trim()
+    .min(3, "Give a short reason so the return is auditable.")
+    .max(300),
+});
+export type ReturnSaleInput = z.infer<typeof returnSaleSchema>;
+
 export const salesQuerySchema = z.object({
   from: z.string().trim().optional(),
   to: z.string().trim().optional(),
@@ -296,6 +327,10 @@ export const settingsSchema = z.object({
 
   billTerms: z.string().trim().max(400).default(""),
   billFooterNote: z.string().trim().max(400).default(""),
+  medicineCategories: z
+    .array(z.string().trim().min(1, "Category name is required.").max(80))
+    .max(50, "Fifty extra categories is enough.")
+    .default([]),
 });
 export type SettingsInput = z.infer<typeof settingsSchema>;
 
@@ -372,6 +407,11 @@ export const purchaseItemSchema = z.object({
   discount: numberFromInput("Line discount must be a number.")
     .min(0, "Line discount cannot be negative.")
     .default(0),
+  /**
+   * When true, posting also writes this sale price onto every in-stock lot
+   * of the same medicine at the receiving branch.
+   */
+  applySalePriceToStock: z.coerce.boolean().optional(),
 });
 
 export const purchaseSchema = z
@@ -524,3 +564,62 @@ export const branchScopeBodySchema = z.object({
   branch: branchScopeSchema,
 });
 export type BranchScopeBody = z.infer<typeof branchScopeBodySchema>;
+
+// ---------------------------------------------------------------------------
+// Pharmacies (platform / superadmin)
+// ---------------------------------------------------------------------------
+
+export const createPharmacySchema = z.object({
+  name: z.string().trim().min(2, "Pharmacy name is required.").max(160),
+  legalName: z.string().trim().max(160).default(""),
+  slug: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .max(40)
+    .regex(
+      /^$|^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+      "Use lowercase letters, numbers and hyphens only.",
+    )
+    .optional()
+    .transform((value) => value || undefined),
+  ownerName: z.string().trim().min(2, "Owner name is required.").max(120),
+  ownerEmail: z.string().trim().toLowerCase().email("Enter a valid email address."),
+  ownerPassword: z
+    .string()
+    .min(8, "Password must be at least 8 characters.")
+    .max(72, "Password is too long."),
+  pan: z
+    .string()
+    .trim()
+    .max(30)
+    .default("")
+    .refine((value) => value === "" || /^\d{9}$/.test(value), "A Nepali PAN is nine digits."),
+  address: z.string().trim().max(300).default(""),
+  city: z.string().trim().max(120).default(""),
+  phone: z.string().trim().max(40).default(""),
+  notes: z.string().trim().max(500).default(""),
+});
+export type CreatePharmacyInput = z.infer<typeof createPharmacySchema>;
+
+export const updatePharmacySchema = z.object({
+  name: z.string().trim().min(2, "Pharmacy name is required.").max(160).optional(),
+  legalName: z.string().trim().max(160).optional(),
+  notes: z.string().trim().max(500).optional(),
+});
+export type UpdatePharmacyInput = z.infer<typeof updatePharmacySchema>;
+
+export const resetOwnerPasswordSchema = z.object({
+  password: z
+    .string()
+    .min(8, "Password must be at least 8 characters.")
+    .max(72, "Password is too long."),
+});
+
+export const pharmacyQuerySchema = z.object({
+  q: z.string().trim().max(120).optional(),
+  status: z.enum(["all", "active", "suspended"]).default("all"),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+});
+

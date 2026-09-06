@@ -11,12 +11,17 @@ import type { SessionUser } from "@/lib/session";
 
 const HOME_ID = new Types.ObjectId();
 
+const PHARMACY_ID = new Types.ObjectId();
+
 function user(role: SessionUser["role"], branchId = String(HOME_ID)): SessionUser {
   return {
     id: "u1",
     name: "Test",
     email: "test@example.com",
     role,
+    pharmacyId: String(PHARMACY_ID),
+    pharmacyName: "Test Pharmacy",
+    pharmacySlug: "test",
     branchId,
     branchCode: "main",
     branchName: "Main",
@@ -27,50 +32,63 @@ describe("canSwitchBranch", () => {
   it("lets an admin look across outlets", () => {
     expect(canSwitchBranch(user("admin"))).toBe(true);
   });
+
+  it("does not let the platform administrator switch a shop's outlets", () => {
+    expect(canSwitchBranch(user("superadmin"))).toBe(false);
+  });
 });
 
 describe("branchFilter", () => {
-  it("is empty when viewing every branch", () => {
+  it("still scopes to the pharmacy when viewing every branch", () => {
     expect(
       branchFilter({
+        pharmacyId: PHARMACY_ID,
         branchId: null,
         code: null,
         label: "All branches",
         switchable: true,
       }),
-    ).toEqual({});
+    ).toEqual({ pharmacyId: PHARMACY_ID });
   });
 
-  it("is empty when no scope was passed", () => {
-    expect(branchFilter()).toEqual({});
-    expect(branchFilter(null)).toEqual({});
+  it("matches nothing when no scope was passed, rather than every vendor", () => {
+    expect(branchFilter()).toEqual({ pharmacyId: { $in: [] } });
+    expect(branchFilter(null)).toEqual({ pharmacyId: { $in: [] } });
   });
 
   it("scopes a query to one outlet", () => {
     const id = new Types.ObjectId();
     expect(
       branchFilter({
+        pharmacyId: PHARMACY_ID,
         branchId: id,
         code: "pokhara",
         label: "Pokhara",
         switchable: false,
       }),
-    ).toEqual({ branchId: id });
+    ).toEqual({ pharmacyId: PHARMACY_ID, branchId: id });
   });
 
   it("can target a different field name", () => {
     const id = new Types.ObjectId();
     expect(
       branchFilter(
-        { branchId: id, code: "main", label: "Main", switchable: false },
+        {
+          pharmacyId: PHARMACY_ID,
+          branchId: id,
+          code: "main",
+          label: "Main",
+          switchable: false,
+        },
         "homeBranchId",
       ),
-    ).toEqual({ homeBranchId: id });
+    ).toEqual({ pharmacyId: PHARMACY_ID, homeBranchId: id });
   });
 
   it("matches branchMatch", () => {
     const id = new Types.ObjectId();
     const scope = {
+      pharmacyId: PHARMACY_ID,
       branchId: id,
       code: "main",
       label: "Main",
@@ -92,6 +110,7 @@ describe("writeBranchId", () => {
   it("uses a named viewing branch as the counter you are standing at", () => {
     expect(
       writeBranchId(user("admin"), {
+        pharmacyId: PHARMACY_ID,
         branchId: pokharaId,
         code: "pokhara",
         label: "Pokhara",
@@ -103,6 +122,7 @@ describe("writeBranchId", () => {
   it("falls back to the user's own outlet when viewing all branches", () => {
     expect(
       writeBranchId(user("admin"), {
+        pharmacyId: PHARMACY_ID,
         branchId: null,
         code: null,
         label: "All branches",
@@ -115,6 +135,7 @@ describe("writeBranchId", () => {
     const unassigned = { ...user("admin"), branchId: "" };
     expect(
       writeBranchId(unassigned, {
+        pharmacyId: PHARMACY_ID,
         branchId: null,
         code: null,
         label: "All branches",
@@ -127,6 +148,7 @@ describe("writeBranchId", () => {
     const ownId = new Types.ObjectId();
     expect(
       writeBranchId(user("admin"), {
+        pharmacyId: PHARMACY_ID,
         branchId: ownId,
         code: "main",
         label: "Main",

@@ -18,8 +18,10 @@ export const dynamic = "force-dynamic";
  * bill header without anyone touching a server.
  */
 export default async function SettingsPage() {
-  await requirePagePermission("settings:manage");
-  const settings = await withDbRead(() => getSettings());
+  const user = await requirePagePermission("settings:manage");
+  const settings = await withDbRead(() =>
+    getSettings(user.pharmacyId, user.pharmacyName),
+  );
 
   return (
     <>

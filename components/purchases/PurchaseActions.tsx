@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { apiFetch } from "@/lib/client";
 
 /**
@@ -32,8 +32,11 @@ export function PurchaseActions({
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<null | "post" | "cancel" | "delete">(null);
   const [reason, setReason] = useState("");
+  const inflight = useRef(false);
 
   async function run(action: "post" | "cancel" | "delete") {
+    if (inflight.current) return;
+    inflight.current = true;
     setBusy(true);
     setError(null);
 
@@ -48,6 +51,7 @@ export function PurchaseActions({
           : await apiFetch(`/api/purchases/${purchaseId}`, { method: "DELETE" });
 
     if (!result.ok) {
+      inflight.current = false;
       setError(result.message);
       setBusy(false);
       return;
@@ -59,6 +63,7 @@ export function PurchaseActions({
       setConfirming(null);
       router.refresh();
     }
+    inflight.current = false;
     setBusy(false);
   }
 

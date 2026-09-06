@@ -4,7 +4,7 @@ import Link, { useLinkStatus } from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { cx } from "@/components/ui";
-import { initials } from "@/lib/format";
+import { brandLetter, initials } from "@/lib/format";
 import { ROLE_LABELS, can, type Permission, type Role } from "@/lib/roles";
 
 /**
@@ -57,6 +57,12 @@ const NAV: NavItem[] = [
     label: "Sales",
     permission: "sale:read",
     icon: icon("M9 17V9m4 8V5m4 12v-6M4 20h16"),
+  },
+  {
+    href: "/sales/returns",
+    label: "Returns",
+    permission: "sale:void",
+    icon: icon("M3 10h10a4 4 0 010 8H9m-6-4l3-3m-3 3l3 3"),
   },
   {
     href: "/alerts",
@@ -117,6 +123,8 @@ export interface ShellUser {
   email: string;
   role: Role;
   branchName: string;
+  /** Live trading name. The only brand the pharmacy owner should see. */
+  pharmacyName: string;
 }
 
 export interface ShellScope {
@@ -182,8 +190,15 @@ export function AppShell({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [router, user.role]);
 
-  const matches = (path: string, href: string) =>
-    path === href || path.startsWith(href + "/");
+  const matches = (path: string, href: string) => {
+    if (href === "/sales") {
+      return (
+        path === "/sales" ||
+        (path.startsWith("/sales/") && !path.startsWith("/sales/returns"))
+      );
+    }
+    return path === href || path.startsWith(href + "/");
+  };
 
   // `isActive` is the route the browser is actually on and drives aria-current,
   // which must not lie. `isHighlighted` is allowed to run one click ahead of it.
@@ -209,16 +224,16 @@ export function AppShell({
     </nav>
   );
 
+  const shopName = user.pharmacyName.trim() || "Pharmacy";
+  const shopMark = brandLetter(shopName);
+
   const brand = (
     <div className="flex items-center gap-2.5 px-6 py-5">
-      <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-500 text-base font-bold text-white">
-        M
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-500 text-base font-bold text-white">
+        {shopMark}
       </span>
-      <span className="text-[15px] leading-tight font-semibold text-white">
-        MantraSphere
-        <span className="block text-[11px] font-normal text-slate-400">
-          Pharmacy Suite
-        </span>
+      <span className="min-w-0 text-[15px] leading-tight font-semibold text-white">
+        {shopName}
       </span>
     </div>
   );
@@ -268,18 +283,23 @@ export function AppShell({
               <path strokeLinecap="round" d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <span className="text-[15px] leading-tight font-semibold text-slate-900">
-            MantraSphere
-            <span className="block text-[11px] font-normal text-slate-500">
-              Pharmacy Suite
-            </span>
+          <span className="min-w-0 truncate text-[15px] leading-tight font-semibold text-slate-900">
+            {shopName}
           </span>
           <span className="ml-auto flex h-8 w-8 items-center justify-center rounded-full bg-brand-100 text-xs font-semibold text-brand-800">
             {initials(user.name)}
           </span>
         </header>
 
-        <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+        <main
+          className={cx(
+            "min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8",
+            pathname === "/billing" &&
+              "px-3 py-3 pb-[calc(5.5rem+env(safe-area-inset-bottom))] sm:px-4 lg:px-8 lg:py-6 lg:pb-6",
+          )}
+        >
+          {children}
+        </main>
       </div>
     </div>
   );

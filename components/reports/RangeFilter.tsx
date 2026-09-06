@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { DualDateField } from "@/components/DualDateField";
 import { addDays, toDateInputValue } from "@/lib/dates";
 import { Card, cx } from "@/components/ui";
 
@@ -119,28 +120,24 @@ export function RangeFilter({
         action={basePath}
         className="mt-3 flex flex-wrap items-end gap-3 border-t border-slate-100 pt-3"
       >
-        <div>
-          <label htmlFor="from" className="label">
-            From
-          </label>
-          <input
+        <div className="min-w-0 flex-1 sm:min-w-[16rem]">
+          <p className="label">From</p>
+          <DualDateField
             id="from"
-            type="date"
             name="from"
             defaultValue={range.from}
-            className="input w-40"
+            compact
+            aria-label="From"
           />
         </div>
-        <div>
-          <label htmlFor="to" className="label">
-            To
-          </label>
-          <input
+        <div className="min-w-0 flex-1 sm:min-w-[16rem]">
+          <p className="label">To</p>
+          <DualDateField
             id="to"
-            type="date"
             name="to"
             defaultValue={range.to}
-            className="input w-40"
+            compact
+            aria-label="To"
           />
         </div>
         <button type="submit" className="btn-secondary">

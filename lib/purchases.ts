@@ -11,6 +11,7 @@ import {
   round4,
 } from "@/lib/purchase-math";
 import { branchForWrite } from "@/lib/branches";
+import { pharmacyFilter, pharmacyObjectId } from "@/lib/tenant";
 import { sessionOption, withTransaction } from "@/lib/transaction";
 import { Batch } from "@/models/Batch";
 import { Medicine } from "@/models/Medicine";
@@ -45,8 +46,12 @@ import type { SessionUser } from "@/lib/session";
 // ---------------------------------------------------------------------------
 
 /** Resolve and validate the supplier + medicines a purchase refers to. */
-async function resolveReferences(input: PurchaseInput, session: ClientSession | null) {
-  const supplier = await Supplier.findById(input.supplierId)
+async function resolveReferences(
+  input: PurchaseInput,
+  session: ClientSession | null,
+  pharmacyId: Types.ObjectId,
+) {
+  const supplier = await Supplier.findOne({ _id: input.supplierId, pharmacyId })
     .select("_id name isActive paymentTermsDays")
     .session(session)
     .lean();
@@ -60,6 +65,7 @@ async function resolveReferences(input: PurchaseInput, session: ClientSession | 
 
   const medicineIds = [...new Set(input.items.map((item) => item.medicineId))];
   const medicines = await Medicine.find({
+    pharmacyId,
     _id: { $in: medicineIds.map((id) => new Types.ObjectId(id)) },
   })
     .select("_id name isActive")
@@ -114,6 +120,7 @@ function buildItemsAndTotals(
       lineTotal: line.net,
       batchId: null,
       toppedUpExisting: false,
+      applySalePriceToStock: Boolean(item.applySalePriceToStock),
     };
   });
 
@@ -163,15 +170,21 @@ export async function createPurchase(
 
   const created = await withTransaction(async ({ session, onRollback }) => {
     const branch = await branchForWrite(user);
-    const { supplier, medicinesById } = await resolveReferences(input, session);
+    const pharmacyId = pharmacyObjectId(user);
+    const { supplier, medicinesById } = await resolveReferences(
+      input,
+      session,
+      pharmacyId,
+    );
     const { items, totals } = buildItemsAndTotals(input, medicinesById);
 
-    const seq = await nextSequence("grn", session);
+    const seq = await nextSequence(`${String(pharmacyId)}:grn`, session);
     const grnNo = formatGrnNo(seq);
 
     const [purchase] = await Purchase.create(
       [
         {
+          pharmacyId,
           grnNo,
           grnSeq: seq,
           supplierId: supplier._id,
@@ -235,16 +248,17 @@ export async function createPurchase(
 export async function updateDraftPurchase(
   id: string,
   input: PurchaseInput,
-  _user: SessionUser,
+  user: SessionUser,
 ): Promise<CreatedPurchase> {
   await connectDB();
   assertNoDuplicateLots(input);
 
-  const purchase = await Purchase.findById(id);
+  const pharmacyId = pharmacyObjectId(user);
+  const purchase = await Purchase.findOne({ _id: id, pharmacyId });
   if (!purchase) throw ApiError.notFound("That purchase no longer exists.");
   assertDraft(purchase.status, purchase.grnNo);
 
-  const { supplier, medicinesById } = await resolveReferences(input, null);
+  const { supplier, medicinesById } = await resolveReferences(input, null, pharmacyId);
   const { items, totals } = buildItemsAndTotals(input, medicinesById);
 
   purchase.set({
@@ -287,14 +301,19 @@ function assertDraft(status: string, grnNo: string): void {
 }
 
 /** Delete a draft outright. Posted GRNs are cancelled, never deleted. */
-export async function deleteDraftPurchase(id: string): Promise<{ grnNo: string }> {
+export async function deleteDraftPurchase(
+  id: string,
+  user: SessionUser,
+): Promise<{ grnNo: string }> {
   await connectDB();
 
-  const purchase = await Purchase.findById(id).select("status grnNo").lean();
+  const purchase = await Purchase.findOne({ _id: id, ...pharmacyFilter(user) })
+    .select("status grnNo")
+    .lean();
   if (!purchase) throw ApiError.notFound("That purchase no longer exists.");
   assertDraft(purchase.status, purchase.grnNo);
 
-  await Purchase.deleteOne({ _id: id });
+  await Purchase.deleteOne({ _id: id, ...pharmacyFilter(user) });
   return { grnNo: purchase.grnNo };
 }
 
@@ -330,7 +349,8 @@ export async function postPurchase(
   await connectDB();
 
   return withTransaction(async ({ session, onRollback }) => {
-    const purchase = await Purchase.findById(id).session(session);
+    const pharmacyId = pharmacyObjectId(user);
+    const purchase = await Purchase.findOne({ _id: id, pharmacyId }).session(session);
     if (!purchase) throw ApiError.notFound("That purchase no longer exists.");
     assertDraft(purchase.status, purchase.grnNo);
 
@@ -349,6 +369,7 @@ export async function postPurchase(
       units += receivedQuantity;
 
       const existing = await Batch.findOne({
+        pharmacyId,
         branchId: purchase.branchId,
         medicineId: item.medicineId,
         batchNumber: item.batchNumber,
@@ -387,6 +408,7 @@ export async function postPurchase(
         const [batch] = await Batch.create(
           [
             {
+              pharmacyId,
               branchId: purchase.branchId,
               medicineId: item.medicineId,
               batchNumber: item.batchNumber,
@@ -410,6 +432,36 @@ export async function postPurchase(
         item.batchId = batch._id;
         item.toppedUpExisting = false;
         created++;
+      }
+
+      if (item.applySalePriceToStock) {
+        const previousPrices = await Batch.find({
+          pharmacyId,
+          branchId: purchase.branchId,
+          medicineId: item.medicineId,
+          quantity: { $gt: 0 },
+        })
+          .select("_id salePrice")
+          .session(session)
+          .lean();
+
+        if (previousPrices.length > 0) {
+          await Batch.updateMany(
+            { _id: { $in: previousPrices.map((row) => row._id) } },
+            { $set: { salePrice: item.salePrice } },
+            sessionOption(session),
+          );
+          onRollback(() =>
+            Promise.all(
+              previousPrices.map((row) =>
+                Batch.updateOne(
+                  { _id: row._id },
+                  { $set: { salePrice: row.salePrice } },
+                ).exec(),
+              ),
+            ),
+          );
+        }
       }
     }
 
@@ -449,7 +501,10 @@ export async function cancelPurchase(
   await connectDB();
 
   return withTransaction(async ({ session, onRollback }) => {
-    const purchase = await Purchase.findById(id).session(session);
+    const purchase = await Purchase.findOne({
+      _id: id,
+      ...pharmacyFilter(user),
+    }).session(session);
     if (!purchase) throw ApiError.notFound("That purchase no longer exists.");
 
     if (purchase.status === "draft") {
@@ -531,20 +586,25 @@ export async function refreshPaymentStatus(
 ): Promise<void> {
   const { SupplierPayment } = await import("@/models/SupplierPayment");
 
-  const agg = await SupplierPayment.aggregate([
-    { $match: { purchaseId: new Types.ObjectId(String(purchaseId)) } },
-    { $group: { _id: null, paid: { $sum: "$amount" } } },
-  ]).session(session);
-
-  const paid = round2((agg[0] as { paid?: number } | undefined)?.paid ?? 0);
-  const purchase = await Purchase.findById(purchaseId)
-    .select("totalAmount")
+  const purchaseObjectId = new Types.ObjectId(String(purchaseId));
+  const purchase = await Purchase.findById(purchaseObjectId)
+    .select("totalAmount pharmacyId")
     .session(session)
     .lean();
   if (!purchase) return;
 
+  const paymentMatch: Record<string, unknown> = { purchaseId: purchaseObjectId };
+  if (purchase.pharmacyId) paymentMatch.pharmacyId = purchase.pharmacyId;
+
+  const agg = await SupplierPayment.aggregate([
+    { $match: paymentMatch },
+    { $group: { _id: null, paid: { $sum: "$amount" } } },
+  ]).session(session);
+
+  const paid = round2((agg[0] as { paid?: number } | undefined)?.paid ?? 0);
+
   await Purchase.updateOne(
-    { _id: purchaseId },
+    { _id: purchaseObjectId, ...(purchase.pharmacyId ? { pharmacyId: purchase.pharmacyId } : {}) },
     {
       $set: {
         amountPaid: paid,
@@ -558,6 +618,45 @@ export async function refreshPaymentStatus(
 /** Default VAT rate applied to a new purchase form. */
 export function defaultPurchaseVatRate(): number {
   return config.vatRate;
+}
+
+export interface LatestBatchPrice {
+  costPrice: number;
+  salePrice: number;
+  supplierId: string | null;
+}
+
+/** Most recent lot per medicine, so "Add stock" can pre-fill last cost and MRP. */
+export async function latestBatchPrices(
+  pharmacyId: Types.ObjectId,
+): Promise<Map<string, LatestBatchPrice>> {
+  await connectDB();
+
+  const rows = await Batch.aggregate<
+    LatestBatchPrice & { _id: Types.ObjectId }
+  >([
+    { $match: { pharmacyId } },
+    { $sort: { createdAt: -1 } },
+    {
+      $group: {
+        _id: "$medicineId",
+        costPrice: { $first: "$costPrice" },
+        salePrice: { $first: "$salePrice" },
+        supplierId: { $first: "$supplierId" },
+      },
+    },
+  ]);
+
+  return new Map(
+    rows.map((row) => [
+      String(row._id),
+      {
+        costPrice: row.costPrice,
+        salePrice: row.salePrice,
+        supplierId: row.supplierId ? String(row.supplierId) : null,
+      },
+    ]),
+  );
 }
 
 export { round4 };

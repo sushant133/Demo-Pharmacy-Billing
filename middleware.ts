@@ -19,6 +19,35 @@ function isPublic(pathname: string): boolean {
   );
 }
 
+function isPlatformPath(pathname: string): boolean {
+  return (
+    pathname === "/superadmin" ||
+    pathname.startsWith("/superadmin/") ||
+    pathname === "/api/pharmacies" ||
+    pathname.startsWith("/api/pharmacies/")
+  );
+}
+
+function isShopAppPath(pathname: string): boolean {
+  if (pathname.startsWith("/api/auth/")) return false;
+  if (isPlatformPath(pathname)) return false;
+  if (pathname.startsWith("/api/")) return true;
+  return (
+    pathname.startsWith("/dashboard") ||
+    pathname.startsWith("/billing") ||
+    pathname.startsWith("/sales") ||
+    pathname.startsWith("/medicines") ||
+    pathname.startsWith("/batches") ||
+    pathname.startsWith("/suppliers") ||
+    pathname.startsWith("/purchases") ||
+    pathname.startsWith("/reports") ||
+    pathname.startsWith("/alerts") ||
+    pathname.startsWith("/branches") ||
+    pathname.startsWith("/settings") ||
+    pathname.startsWith("/bills/")
+  );
+}
+
 export async function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
 
@@ -50,10 +79,44 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  // Superadmin stays on the platform; pharmacy owners stay in their shop.
+  if (session.role === "superadmin" && isShopAppPath(pathname)) {
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: {
+            code: "FORBIDDEN",
+            message: "The platform administrator cannot operate a pharmacy till.",
+          },
+        },
+        { status: 403 },
+      );
+    }
+    return NextResponse.redirect(new URL("/superadmin", req.url));
+  }
+
+  if (session.role !== "superadmin" && isPlatformPath(pathname)) {
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: {
+            code: "FORBIDDEN",
+            message: "Only the platform administrator can manage pharmacies.",
+          },
+        },
+        { status: 403 },
+      );
+    }
+    return NextResponse.redirect(new URL(homePath(session.role), req.url));
+  }
+
   // Coarse per-screen role gate. Fine-grained checks live in the handlers.
   const rule = ROUTE_PERMISSIONS.find((entry) => pathname.startsWith(entry.prefix));
   if (rule && !can(session.role, rule.permission)) {
-    return NextResponse.redirect(new URL("/dashboard?denied=1", req.url));
+    const fallback = session.role === "superadmin" ? "/superadmin" : "/dashboard?denied=1";
+    return NextResponse.redirect(new URL(fallback, req.url));
   }
 
   return NextResponse.next();

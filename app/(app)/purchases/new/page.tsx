@@ -1,10 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePagePermission } from "@/lib/auth";
-import { config } from "@/lib/config";
 import { withDbRead } from "@/lib/db";
 import { toDateInputValue } from "@/lib/dates";
+import { latestBatchPrices } from "@/lib/purchases";
 import { can } from "@/lib/roles";
+import { getSettings } from "@/lib/settings";
+import { pharmacyFilter, pharmacyObjectId } from "@/lib/tenant";
+import { resolveUnitsPerStrip } from "@/lib/pack";
+import { objectIdSchema } from "@/lib/validation";
 import { Medicine } from "@/models/Medicine";
 import { Supplier } from "@/models/Supplier";
 import { EmptyState, PageHeader } from "@/components/ui";
@@ -21,21 +25,29 @@ export const dynamic = "force-dynamic";
  * route into stock, so it also has to explain itself when the shop has no
  * suppliers yet.
  */
-export default async function NewPurchasePage() {
+export default async function NewPurchasePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ medicineId?: string }>;
+}) {
   const user = await requirePagePermission("purchase:write");
+  const params = await searchParams;
+  const pharmacyId = pharmacyObjectId(user);
 
-  const [suppliers, medicines] = await withDbRead(() =>
+  const [suppliers, medicines, lastPrices, settings] = await withDbRead(() =>
     Promise.all([
-      Supplier.find({ isActive: { $ne: false } })
+      Supplier.find({ isActive: { $ne: false }, ...pharmacyFilter(user) })
         .sort({ name: 1 })
         .select("name paymentTermsDays")
         .limit(500)
         .lean(),
-      Medicine.find({ isActive: { $ne: false } })
+      Medicine.find({ isActive: { $ne: false }, ...pharmacyFilter(user) })
         .sort({ name: 1 })
-        .select("name unit manufacturer")
+        .select("name unit manufacturer genericName packSize unitsPerStrip")
         .limit(1000)
         .lean(),
+      latestBatchPrices(pharmacyId),
+      getSettings(user.pharmacyId, user.pharmacyName),
     ]),
   );
 
@@ -77,11 +89,42 @@ export default async function NewPurchasePage() {
     );
   }
 
+  const medicineOptions = medicines.map((medicine) => {
+    const last = lastPrices.get(String(medicine._id));
+    return {
+      id: String(medicine._id),
+      name: medicine.name,
+      unit: medicine.unit ?? "unit",
+      manufacturer: medicine.manufacturer ?? "",
+      genericName: medicine.genericName ?? "",
+      packSize: medicine.packSize ?? "",
+      unitsPerStrip: resolveUnitsPerStrip(
+        medicine.unit ?? "unit",
+        medicine.packSize ?? "",
+        medicine.unitsPerStrip,
+      ),
+      lastCostPrice: last?.costPrice ?? null,
+      lastSalePrice: last?.salePrice ?? null,
+    };
+  });
+
+  const wantedId = objectIdSchema.safeParse(params.medicineId ?? "").success
+    ? params.medicineId
+    : null;
+  const presetMedicine = wantedId
+    ? medicineOptions.find((medicine) => medicine.id === wantedId)
+    : null;
+  const last = presetMedicine ? lastPrices.get(presetMedicine.id) : null;
+
   return (
     <>
       <PageHeader
-        title="New purchase"
-        subtitle="Type the supplier's invoice. Posting it creates the batches and puts the stock on the shelf."
+        title={presetMedicine ? `Add stock · ${presetMedicine.name}` : "New purchase"}
+        subtitle={
+          presetMedicine
+            ? "This medicine is already on the delivery. Fill the batch, expiry, quantity and prices."
+            : "Type the supplier's invoice. Posting it creates the batches and puts the stock on the shelf."
+        }
         actions={
           <Link href="/purchases" className="btn-secondary">
             Cancel
@@ -95,16 +138,27 @@ export default async function NewPurchasePage() {
           name: supplier.name,
           paymentTermsDays: supplier.paymentTermsDays ?? 0,
         }))}
-        medicines={medicines.map((medicine) => ({
-          id: String(medicine._id),
-          name: medicine.name,
-          unit: medicine.unit ?? "unit",
-          manufacturer: medicine.manufacturer ?? "",
-        }))}
-        defaultVatRate={config.vatRate}
+        medicines={medicineOptions}
+        defaultVatRate={settings.vatRate}
         today={toDateInputValue()}
         purchase={null}
         canPost={can(user.role, "purchase:post")}
+        preset={
+          presetMedicine
+            ? {
+                medicineId: presetMedicine.id,
+                medicineName: presetMedicine.name,
+                manufacturer: presetMedicine.manufacturer,
+                genericName: presetMedicine.genericName,
+                packSize: presetMedicine.packSize,
+                unit: presetMedicine.unit,
+                unitsPerStrip: presetMedicine.unitsPerStrip,
+                lastCostPrice: last?.costPrice ?? null,
+                lastSalePrice: last?.salePrice ?? null,
+                lastSupplierId: last?.supplierId ?? null,
+              }
+            : null
+        }
       />
     </>
   );

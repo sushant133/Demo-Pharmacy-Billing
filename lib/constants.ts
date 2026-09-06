@@ -40,6 +40,35 @@ export const MEDICINE_CATEGORIES = [
 export type MedicineCategory = (typeof MEDICINE_CATEGORIES)[number];
 
 /**
+ * Built-in list plus a shop's extra names, with Other always last and no
+ * duplicates. Used by the medicine form, the catalogue filter, and Settings.
+ */
+export function mergeMedicineCategories(extra: readonly string[] = []): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+
+  function push(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(trimmed);
+  }
+
+  for (const name of MEDICINE_CATEGORIES) {
+    if (name === "Other") continue;
+    push(name);
+  }
+  for (const name of extra) {
+    if (name.trim().toLowerCase() === "other") continue;
+    push(name);
+  }
+  push("Other");
+  return out;
+}
+
+/**
  * IRD tax invoices must name the buyer (and their PAN when they have one)
  * for B2B sales and for any bill of this amount or more. Walk-in retail
  * below the threshold may use an abbreviated invoice.

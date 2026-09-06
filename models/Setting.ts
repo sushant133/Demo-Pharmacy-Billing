@@ -20,8 +20,14 @@ import { Schema, model, models, type InferSchemaType, type Model } from "mongoos
  */
 const settingSchema = new Schema(
   {
-    /** Always "business". The unique index on it enforces the singleton. */
-    key: { type: String, required: true, unique: true, default: "business" },
+    pharmacyId: {
+      type: Schema.Types.ObjectId,
+      ref: "Pharmacy",
+      required: true,
+      index: true,
+    },
+    /** Always "business". The unique index with pharmacyId enforces one record per shop. */
+    key: { type: String, required: true, default: "business" },
 
     // --- Identity ---------------------------------------------------------
     /** Trading name, printed at the head of every bill. */
@@ -58,9 +64,14 @@ const settingSchema = new Schema(
     billTerms: { type: String, trim: true, default: "", maxlength: 400 },
     /** The closing line. "Thank you", or whatever the shop prefers. */
     billFooterNote: { type: String, trim: true, default: "", maxlength: 400 },
+
+    /** Extra medicine categories on top of the built-in list. */
+    medicineCategories: { type: [String], default: [] },
   },
   { timestamps: true },
 );
+
+settingSchema.index({ pharmacyId: 1, key: 1 }, { unique: true });
 
 export type SettingDoc = InferSchemaType<typeof settingSchema>;
 

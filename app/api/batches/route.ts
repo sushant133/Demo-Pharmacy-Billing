@@ -7,6 +7,7 @@ import { connectDB } from "@/lib/db";
 import { addDays } from "@/lib/dates";
 import { Batch } from "@/models/Batch";
 import { Medicine } from "@/models/Medicine";
+import { pharmacyFilter } from "@/lib/tenant";
 import { batchQuerySchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
@@ -23,7 +24,10 @@ export const GET = withRoute(async (req) => {
 
   const now = new Date();
   const scope = await resolveRequestScope(user, req);
-  const filter: Record<string, unknown> = { ...branchFilter(scope) };
+  const filter: Record<string, unknown> = {
+    ...pharmacyFilter(user),
+    ...branchFilter(scope),
+  };
 
   if (medicineId) filter.medicineId = new Types.ObjectId(medicineId);
 
@@ -41,6 +45,7 @@ export const GET = withRoute(async (req) => {
     const safe = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     // Match the lot number directly, or any medicine whose name matches.
     const matchingMedicines = await Medicine.find({
+      ...pharmacyFilter(user),
       $or: [
         { name: new RegExp(safe, "i") },
         { genericName: new RegExp(safe, "i") },

@@ -35,14 +35,22 @@ const purchaseItemSchema = new Schema(
     batchId: { type: Schema.Types.ObjectId, ref: "Batch", default: null },
     /** True when posting topped up an existing lot instead of creating one. */
     toppedUpExisting: { type: Boolean, default: false },
+    /** If true, posting copies this sale price onto other in-stock lots of the medicine. */
+    applySalePriceToStock: { type: Boolean, default: false },
   },
   { _id: false },
 );
 
 const purchaseSchema = new Schema(
   {
+    pharmacyId: {
+      type: Schema.Types.ObjectId,
+      ref: "Pharmacy",
+      required: true,
+      index: true,
+    },
     /** Human-facing goods-received note number, e.g. GRN-000042. */
-    grnNo: { type: String, required: true, unique: true, index: true },
+    grnNo: { type: String, required: true, index: true },
     grnSeq: { type: Number, required: true, index: true },
 
     supplierId: {
@@ -117,11 +125,13 @@ const purchaseSchema = new Schema(
   { timestamps: true },
 );
 
+purchaseSchema.index({ pharmacyId: 1, grnNo: 1 }, { unique: true });
 // The purchase register reads newest-first, and payables filter by status.
 purchaseSchema.index({ createdAt: -1 });
+purchaseSchema.index({ pharmacyId: 1, createdAt: -1 });
 purchaseSchema.index({ branchId: 1, createdAt: -1 });
 purchaseSchema.index({ supplierId: 1, status: 1 });
-purchaseSchema.index({ status: 1, paymentStatus: 1 });
+purchaseSchema.index({ pharmacyId: 1, status: 1, paymentStatus: 1 });
 
 export type PurchaseDoc = InferSchemaType<typeof purchaseSchema>;
 

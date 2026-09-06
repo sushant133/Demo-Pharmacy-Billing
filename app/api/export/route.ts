@@ -65,6 +65,8 @@ export const GET = withRoute(async (req) => {
 
   const scope = await resolveRequestScope(user, req);
   const dataset = await buildReport(report, { from: start, to: end, rangeLabel, scope });
+  const settings = await getSettings(user.pharmacyId, user.pharmacyName);
+  const shopName = settings.businessName.trim() || user.pharmacyName.trim();
 
   const { body, contentType, extension } =
     format === "csv"
@@ -76,13 +78,13 @@ export const GET = withRoute(async (req) => {
       : format === "pdf"
         ? {
             body: await toPdfBuffer(dataset, {
-              letterhead: issuerFor(await getSettings()),
+              letterhead: issuerFor(settings),
             }),
             contentType: PDF_CONTENT_TYPE,
             extension: "pdf",
           }
         : {
-            body: await toXlsxBuffer(dataset),
+            body: await toXlsxBuffer(dataset, { creator: shopName }),
             contentType: XLSX_CONTENT_TYPE,
             extension: "xlsx",
           };

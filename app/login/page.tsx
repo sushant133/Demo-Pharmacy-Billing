@@ -34,7 +34,7 @@ export default async function LoginPage({
     params.next && params.next.startsWith("/") && !params.next.startsWith("//")
       ? params.next
       : null;
-  const next = safeNext ?? "/billing";
+  const next = safeNext ?? "/";
 
   // Both calendars, resolved in the shop's timezone rather than the server's.
   // A Nepali counter works in Bikram Sambat and files against the BS fiscal
@@ -82,16 +82,16 @@ export default async function LoginPage({
 
             <div className="px-5 py-6 sm:px-7 sm:py-7">
               <h1 className="text-[22px] leading-tight font-semibold tracking-tight text-slate-900">
-                Sign in to the counter
+                Sign in
               </h1>
               <p className="mt-1.5 text-sm text-slate-500">
-                {safeNext && safeNext !== "/billing" ? (
+                {safeNext && safeNext !== "/" ? (
                   <>
                     Sign in to continue to{" "}
                     <span className="font-medium text-slate-700">{safeNext}</span>.
                   </>
                 ) : (
-                  "Enter your staff credentials to open billing."
+                  "Pharmacy owners open their shop. The platform administrator opens the account panel."
                 )}
               </p>
 
@@ -101,13 +101,24 @@ export default async function LoginPage({
                   demo={
                     config.isProd
                       ? null
-                      : {
-                          email:
-                            process.env.SEED_ADMIN_EMAIL ??
-                            "admin@mantrapharma.local",
-                          password:
-                            process.env.SEED_ADMIN_PASSWORD ?? "Admin@123",
-                        }
+                      : [
+                          {
+                            label: "Pharmacy owner",
+                            email:
+                              process.env.SEED_ADMIN_EMAIL ??
+                              "admin@mantrapharma.local",
+                            password:
+                              process.env.SEED_ADMIN_PASSWORD ?? "Admin@123",
+                          },
+                          {
+                            label: "Superadmin",
+                            email:
+                              process.env.SEED_SUPERADMIN_EMAIL ??
+                              "superadmin@mantrapharma.local",
+                            password:
+                              process.env.SEED_SUPERADMIN_PASSWORD ?? "Super@123",
+                          },
+                        ]
                   }
                 />
               </div>

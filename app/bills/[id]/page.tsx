@@ -8,11 +8,14 @@ import { withDbRead } from "@/lib/db";
 import { getSettings, printedIssuer } from "@/lib/settings";
 import { localParts } from "@/lib/dates";
 import { formatDateTime, formatExpiry, money } from "@/lib/format";
+import { formatUnitCount } from "@/lib/pack";
 import { amountInWords } from "@/lib/money-words";
 import { displayBillNo } from "@/models/Counter";
 import { Sale, PAYMENT_MODE_LABELS, type PaymentMode } from "@/models/Sale";
+import { pharmacyFilter } from "@/lib/tenant";
 import { objectIdSchema } from "@/lib/validation";
 import { PrintController } from "@/components/bills/PrintController";
+import type { ThermalReceipt } from "@/lib/receipt-text";
 
 export const metadata: Metadata = { title: "Tax Invoice" };
 export const dynamic = "force-dynamic";
@@ -39,8 +42,11 @@ export default async function BillPage({
   const sale = await withDbRead(async () => {
     const sale = await Sale.findOne(
       objectIdSchema.safeParse(id).success
-        ? { _id: id }
-        : { billNo: decodeURIComponent(id).toUpperCase() },
+        ? { _id: id, ...pharmacyFilter(user) }
+        : {
+            billNo: decodeURIComponent(id).toUpperCase(),
+            ...pharmacyFilter(user),
+          },
     ).lean();
 
     if (!sale) notFound();
@@ -55,8 +61,8 @@ export default async function BillPage({
 
   // Settings for a single-shop pharmacy; the issuing outlet's own identity
   // once a second branch is open. See `printedIssuer`.
-  const settings = await getSettings();
-  const issuer = await printedIssuer(settings, sale.branchId);
+  const settings = await getSettings(user.pharmacyId, user.pharmacyName);
+  const issuer = await printedIssuer(settings, sale.branchId, user.pharmacyId);
 
   const issued = sale.createdAt as unknown as Date;
   const local = localParts(issued);
@@ -125,6 +131,49 @@ export default async function BillPage({
           autoPrint={query.print === "1"}
           alreadyPrinted={alreadyPrinted}
           reprintCount={sale.reprintCount ?? 0}
+          receipt={
+            {
+              shop: issuer.name,
+              address: issuer.address || undefined,
+              phone: issuer.phone || undefined,
+              pan: issuer.pan || undefined,
+              vat:
+                settings.vatRegistered &&
+                settings.vatNumber &&
+                settings.vatNumber !== issuer.pan
+                  ? settings.vatNumber
+                  : undefined,
+              licence: settings.drugLicenceNo || undefined,
+              copyLabel: alreadyPrinted
+                ? (sale.reprintCount ?? 0) > 0
+                  ? `Copy of Original – ${sale.reprintCount}`
+                  : "ORIGINAL"
+                : "ORIGINAL",
+              billNo: shownBillNo,
+              fiscalYear: fyLabel || undefined,
+              dateBs: bsLabel || undefined,
+              dateAd: formatDateTime(issued),
+              payment:
+                PAYMENT_MODE_LABELS[sale.paymentMode as PaymentMode] ?? sale.paymentMode,
+              buyer: sale.customerName || "Walk-in customer",
+              buyerPan: sale.customerPan || undefined,
+              items: sale.items.map((item) => ({
+                name: item.medicineName,
+                detail: `${formatUnitCount(item.quantity, item.unit || "unit")} x ${money(item.unitPrice)} · ${item.batchNumber}`,
+                amount: money(item.subtotal),
+              })),
+              subtotal: money(sale.subtotal),
+              discount: sale.discount > 0 ? `− ${money(sale.discount)}` : undefined,
+              taxable: money(sale.taxableAmount),
+              vatLabel: `VAT ${vatPct}%`,
+              vatAmount: money(sale.vatAmount),
+              total: money(sale.totalAmount),
+              words: amountInWords(sale.totalAmount),
+              cashier: [sale.soldByName, sale.branchName].filter(Boolean).join(" · ") || undefined,
+              terms: settings.billTerms || undefined,
+              footer: settings.billFooterNote || undefined,
+            } satisfies ThermalReceipt
+          }
         />
 
         {voided ? (
@@ -191,7 +240,8 @@ export default async function BillPage({
                 <td className="left">
                   {item.medicineName}
                   <span className="muted block">
-                    {item.quantity} {item.unit || "unit"} × {money(item.unitPrice)} ·{" "}
+                    {formatUnitCount(item.quantity, item.unit || "unit")} ×{" "}
+                    {money(item.unitPrice)} ·{" "}
                     {item.batchNumber} · {formatExpiry(item.expiryDate)}
                   </span>
                 </td>

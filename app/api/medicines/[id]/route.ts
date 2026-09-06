@@ -4,6 +4,8 @@ import { branchFilter, resolveViewScope } from "@/lib/branch-scope";
 import { connectDB } from "@/lib/db";
 import { Batch } from "@/models/Batch";
 import { Medicine } from "@/models/Medicine";
+import { pharmacyFilter } from "@/lib/tenant";
+import { resolveUnitsPerStrip } from "@/lib/pack";
 import { medicineUpdateSchema, objectIdSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
@@ -23,11 +25,15 @@ export const GET = withRoute<Ctx>(async (_req, ctx) => {
   await connectDB();
   const scope = await resolveViewScope(user);
 
-  const medicine = await Medicine.findById(id).lean();
+  const medicine = await Medicine.findOne({ _id: id, ...pharmacyFilter(user) }).lean();
   if (!medicine) throw ApiError.notFound("That medicine no longer exists.");
 
   const now = new Date();
-  const batches = await Batch.find({ medicineId: id, ...branchFilter(scope) })
+  const batches = await Batch.find({
+    medicineId: id,
+    ...pharmacyFilter(user),
+    ...branchFilter(scope),
+  })
     .sort({ expiryDate: 1 })
     .lean();
 
@@ -38,6 +44,11 @@ export const GET = withRoute<Ctx>(async (_req, ctx) => {
   return ok({
     id: String(medicine._id),
     ...medicine,
+    unitsPerStrip: resolveUnitsPerStrip(
+      medicine.unit ?? "tablet",
+      medicine.packSize ?? "",
+      medicine.unitsPerStrip,
+    ),
     stockQuantity: sellable.reduce((sum, batch) => sum + batch.quantity, 0),
     batches: batches.map((batch) => ({
       id: String(batch._id),
@@ -53,12 +64,15 @@ export const GET = withRoute<Ctx>(async (_req, ctx) => {
 
 /** PATCH /api/medicines/:id - edit catalogue details. */
 export const PATCH = withRoute<Ctx>(async (req, ctx) => {
-  await requirePermission("medicine:write");
+  const user = await requirePermission("medicine:write");
   const id = await medicineId(ctx);
   const update = await parseJson(req, medicineUpdateSchema);
   await connectDB();
 
-  const medicine = await Medicine.findByIdAndUpdate(id, update, {
+  const medicine = await Medicine.findOneAndUpdate(
+    { _id: id, ...pharmacyFilter(user) },
+    update,
+    {
     new: true,
     runValidators: true,
   }).lean();
@@ -75,14 +89,17 @@ export const PATCH = withRoute<Ctx>(async (req, ctx) => {
  * break historical bill reprints. Only a never-stocked entry is hard-deleted.
  */
 export const DELETE = withRoute<Ctx>(async (_req, ctx) => {
-  await requirePermission("medicine:delete");
+  const user = await requirePermission("medicine:delete");
   const id = await medicineId(ctx);
   await connectDB();
 
-  const medicine = await Medicine.findById(id);
+  const medicine = await Medicine.findOne({ _id: id, ...pharmacyFilter(user) });
   if (!medicine) throw ApiError.notFound("That medicine no longer exists.");
 
-  const batchCount = await Batch.countDocuments({ medicineId: id });
+  const batchCount = await Batch.countDocuments({
+    medicineId: id,
+    ...pharmacyFilter(user),
+  });
 
   if (batchCount > 0) {
     medicine.isActive = false;

@@ -2,6 +2,7 @@ import { ApiError, ok, withRoute } from "@/lib/api";
 import { requirePermission } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import { Sale } from "@/models/Sale";
+import { pharmacyFilter } from "@/lib/tenant";
 import { objectIdSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
@@ -17,13 +18,13 @@ type Ctx = { params: Promise<{ id: string }> };
  * requires of reprints.
  */
 export const POST = withRoute<Ctx>(async (_req, ctx) => {
-  await requirePermission("sale:read");
+  const user = await requirePermission("sale:read");
   const { id } = await ctx.params;
   await connectDB();
 
   const query = objectIdSchema.safeParse(id).success
-    ? { _id: id }
-    : { billNo: decodeURIComponent(id).toUpperCase() };
+    ? { _id: id, ...pharmacyFilter(user) }
+    : { billNo: decodeURIComponent(id).toUpperCase(), ...pharmacyFilter(user) };
 
   const sale = await Sale.findOne(query).select("printedAt reprintCount").lean();
   if (!sale) throw ApiError.notFound("That bill no longer exists.");

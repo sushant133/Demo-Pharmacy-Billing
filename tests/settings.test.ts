@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { MEDICINE_CATEGORIES, mergeMedicineCategories } from "@/lib/constants";
+import { brandLetter } from "@/lib/format";
 import { DEFAULT_SETTINGS, issuerFor, vatPercent } from "@/lib/settings";
 import { settingsSchema } from "@/lib/validation";
 
@@ -76,6 +78,31 @@ describe("settingsSchema", () => {
   });
 });
 
+describe("medicineCategories", () => {
+  it("accepts extra names on settings", () => {
+    const parsed = settingsSchema.parse({
+      ...valid,
+      medicineCategories: [" Ayurvedic ", "Veterinary"],
+    });
+    expect(parsed.medicineCategories).toEqual(["Ayurvedic", "Veterinary"]);
+  });
+
+  it("defaults to none extra", () => {
+    expect(settingsSchema.parse(valid).medicineCategories).toEqual([]);
+    expect(DEFAULT_SETTINGS.medicineCategories).toEqual([]);
+  });
+});
+
+describe("mergeMedicineCategories", () => {
+  it("keeps the built-in list, adds extras, and puts Other last", () => {
+    const merged = mergeMedicineCategories(["Ayurvedic", "antibiotic", ""]);
+    expect(merged[merged.length - 1]).toBe("Other");
+    expect(merged).toContain("Ayurvedic");
+    expect(merged.filter((name) => name.toLowerCase() === "antibiotic")).toHaveLength(1);
+    expect(MEDICINE_CATEGORIES).toContain("Other");
+  });
+});
+
 describe("vatPercent", () => {
   it("reads the stored fraction back as a percentage", () => {
     expect(vatPercent({ ...DEFAULT_SETTINGS, vatRate: 0.13 })).toBe(13);
@@ -134,5 +161,17 @@ describe("issuerFor", () => {
     expect(issuerFor({ ...shop, city: "" }, null).address).toBe("Baneshwor");
     expect(issuerFor({ ...shop, address: "" }, null).address).toBe("Kathmandu");
     expect(issuerFor({ ...shop, address: "", city: "" }, null).address).toBe("");
+  });
+});
+
+describe("brandLetter", () => {
+  it("is the first letter of the pharmacy name", () => {
+    expect(brandLetter("Sagarmatha Pharmacy")).toBe("S");
+    expect(brandLetter("himalaya chemist")).toBe("H");
+  });
+
+  it("does not invent a platform initial when the name is blank", () => {
+    expect(brandLetter("")).toBe("P");
+    expect(brandLetter("   ")).toBe("P");
   });
 });

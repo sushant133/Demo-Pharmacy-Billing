@@ -15,9 +15,11 @@ import bcrypt from "bcryptjs";
 
 import { connectDB } from "../lib/db";
 import { ensureDefaultBranch } from "../lib/branches";
+import { syncTenantIndexes } from "../lib/indexes";
 import { Medicine } from "../models/Medicine";
 import { Batch } from "../models/Batch";
 import { Branch } from "../models/Branch";
+import { Pharmacy } from "../models/Pharmacy";
 import { Sale } from "../models/Sale";
 import { User } from "../models/User";
 import { Customer } from "../models/Customer";
@@ -370,16 +372,19 @@ const SUPPLIER_FOR_MANUFACTURER: Record<string, string> = {
   Alcon: "Nepal Health Traders",
 };
 
-// One account, because there is one role. The whole shop - billing, dispensing,
-// purchases, reports, branches - runs from this single login.
-const USERS = [
-  {
-    name: "Sushant Mahato",
-    email: process.env.SEED_ADMIN_EMAIL ?? "admin@mantrapharma.local",
-    password: process.env.SEED_ADMIN_PASSWORD ?? "Admin@123",
-    role: "admin" as const,
-  },
-];
+const SUPERADMIN = {
+  name: "Platform Superadmin",
+  email: process.env.SEED_SUPERADMIN_EMAIL ?? "superadmin@mantrapharma.local",
+  password: process.env.SEED_SUPERADMIN_PASSWORD ?? "Super@123",
+};
+
+const SAMPLE_PHARMACY = {
+  name: DEFAULT_SETTINGS.businessName,
+  slug: "mantra-pharmacy",
+  ownerName: "Sushant Mahato",
+  ownerEmail: process.env.SEED_ADMIN_EMAIL ?? "admin@mantrapharma.local",
+  ownerPassword: process.env.SEED_ADMIN_PASSWORD ?? "Admin@123",
+};
 
 const CUSTOMERS = [
   { name: "Ram Bahadur Karki", phone: "9841000111", address: "Baneshwor, Kathmandu" },
@@ -406,22 +411,64 @@ async function main() {
       SupplierPayment.deleteMany({}),
       Branch.deleteMany({}),
       Setting.deleteMany({}),
+      Pharmacy.deleteMany({}),
     ]);
   }
 
-  // --- Shop details -------------------------------------------------------
-  // Written before the default branch, which inherits from them. Only created
-  // when absent: a real pharmacy's own name, PAN and licence must survive a
-  // re-seed of the sample catalogue.
-  const settingsExisted = await Setting.findOne({ key: "business" }).lean();
+  await syncTenantIndexes();
+
+  // --- Superadmin ---------------------------------------------------------
+  const existingSuper = await User.findOne({ email: SUPERADMIN.email });
+  if (existingSuper) {
+    if (existingSuper.role !== "superadmin") {
+      existingSuper.role = "superadmin";
+      existingSuper.pharmacyId = null;
+      existingSuper.branchId = null;
+      await existingSuper.save();
+    }
+    console.log(`  superadmin ${SUPERADMIN.email} already exists`);
+  } else {
+    await User.create({
+      name: SUPERADMIN.name,
+      email: SUPERADMIN.email,
+      passwordHash: await bcrypt.hash(SUPERADMIN.password, 12),
+      role: "superadmin",
+    });
+    console.log(`  + superadmin ${SUPERADMIN.email}`);
+  }
+
+  // --- Sample pharmacy ----------------------------------------------------
+  let pharmacy = await Pharmacy.findOne({ slug: SAMPLE_PHARMACY.slug });
+  if (!pharmacy) {
+    const [created] = await Pharmacy.create([
+      {
+        name: SAMPLE_PHARMACY.name,
+        slug: SAMPLE_PHARMACY.slug,
+        status: "active",
+        ownerName: SAMPLE_PHARMACY.ownerName,
+        ownerEmail: SAMPLE_PHARMACY.ownerEmail,
+      },
+    ]);
+    pharmacy = created!;
+    console.log(`  + pharmacy ${pharmacy.name}`);
+  } else {
+    console.log(`  pharmacy ${pharmacy.name} already exists`);
+  }
+
+  const pharmacyId = pharmacy._id;
+
+  const settingsExisted = await Setting.findOne({
+    pharmacyId,
+    key: "business",
+  }).lean();
   if (settingsExisted) {
     console.log("  shop settings already present, keeping them");
   } else {
-    await Setting.create({ key: "business", ...DEFAULT_SETTINGS });
+    await Setting.create({ pharmacyId, key: "business", ...DEFAULT_SETTINGS });
     console.log(`  shop settings created (${DEFAULT_SETTINGS.businessName})`);
   }
 
-  const mainBranch = await ensureDefaultBranch();
+  const mainBranch = await ensureDefaultBranch(pharmacyId);
   console.log(`  default branch ${mainBranch.code} (${mainBranch.name})`);
 
   function asSession(
@@ -432,40 +479,46 @@ async function main() {
       name: user.name,
       email: user.email,
       role: user.role as Role,
+      pharmacyId: String(pharmacyId),
+      pharmacyName: pharmacy!.name,
+      pharmacySlug: pharmacy!.slug,
       branchId: String(mainBranch._id),
       branchCode: mainBranch.code,
       branchName: mainBranch.name,
     };
   }
 
-  // --- Users --------------------------------------------------------------
-  for (const user of USERS) {
-    const existing = await User.findOne({ email: user.email });
-    if (existing) {
-      if (!existing.branchId) {
-        existing.branchId = mainBranch._id;
-        await existing.save();
-        console.log(`  user ${user.email} attached to ${mainBranch.code}`);
-      } else {
-        console.log(`  user ${user.email} already exists, skipping`);
-      }
-      continue;
+  // --- Pharmacy owner -----------------------------------------------------
+  const existingOwner = await User.findOne({ email: SAMPLE_PHARMACY.ownerEmail });
+  if (existingOwner) {
+    if (!existingOwner.pharmacyId) existingOwner.pharmacyId = pharmacyId;
+    if (!existingOwner.branchId) existingOwner.branchId = mainBranch._id;
+    if (existingOwner.role !== "admin") existingOwner.role = "admin";
+    await existingOwner.save();
+    if (!pharmacy.ownerUserId) {
+      pharmacy.ownerUserId = existingOwner._id;
+      await pharmacy.save();
     }
-    await User.create({
-      name: user.name,
-      email: user.email,
-      passwordHash: await bcrypt.hash(user.password, 12),
-      role: user.role,
+    console.log(`  owner ${SAMPLE_PHARMACY.ownerEmail} ready`);
+  } else {
+    const owner = await User.create({
+      name: SAMPLE_PHARMACY.ownerName,
+      email: SAMPLE_PHARMACY.ownerEmail,
+      passwordHash: await bcrypt.hash(SAMPLE_PHARMACY.ownerPassword, 12),
+      role: "admin",
+      pharmacyId,
       branchId: mainBranch._id,
     });
-    console.log(`  + ${user.email}`);
+    pharmacy.ownerUserId = owner._id;
+    await pharmacy.save();
+    console.log(`  + ${SAMPLE_PHARMACY.ownerEmail}`);
   }
 
   // --- Customers ----------------------------------------------------------
   for (const customer of CUSTOMERS) {
     await Customer.updateOne(
-      { phone: customer.phone },
-      { $setOnInsert: customer },
+      { pharmacyId, phone: customer.phone },
+      { $setOnInsert: { ...customer, pharmacyId } },
       { upsert: true },
     );
   }
@@ -474,8 +527,8 @@ async function main() {
   // --- Suppliers -----------------------------------------------------------
   for (const supplier of SUPPLIERS) {
     await Supplier.updateOne(
-      { name: supplier.name },
-      { $setOnInsert: supplier },
+      { pharmacyId, name: supplier.name },
+      { $setOnInsert: { ...supplier, pharmacyId } },
       { upsert: true },
     );
   }
@@ -489,8 +542,8 @@ async function main() {
     const { batches: _batches, ...details } = seed;
 
     const medicine = await Medicine.findOneAndUpdate(
-      { name: details.name, manufacturer: details.manufacturer },
-      { $setOnInsert: details },
+      { pharmacyId, name: details.name, manufacturer: details.manufacturer },
+      { $setOnInsert: { ...details, pharmacyId } },
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
     medicineIdByName.set(details.name, String(medicine._id));
@@ -506,14 +559,14 @@ async function main() {
   // every seeded unit is traceable to a supplier delivery - and means this
   // script fails loudly if the purchase flow ever breaks.
 
-  const existingBatches = await Batch.countDocuments();
+  const existingBatches = await Batch.countDocuments({ pharmacyId });
   let grnCount = 0;
   let batchCount = 0;
 
   if (existingBatches > 0) {
     console.log("  stock already present, skipping purchase creation");
   } else {
-    const adminUser = await User.findOne({ role: "admin" }).lean();
+    const adminUser = await User.findOne({ role: "admin", pharmacyId }).lean();
     if (!adminUser) throw new Error("No admin user to record purchases against.");
 
     const actor = asSession(adminUser);
@@ -528,7 +581,9 @@ async function main() {
     }
 
     for (const [supplierName, seeds] of bySupplier) {
-      const supplier = await Supplier.findOne({ name: supplierName }).select("_id").lean();
+      const supplier = await Supplier.findOne({ pharmacyId, name: supplierName })
+        .select("_id")
+        .lean();
       if (!supplier) continue;
 
       const items = seeds.flatMap((seed) =>
@@ -595,7 +650,7 @@ async function main() {
   //
   // Only the createdAt is rewritten afterwards, to spread the bills across the
   // last two months; everything else went through the production path.
-  const existingSales = await Sale.countDocuments();
+  const existingSales = await Sale.countDocuments({ pharmacyId });
   let saleCount = 0;
 
   if (NO_SALES) {
@@ -604,16 +659,16 @@ async function main() {
     console.log("  sales already present, skipping");
   } else {
     // Whoever is at the counter sells, and that is the one account there is.
-    const sellerUser = await User.findOne({ role: "admin" }).lean();
+    const sellerUser = await User.findOne({ role: "admin", pharmacyId }).lean();
     if (!sellerUser) throw new Error("No admin user to record sales against.");
     const seller: SessionUser = asSession(sellerUser);
 
-    const sellable = await Batch.find({ quantity: { $gt: 0 } })
+    const sellable = await Batch.find({ pharmacyId, quantity: { $gt: 0 } })
       .select("medicineId")
       .lean();
     const medicineIds = [...new Set(sellable.map((b) => String(b.medicineId)))];
 
-    const customers = await Customer.find().select("_id name").lean();
+    const customers = await Customer.find({ pharmacyId }).select("_id name").lean();
     const modes = ["cash", "cash", "cash", "esewa", "khalti", "card"] as const;
 
     // Deterministic pseudo-random, so a reseed produces the same demo data.
@@ -675,9 +730,12 @@ async function main() {
   }
 
   const [totalMedicines, totalBatches, totalUnits] = await Promise.all([
-    Medicine.countDocuments(),
-    Batch.countDocuments(),
-    Batch.aggregate([{ $group: { _id: null, units: { $sum: "$quantity" } } }]),
+    Medicine.countDocuments({ pharmacyId }),
+    Batch.countDocuments({ pharmacyId }),
+    Batch.aggregate([
+      { $match: { pharmacyId } },
+      { $group: { _id: null, units: { $sum: "$quantity" } } },
+    ]),
   ]);
 
   console.log("\nSeed complete.");
@@ -685,11 +743,12 @@ async function main() {
   console.log(`  batches   : ${totalBatches}`);
   console.log(`  units     : ${(totalUnits[0]?.units as number) ?? 0}`);
   console.log("\nSign in with:");
-  for (const user of USERS) {
-    console.log(`  ${user.email}  /  ${user.password}`);
-  }
+  console.log(`  superadmin  ${SUPERADMIN.email}  /  ${SUPERADMIN.password}`);
   console.log(
-    "\nChange this password before putting the system in front of customers.",
+    `  pharmacy    ${SAMPLE_PHARMACY.ownerEmail}  /  ${SAMPLE_PHARMACY.ownerPassword}`,
+  );
+  console.log(
+    "\nChange these passwords before putting the system in front of customers.",
   );
 
   await mongoose.disconnect();

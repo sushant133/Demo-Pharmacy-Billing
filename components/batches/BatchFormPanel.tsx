@@ -5,6 +5,7 @@ import { useCallback, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/client";
 import { money } from "@/lib/format";
 import { unitMargin } from "@/lib/purchase-math";
+import { DualDateField } from "@/components/DualDateField";
 import { Field, SlideOver } from "@/components/SlideOver";
 import { batchUpdateSchema } from "@/lib/validation";
 
@@ -174,33 +175,29 @@ export function BatchFormPanel({
           />
         </Field>
 
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Mfg date" htmlFor="mfgDate" error={errors.mfgDate}>
-            <input
-              id="mfgDate"
-              type="date"
-              value={values.mfgDate}
-              onChange={(event) => set("mfgDate", event.target.value)}
-              className="input"
-            />
-          </Field>
+        <Field label="Mfg date" htmlFor="mfgDate" error={errors.mfgDate}>
+          <DualDateField
+            id="mfgDate"
+            value={values.mfgDate}
+            onChange={(next) => set("mfgDate", next)}
+            aria-label="Manufacturing date"
+          />
+        </Field>
 
-          <Field
-            label="Expiry date"
-            htmlFor="expiryDate"
-            error={errors.expiryDate}
-            hint="Drives FEFO order."
-          >
-            <input
-              id="expiryDate"
-              type="date"
-              value={values.expiryDate}
-              onChange={(event) => set("expiryDate", event.target.value)}
-              className="input"
-              required
-            />
-          </Field>
-        </div>
+        <Field
+          label="Expiry date"
+          htmlFor="expiryDate"
+          error={errors.expiryDate}
+          hint="English or Nepali — both are the same day. Drives FEFO order."
+        >
+          <DualDateField
+            id="expiryDate"
+            value={values.expiryDate}
+            onChange={(next) => set("expiryDate", next)}
+            required
+            aria-label="Expiry date"
+          />
+        </Field>
 
         <Field
           label="Quantity on shelf"

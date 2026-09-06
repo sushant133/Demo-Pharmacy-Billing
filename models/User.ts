@@ -13,13 +13,22 @@ const userSchema = new Schema(
       index: true,
     },
     passwordHash: { type: String, required: true, select: false },
-    // One role, and it is the whole shop. See lib/roles.ts.
     role: { type: String, required: true, enum: ROLES, default: "admin" },
+    /**
+     * The pharmacy this account belongs to. Null only for the platform
+     * superadmin, who creates pharmacies rather than working inside one.
+     */
+    pharmacyId: {
+      type: Schema.Types.ObjectId,
+      ref: "Pharmacy",
+      default: null,
+      index: true,
+    },
     /** The outlet this user works at. Where their sales and receipts land. */
     branchId: {
       type: Schema.Types.ObjectId,
       ref: "Branch",
-      required: true,
+      default: null,
       index: true,
     },
     isActive: { type: Boolean, default: true },

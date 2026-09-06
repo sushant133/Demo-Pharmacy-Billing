@@ -18,6 +18,10 @@ export interface SessionUser {
   name: string;
   email: string;
   role: Role;
+  /** Empty for the platform superadmin, who belongs to no pharmacy. */
+  pharmacyId: string;
+  pharmacyName: string;
+  pharmacySlug: string;
   /** The outlet the user physically works at; where their stock moves. */
   branchId: string;
   branchCode: string;
@@ -39,6 +43,9 @@ export async function signSession(user: SessionUser): Promise<string> {
     name: user.name,
     email: user.email,
     role: user.role,
+    pharmacyId: user.pharmacyId,
+    pharmacyName: user.pharmacyName,
+    pharmacySlug: user.pharmacySlug,
     branchId: user.branchId,
     branchCode: user.branchCode,
     branchName: user.branchName,
@@ -73,6 +80,9 @@ export async function verifySession(token: string): Promise<SessionUser | null> 
       name: typeof payload.name === "string" ? payload.name : "",
       email: typeof payload.email === "string" ? payload.email : "",
       role,
+      pharmacyId: str(payload.pharmacyId),
+      pharmacyName: str(payload.pharmacyName),
+      pharmacySlug: str(payload.pharmacySlug),
       branchId: str(payload.branchId),
       branchCode: str(payload.branchCode),
       branchName: str(payload.branchName),

@@ -5,6 +5,7 @@ import { getSupplierBalance } from "@/lib/suppliers";
 import { Batch } from "@/models/Batch";
 import { Purchase } from "@/models/Purchase";
 import { Supplier } from "@/models/Supplier";
+import { pharmacyFilter, pharmacyObjectId } from "@/lib/tenant";
 import { objectIdSchema, supplierUpdateSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
@@ -19,26 +20,29 @@ async function supplierId(ctx: Ctx): Promise<string> {
 
 /** GET /api/suppliers/:id - the supplier plus its derived ledger position. */
 export const GET = withRoute<Ctx>(async (_req, ctx) => {
-  await requirePermission("supplier:read");
+  const user = await requirePermission("supplier:read");
   const id = await supplierId(ctx);
   await connectDB();
 
-  const supplier = await Supplier.findById(id).lean();
+  const supplier = await Supplier.findOne({ _id: id, ...pharmacyFilter(user) }).lean();
   if (!supplier) throw ApiError.notFound("That supplier no longer exists.");
 
-  const balance = await getSupplierBalance(id);
+  const balance = await getSupplierBalance(id, pharmacyObjectId(user));
 
   return ok({ id: String(supplier._id), ...supplier, balance });
 });
 
 /** PATCH /api/suppliers/:id */
 export const PATCH = withRoute<Ctx>(async (req, ctx) => {
-  await requirePermission("supplier:write");
+  const user = await requirePermission("supplier:write");
   const id = await supplierId(ctx);
   const update = await parseJson(req, supplierUpdateSchema);
   await connectDB();
 
-  const supplier = await Supplier.findByIdAndUpdate(id, update, {
+  const supplier = await Supplier.findOneAndUpdate(
+    { _id: id, ...pharmacyFilter(user) },
+    update,
+    {
     new: true,
     runValidators: true,
   }).lean();
@@ -55,16 +59,16 @@ export const PATCH = withRoute<Ctx>(async (req, ctx) => {
  * removing them would orphan every batch that came from them.
  */
 export const DELETE = withRoute<Ctx>(async (_req, ctx) => {
-  await requirePermission("supplier:delete");
+  const user = await requirePermission("supplier:delete");
   const id = await supplierId(ctx);
   await connectDB();
 
-  const supplier = await Supplier.findById(id);
+  const supplier = await Supplier.findOne({ _id: id, ...pharmacyFilter(user) });
   if (!supplier) throw ApiError.notFound("That supplier no longer exists.");
 
   const [purchaseCount, batchCount] = await Promise.all([
-    Purchase.countDocuments({ supplierId: id }),
-    Batch.countDocuments({ supplierId: id }),
+    Purchase.countDocuments({ supplierId: id, ...pharmacyFilter(user) }),
+    Batch.countDocuments({ supplierId: id, ...pharmacyFilter(user) }),
   ]);
 
   if (purchaseCount > 0 || batchCount > 0) {

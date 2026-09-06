@@ -1,7 +1,9 @@
+import { redirect } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { requirePageSession } from "@/lib/auth";
 import { resolveViewScope, switchableBranches } from "@/lib/branch-scope";
 import { withDbRead } from "@/lib/db";
+import { getSettings } from "@/lib/settings";
 
 /**
  * Layout for every authenticated screen.
@@ -22,12 +24,18 @@ export default async function AppLayout({
   children: React.ReactNode;
 }) {
   const user = await requirePageSession();
-  const [scope, branches] = await withDbRead(() =>
+  if (user.role === "superadmin") redirect("/superadmin");
+
+  const [scope, branches, settings] = await withDbRead(() =>
     Promise.all([
       resolveViewScope(user),
       user.role === "admin" ? switchableBranches(user) : Promise.resolve([]),
+      getSettings(user.pharmacyId, user.pharmacyName),
     ]),
   );
+
+  const pharmacyName =
+    settings.businessName.trim() || user.pharmacyName.trim() || "Pharmacy";
 
   return (
     <AppShell
@@ -36,6 +44,7 @@ export default async function AppLayout({
         email: user.email,
         role: user.role,
         branchName: user.branchName || scope.label,
+        pharmacyName,
       }}
       scope={{
         code: scope.code,

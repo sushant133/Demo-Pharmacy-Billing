@@ -3,9 +3,11 @@ import Link from "next/link";
 import { requirePagePermission } from "@/lib/auth";
 import { branchFilter, resolveViewScope } from "@/lib/branch-scope";
 import { withDbRead } from "@/lib/db";
+import { pharmacyFilter } from "@/lib/tenant";
 import { dateRangeFromStrings, toDateInputValue } from "@/lib/dates";
 import { formatDateTime, integer, money } from "@/lib/format";
 import { Sale, PAYMENT_MODES, PAYMENT_MODE_LABELS, type PaymentMode } from "@/models/Sale";
+import { DualDateField } from "@/components/DualDateField";
 import { Badge, Card, EmptyState, PageHeader, Pagination, StatCard, TableWrap } from "@/components/ui";
 
 export const metadata: Metadata = { title: "Sales" };
@@ -42,7 +44,10 @@ export default async function SalesPage({
 
   const { sales, total, summary } = await withDbRead(async () => {
     const scope = await resolveViewScope(user, params.branch);
-    const filter: Record<string, unknown> = { ...branchFilter(scope) };
+    const filter: Record<string, unknown> = {
+      ...pharmacyFilter(user),
+      ...branchFilter(scope),
+    };
     const { start, end } = dateRangeFromStrings(from, to);
     if (start || end) {
       const range: Record<string, Date> = {};
@@ -77,10 +82,38 @@ export default async function SalesPage({
         {
           $group: {
             _id: null,
-            gross: { $sum: "$totalAmount" },
-            vat: { $sum: "$vatAmount" },
-            discount: { $sum: "$discount" },
-            units: { $sum: { $sum: "$items.quantity" } },
+            gross: {
+              $sum: {
+                $subtract: [
+                  "$totalAmount",
+                  { $ifNull: ["$returnedTotal", 0] },
+                ],
+              },
+            },
+            vat: {
+              $sum: {
+                $subtract: [
+                  "$vatAmount",
+                  { $ifNull: ["$returnedVat", 0] },
+                ],
+              },
+            },
+            discount: {
+              $sum: {
+                $subtract: [
+                  "$discount",
+                  { $ifNull: ["$returnedDiscount", 0] },
+                ],
+              },
+            },
+            units: {
+              $sum: {
+                $subtract: [
+                  { $sum: "$items.quantity" },
+                  { $ifNull: ["$returnedUnits", 0] },
+                ],
+              },
+            },
           },
         },
       ]),
@@ -114,60 +147,77 @@ export default async function SalesPage({
             ? `Bills for ${from}`
             : `Bills from ${from || "the beginning"} to ${to || "today"}`
         }
+        actions={
+          <Link href="/sales/returns" className="btn-secondary">
+            Record a return
+          </Link>
+        }
       />
 
       {/* Filters - a plain GET form, so the URL carries the state. */}
       <Card className="mb-4 p-4">
-        <form method="get" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <div>
-            <label htmlFor="from" className="label">
-              From
-            </label>
-            <input id="from" type="date" name="from" defaultValue={from} className="input" />
+        <form method="get" className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="min-w-0">
+              <p className="label">From</p>
+              <DualDateField
+                id="from"
+                name="from"
+                defaultValue={from}
+                compact
+                aria-label="From"
+              />
+            </div>
+            <div className="min-w-0">
+              <p className="label">To</p>
+              <DualDateField
+                id="to"
+                name="to"
+                defaultValue={to}
+                compact
+                aria-label="To"
+              />
+            </div>
           </div>
-          <div>
-            <label htmlFor="to" className="label">
-              To
-            </label>
-            <input id="to" type="date" name="to" defaultValue={to} className="input" />
-          </div>
-          <div>
-            <label htmlFor="paymentMode" className="label">
-              Payment
-            </label>
-            <select
-              id="paymentMode"
-              name="paymentMode"
-              defaultValue={params.paymentMode ?? ""}
-              className="input"
-            >
-              <option value="">All modes</option>
-              {PAYMENT_MODES.map((mode) => (
-                <option key={mode} value={mode}>
-                  {PAYMENT_MODE_LABELS[mode]}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label htmlFor="q" className="label">
-              Search
-            </label>
-            <input
-              id="q"
-              name="q"
-              defaultValue={params.q ?? ""}
-              placeholder="Bill no, customer, medicine"
-              className="input"
-            />
-          </div>
-          <div className="flex items-end gap-2">
-            <button type="submit" className="btn-primary flex-1">
-              Apply
-            </button>
-            <Link href="/sales" className="btn-secondary">
-              Reset
-            </Link>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[12rem_minmax(0,1fr)_auto]">
+            <div>
+              <label htmlFor="paymentMode" className="label">
+                Payment
+              </label>
+              <select
+                id="paymentMode"
+                name="paymentMode"
+                defaultValue={params.paymentMode ?? ""}
+                className="input"
+              >
+                <option value="">All modes</option>
+                {PAYMENT_MODES.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {PAYMENT_MODE_LABELS[mode]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="q" className="label">
+                Search
+              </label>
+              <input
+                id="q"
+                name="q"
+                defaultValue={params.q ?? ""}
+                placeholder="Bill no, customer, medicine"
+                className="input"
+              />
+            </div>
+            <div className="flex items-end gap-2">
+              <button type="submit" className="btn-primary">
+                Apply
+              </button>
+              <Link href="/sales" className="btn-secondary">
+                Reset
+              </Link>
+            </div>
           </div>
         </form>
       </Card>
@@ -218,6 +268,13 @@ export default async function SalesPage({
                       {sale.voidedAt ? (
                         <Badge tone="rose" className="ml-2">
                           Voided
+                        </Badge>
+                      ) : (sale.returnedUnits ?? 0) > 0 ? (
+                        <Badge tone="amber" className="ml-2">
+                          {(sale.returnedUnits ?? 0) >=
+                          sale.items.reduce((sum, item) => sum + item.quantity, 0)
+                            ? "Returned"
+                            : "Partial return"}
                         </Badge>
                       ) : null}
                     </td>

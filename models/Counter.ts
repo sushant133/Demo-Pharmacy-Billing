@@ -64,6 +64,17 @@ export function displayBillNo(billNo: string): string {
 }
 
 /**
+ * What to look up in the database when someone types a bill number.
+ * Printed receipts use a slash in the fiscal year; stored numbers use a hyphen.
+ */
+export function storedBillNo(value: string): string {
+  return value
+    .trim()
+    .toUpperCase()
+    .replace(/^(INV-\d{4})\/(\d{2}-)/, "$1-$2");
+}
+
+/**
  * Formatted goods-received note number, e.g. GRN-000042.
  * Shares the same atomic sequence machinery as bill numbers.
  */

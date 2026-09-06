@@ -17,6 +17,7 @@ import {
 } from "@/lib/alert-rules";
 import { getLastSaleByMedicine, getUnitsSoldByMedicine } from "@/lib/analytics";
 import { branchFilter, type BranchScope } from "@/lib/branch-scope";
+import { pharmacyMatch } from "@/lib/tenant";
 import { onceTtl, scopeCacheKey } from "@/lib/ttl-cache";
 import { Batch } from "@/models/Batch";
 import { Medicine } from "@/models/Medicine";
@@ -220,7 +221,7 @@ export async function getStockAlerts(options?: {
 
   const [medicines, stockRows, salesByMedicine, lastSaleByMedicine] =
     await Promise.all([
-      Medicine.find({ isActive: { $ne: false } })
+      Medicine.find({ isActive: { $ne: false }, ...pharmacyMatch(options?.scope) })
         .select("name genericName unit category reorderLevel createdAt")
         .lean(),
       Batch.aggregate([

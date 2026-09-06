@@ -457,6 +457,9 @@ export default async function DashboardPage({
                   : `${integer(row.stockQuantity)} ${row.unit} left`,
               tone: row.assessment.severity,
               badge: STOCK_LABEL[row.assessment.severity],
+              href: can(user.role, "purchase:write")
+                ? `/purchases/new?medicineId=${row.medicineId}`
+                : undefined,
             }))}
           />
           <AlertList
@@ -700,6 +703,7 @@ function AlertList({
     meta: string;
     tone: StockSeverity | ExpirySeverity;
     badge: string;
+    href?: string;
   }>;
 }) {
   const toneClass: Record<string, "rose" | "amber" | "slate"> = {
@@ -726,7 +730,16 @@ function AlertList({
           {items.map((item) => (
             <li key={item.key} className="flex items-start justify-between gap-3 px-4 py-2.5">
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-slate-900">{item.name}</p>
+                {item.href ? (
+                  <Link
+                    href={item.href}
+                    className="truncate text-sm font-medium text-slate-900 hover:text-brand-700"
+                  >
+                    {item.name}
+                  </Link>
+                ) : (
+                  <p className="truncate text-sm font-medium text-slate-900">{item.name}</p>
+                )}
                 <p className="tnum truncate text-[11px] text-slate-500">{item.meta}</p>
               </div>
               <Badge tone={toneClass[item.tone] ?? "slate"}>{item.badge}</Badge>

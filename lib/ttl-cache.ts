@@ -39,11 +39,17 @@ export async function onceTtl<T>(
   return inflight;
 }
 
-export function scopeCacheKey(scope?: { code?: string | null; branchId?: unknown } | null): string {
-  if (!scope) return "all";
-  if (scope.code) return scope.code;
-  if (scope.branchId) return String(scope.branchId);
-  return "all";
+export function scopeCacheKey(
+  scope?: { code?: string | null; branchId?: unknown; pharmacyId?: unknown } | null,
+): string {
+  const pharmacy =
+    scope && "pharmacyId" in scope && scope.pharmacyId
+      ? String(scope.pharmacyId)
+      : "none";
+  if (!scope) return `${pharmacy}:all`;
+  if (scope.code) return `${pharmacy}:${scope.code}`;
+  if (scope.branchId) return `${pharmacy}:${String(scope.branchId)}`;
+  return `${pharmacy}:all`;
 }
 
 /**

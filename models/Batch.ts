@@ -18,6 +18,12 @@ import { Schema, model, models, type InferSchemaType, type Model } from "mongoos
  */
 const batchSchema = new Schema(
   {
+    pharmacyId: {
+      type: Schema.Types.ObjectId,
+      ref: "Pharmacy",
+      required: true,
+      index: true,
+    },
     branchId: {
       type: Schema.Types.ObjectId,
       ref: "Branch",
@@ -73,6 +79,7 @@ batchSchema.index({ branchId: 1, medicineId: 1, batchNumber: 1 }, { unique: true
 batchSchema.index({ branchId: 1, medicineId: 1, expiryDate: 1, quantity: 1 });
 // The expiring-soon report scans by expiry across a branch's in-stock lots.
 batchSchema.index({ branchId: 1, expiryDate: 1 });
+batchSchema.index({ pharmacyId: 1, expiryDate: 1 });
 
 batchSchema.pre("validate", function seedInitialQuantity(next) {
   if (this.isNew && !this.initialQuantity) {

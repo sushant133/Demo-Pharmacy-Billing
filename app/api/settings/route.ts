@@ -1,4 +1,4 @@
-import { ok, parseJson, withRoute } from "@/lib/api";
+import { ApiError, ok, parseJson, withRoute } from "@/lib/api";
 import { requirePermission } from "@/lib/auth";
 import { getSettings, saveSettings, vatPercent } from "@/lib/settings";
 import { settingsSchema } from "@/lib/validation";
@@ -16,15 +16,18 @@ export const dynamic = "force-dynamic";
 
 /** GET /api/settings - the current details, VAT rate as a percentage. */
 export const GET = withRoute(async () => {
-  await requirePermission("settings:manage");
-  const settings = await getSettings();
+  const user = await requirePermission("settings:manage");
+  const settings = await getSettings(user.pharmacyId, user.pharmacyName);
   return ok({ ...settings, vatRate: vatPercent(settings) });
 });
 
 /** PUT /api/settings - replace them. Creates the record on the first save. */
 export const PUT = withRoute(async (req) => {
-  await requirePermission("settings:manage");
+  const user = await requirePermission("settings:manage");
   const input = await parseJson(req, settingsSchema);
-  const settings = await saveSettings(input);
+  if (!user.pharmacyId) {
+    throw ApiError.forbidden("Settings belong to a pharmacy account.");
+  }
+  const settings = await saveSettings(input, user.pharmacyId);
   return ok({ ...settings, vatRate: vatPercent(settings) });
 });

@@ -4,6 +4,7 @@ import { connectDB } from "@/lib/db";
 import { getExpiryAlerts, getStockAlerts } from "@/lib/alerts";
 import { getMedicinePerformance, getProfitSummary } from "@/lib/analytics";
 import { branchFilter, type BranchScope } from "@/lib/branch-scope";
+import { pharmacyMatch } from "@/lib/tenant";
 import { EXPIRY_LABEL, STOCK_LABEL } from "@/lib/alert-rules";
 import { PAYMENT_MODE_LABELS, type PaymentMode } from "@/lib/constants";
 import { Batch } from "@/models/Batch";
@@ -117,14 +118,20 @@ async function salesRegister({ from, to, rangeLabel, scope }: ReportRequest): Pr
       billNo: sale.billNo,
       date: new Date(sale.createdAt as unknown as Date),
       customer: sale.customerName || "Walk-in",
-      units: sale.items.reduce((sum, item) => sum + item.quantity, 0),
+      units:
+        sale.items.reduce((sum, item) => sum + item.quantity, 0) -
+        (sale.returnedUnits ?? 0),
       subtotal: sale.subtotal,
       discount: sale.discount,
-      taxable: sale.taxableAmount,
-      vat: sale.vatAmount,
-      total: sale.totalAmount,
-      cost: sale.totalCost ?? 0,
-      profit: round2(sale.taxableAmount - (sale.totalCost ?? 0)),
+      taxable: round2(sale.taxableAmount - (sale.returnedTaxable ?? 0)),
+      vat: round2(sale.vatAmount - (sale.returnedVat ?? 0)),
+      total: round2(sale.totalAmount - (sale.returnedTotal ?? 0)),
+      cost: round2((sale.totalCost ?? 0) - (sale.returnedCost ?? 0)),
+      profit: round2(
+        sale.taxableAmount -
+          (sale.returnedTaxable ?? 0) -
+          ((sale.totalCost ?? 0) - (sale.returnedCost ?? 0)),
+      ),
       payment: PAYMENT_MODE_LABELS[sale.paymentMode as PaymentMode] ?? sale.paymentMode,
       cashier: sale.soldByName ?? "",
     })),
@@ -144,18 +151,37 @@ async function salesDetail({ from, to, rangeLabel, scope }: ReportRequest): Prom
     .lean();
 
   const rows = sales.flatMap((sale) =>
-    sale.items.map((item) => ({
+    sale.items
+      .filter((item) => item.quantity - (item.returnedQuantity ?? 0) > 0)
+      .map((item) => ({
       billNo: sale.billNo,
       date: new Date(sale.createdAt as unknown as Date),
       medicine: item.medicineName,
       batch: item.batchNumber,
       expiry: item.expiryDate ? new Date(item.expiryDate) : null,
-      quantity: item.quantity,
+      quantity: item.quantity - (item.returnedQuantity ?? 0),
       unitPrice: item.unitPrice,
       unitCost: item.unitCost ?? 0,
-      revenue: item.subtotal,
-      cost: item.lineCost ?? 0,
-      profit: round2(item.subtotal - (item.lineCost ?? 0)),
+      revenue: round2(
+        item.quantity > 0
+          ? (item.subtotal * (item.quantity - (item.returnedQuantity ?? 0))) /
+            item.quantity
+          : 0,
+      ),
+      cost: round2(
+        item.quantity > 0
+          ? ((item.lineCost ?? 0) *
+              (item.quantity - (item.returnedQuantity ?? 0))) /
+            item.quantity
+          : 0,
+      ),
+      profit: round2(
+        item.quantity > 0
+          ? ((item.subtotal - (item.lineCost ?? 0)) *
+              (item.quantity - (item.returnedQuantity ?? 0))) /
+            item.quantity
+          : 0,
+      ),
     })),
   );
 
@@ -421,16 +447,21 @@ async function purchaseRegister({
   };
 }
 
-async function payablesReport(): Promise<ReportDataset> {
+async function payablesReport(request: ReportRequest): Promise<ReportDataset> {
   await connectDB();
 
-  const suppliers = await Supplier.find().sort({ name: 1 }).lean();
-  const balances = await getBalancesFor(suppliers.map((supplier) => supplier._id));
+  const tenant = pharmacyMatch(request.scope);
+  const suppliers = await Supplier.find(tenant).sort({ name: 1 }).lean();
+  const balances = await getBalancesFor(
+    suppliers.map((supplier) => supplier._id),
+    request.scope?.pharmacyId ?? null,
+  );
 
   const now = new Date();
   const overdueRows = await Purchase.aggregate([
     {
       $match: {
+        ...tenant,
         status: "posted",
         paymentStatus: { $ne: "paid" },
         dueDate: { $lt: now },

@@ -75,17 +75,24 @@ openssl rand -base64 48
 
 ### Seed login
 
-`npm run seed` creates one account, because there is one role:
+`npm run seed` creates two accounts: the platform operator, and one sample
+pharmacy with its owner login.
 
-| Role  | Email                      | Password    | Can do                        |
-| ----- | -------------------------- | ----------- | ----------------------------- |
-| Admin | `admin@mantrapharma.local` | `Admin@123` | Everything, including deletes |
+| Role        | Email                            | Password    | Can do                                      |
+| ----------- | -------------------------------- | ----------- | ------------------------------------------- |
+| Superadmin  | `superadmin@mantrapharma.local`  | `Super@123` | Create, suspend and reset pharmacy accounts |
+| Admin       | `admin@mantrapharma.local`       | `Admin@123` | Run that one pharmacy — billing, stock, the lot |
+
+Each pharmacy is a sealed tenant. Superadmin creates the owner account; the
+owner signs in on the same screen and only ever sees their own catalogue,
+stock, bills, suppliers and settings. Two pharmacies sharing the database
+cannot read each other.
 
 A shop this size is run from one counter by one person: the same hands bill,
 dispense, receive the delivery and read the month's figures. Splitting that
 person into a "pharmacist" who could not open the branch screen and a "cashier"
 who could not see a margin only ever got in the way, so both were folded into
-admin.
+the pharmacy owner (admin).
 
 A database seeded before that change is migrated with `npm run migrate:roles`
 (a dry run; add `-- --apply` to write). It promotes every remaining account to
@@ -97,11 +104,17 @@ otherwise leave two well-known logins holding every permission in the shop.
 Bills and GRNs are unaffected either way — they store the name of whoever
 entered them on the document itself.
 
-Override the credentials with `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`.
-**Change the password before the system goes anywhere near a real counter.**
+Override the credentials with `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` and
+`SEED_SUPERADMIN_EMAIL` / `SEED_SUPERADMIN_PASSWORD`.
+**Change these passwords before the system goes anywhere near a real counter.**
+
+Existing single-shop databases need `npm run backfill:pharmacies -- --apply`
+once, so every document attaches to a default pharmacy and a superadmin login
+is created. Then open `/superadmin` to add more pharmacies.
 
 `npm run seed` is additive and safe to re-run. `npm run seed:fresh` wipes
-medicines, batches, sales, users, customers, suppliers and purchases first.
+medicines, batches, sales, users, customers, suppliers, purchases and
+pharmacies first.
 
 The sample data is built to exercise the system immediately: 4 suppliers, 20
 medicines, and 24 batches that arrive through **4 real posted GRNs** — the seed
@@ -124,6 +137,7 @@ so the payables ledger shows both paid and unpaid states.
 | `npm run typecheck`  | `tsc --noEmit`, strict mode                         |
 | `npm run seed`       | Load sample data                                    |
 | `npm run seed:fresh` | Wipe, then load sample data                         |
+| `npm run backfill:pharmacies` | Attach existing data to a default pharmacy (dry run) |
 | `npm run smoke`      | Phase 1 end-to-end API check (server on port 3111)   |
 | `npm run smoke:phase2` | Phase 2 purchasing end-to-end check                |
 | `npm run smoke:phase3` | Phase 3 reporting/export end-to-end check          |
@@ -574,8 +588,9 @@ Phase 5 still covers CBMS sync, audit logs, backup/restore and a Nepali
 language toggle.
 
 Existing databases need `npm run backfill:branches -- --apply` once, so
-users, lots, bills and GRNs attach to the default outlet. The seed creates
-that outlet itself.
+users, lots, bills and GRNs attach to the default outlet, and
+`npm run backfill:pharmacies -- --apply` so every shop document attaches to a
+pharmacy tenant and a superadmin login exists. The seed creates both itself.
 
 **Not yet built, and deliberately so:** there is no purchase-return or
 debit-note flow. Cancelling a GRN whose stock has been sold is refused, and the

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { apiFetch } from "@/lib/client";
 import { cx } from "@/components/ui";
+import { MEDICINE_CATEGORIES } from "@/lib/constants";
 import { settingsSchema } from "@/lib/validation";
 
 /**
@@ -37,22 +38,50 @@ export interface SettingsValues {
   website: string;
   billTerms: string;
   billFooterNote: string;
+  medicineCategories: string[];
 }
 
 export function SettingsForm({ initial }: { initial: SettingsValues }) {
   const router = useRouter();
-  const [values, setValues] = useState<SettingsValues>(initial);
-  const [saved, setSaved] = useState<SettingsValues>(initial);
+  const [values, setValues] = useState<SettingsValues>({
+    ...initial,
+    medicineCategories: initial.medicineCategories ?? [],
+  });
+  const [saved, setSaved] = useState<SettingsValues>({
+    ...initial,
+    medicineCategories: initial.medicineCategories ?? [],
+  });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [categoryDraft, setCategoryDraft] = useState("");
+  const [categoryHint, setCategoryHint] = useState<string | null>(null);
 
   const dirty = JSON.stringify(values) !== JSON.stringify(saved);
 
   function set<K extends keyof SettingsValues>(key: K, value: SettingsValues[K]) {
     setValues((current) => ({ ...current, [key]: value }));
     setSavedAt(null);
+  }
+
+  function addCategory() {
+    const name = categoryDraft.trim();
+    if (!name) return;
+    const key = name.toLowerCase();
+    if (MEDICINE_CATEGORIES.some((entry) => entry.toLowerCase() === key)) {
+      setCategoryHint(`“${name}” is already in the standard list.`);
+      setCategoryDraft("");
+      return;
+    }
+    if (values.medicineCategories.some((entry) => entry.toLowerCase() === key)) {
+      setCategoryHint(`“${name}” is already added.`);
+      setCategoryDraft("");
+      return;
+    }
+    set("medicineCategories", [...values.medicineCategories, name]);
+    setCategoryDraft("");
+    setCategoryHint(null);
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -263,6 +292,77 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
             onChange={(value) => set("website", value)}
             className="sm:col-span-2"
           />
+        </Section>
+
+        <Section
+          title="Medicine categories"
+          description="The usual list is always available. Add extra names your shop uses, such as Ayurvedic or Veterinary."
+        >
+          <div className="sm:col-span-2">
+            <p className="mb-2 text-xs text-slate-500">
+              Standard: {MEDICINE_CATEGORIES.filter((name) => name !== "Other").join(", ")}
+              , then Other.
+            </p>
+            {values.medicineCategories.length > 0 ? (
+              <ul className="mb-3 flex flex-wrap gap-1.5">
+                {values.medicineCategories.map((name) => (
+                  <li
+                    key={name}
+                    className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700"
+                  >
+                    {name}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        set(
+                          "medicineCategories",
+                          values.medicineCategories.filter((entry) => entry !== name),
+                        )
+                      }
+                      className="rounded-full p-0.5 text-slate-400 hover:bg-slate-200 hover:text-rose-600"
+                      aria-label={`Remove ${name}`}
+                    >
+                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
+                      </svg>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mb-3 text-xs text-slate-500">No extra categories yet.</p>
+            )}
+            <div className="flex gap-2">
+              <input
+                id="settings-category-draft"
+                value={categoryDraft}
+                onChange={(event) => {
+                  setCategoryDraft(event.target.value);
+                  setCategoryHint(null);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    addCategory();
+                  }
+                }}
+                placeholder="e.g. Ayurvedic"
+                className="input"
+                aria-label="New category name"
+              />
+              <button type="button" onClick={addCategory} className="btn-secondary shrink-0">
+                Add
+              </button>
+            </div>
+            {categoryHint ? (
+              <p className="mt-1.5 text-xs text-amber-700">{categoryHint}</p>
+            ) : (
+              <p className="mt-1.5 text-xs text-slate-500">
+                These appear in Add medicine. You can still type a one-off name by
+                choosing Other.
+              </p>
+            )}
+          </div>
         </Section>
 
         <Section

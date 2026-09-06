@@ -5,10 +5,13 @@ import { requirePagePermission } from "@/lib/auth";
 import { config } from "@/lib/config";
 import { withDbRead } from "@/lib/db";
 import { dateInputValue, toDateInputValue } from "@/lib/dates";
+import { latestBatchPrices } from "@/lib/purchases";
 import { can } from "@/lib/roles";
 import { Medicine } from "@/models/Medicine";
 import { Purchase } from "@/models/Purchase";
 import { Supplier } from "@/models/Supplier";
+import { pharmacyFilter, pharmacyObjectId } from "@/lib/tenant";
+import { resolveUnitsPerStrip } from "@/lib/pack";
 import { objectIdSchema } from "@/lib/validation";
 import { PageHeader } from "@/components/ui";
 import { PurchaseForm } from "@/components/purchases/PurchaseForm";
@@ -39,28 +42,33 @@ export default async function EditPurchasePage({
   const purchaseId = objectIdSchema.safeParse(id);
   if (!purchaseId.success) notFound();
 
-  const { purchase, suppliers, medicines } = await withDbRead(async () => {
-    const purchase = await Purchase.findById(purchaseId.data).lean();
+  const { purchase, suppliers, medicines, lastPrices } = await withDbRead(
+    async () => {
+    const purchase = await Purchase.findOne({
+      _id: purchaseId.data,
+      ...pharmacyFilter(user),
+    }).lean();
     if (!purchase) notFound();
 
     // Anything already posted or cancelled is immutable - send them to the
     // detail view rather than showing a form that could not be saved.
     if (purchase.status !== "draft") redirect(`/purchases/${String(purchase._id)}`);
 
-    const [suppliers, medicines] = await Promise.all([
-      Supplier.find({ isActive: { $ne: false } })
+    const [suppliers, medicines, lastPrices] = await Promise.all([
+      Supplier.find({ isActive: { $ne: false }, ...pharmacyFilter(user) })
         .sort({ name: 1 })
         .select("name paymentTermsDays")
         .limit(500)
         .lean(),
-      Medicine.find({ isActive: { $ne: false } })
+      Medicine.find({ isActive: { $ne: false }, ...pharmacyFilter(user) })
         .sort({ name: 1 })
-        .select("name unit manufacturer")
+        .select("name unit manufacturer genericName packSize unitsPerStrip")
         .limit(1000)
         .lean(),
+      latestBatchPrices(pharmacyObjectId(user)),
     ]);
 
-    return { purchase, suppliers, medicines };
+    return { purchase, suppliers, medicines, lastPrices };
   });
 
   return (
@@ -81,12 +89,24 @@ export default async function EditPurchasePage({
           name: supplier.name,
           paymentTermsDays: supplier.paymentTermsDays ?? 0,
         }))}
-        medicines={medicines.map((medicine) => ({
-          id: String(medicine._id),
-          name: medicine.name,
-          unit: medicine.unit ?? "unit",
-          manufacturer: medicine.manufacturer ?? "",
-        }))}
+        medicines={medicines.map((medicine) => {
+          const last = lastPrices.get(String(medicine._id));
+          return {
+            id: String(medicine._id),
+            name: medicine.name,
+            unit: medicine.unit ?? "unit",
+            manufacturer: medicine.manufacturer ?? "",
+            genericName: medicine.genericName ?? "",
+            packSize: medicine.packSize ?? "",
+            unitsPerStrip: resolveUnitsPerStrip(
+              medicine.unit ?? "unit",
+              medicine.packSize ?? "",
+              medicine.unitsPerStrip,
+            ),
+            lastCostPrice: last?.costPrice ?? null,
+            lastSalePrice: last?.salePrice ?? null,
+          };
+        })}
         defaultVatRate={config.vatRate}
         today={toDateInputValue()}
         canPost={can(user.role, "purchase:post")}
@@ -110,6 +130,7 @@ export default async function EditPurchasePage({
             costPrice: item.costPrice,
             salePrice: item.salePrice,
             discount: item.discount,
+            applySalePriceToStock: Boolean(item.applySalePriceToStock),
           })),
         }}
       />

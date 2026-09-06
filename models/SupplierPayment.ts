@@ -15,6 +15,12 @@ export { SUPPLIER_PAYMENT_METHODS };
  */
 const supplierPaymentSchema = new Schema(
   {
+    pharmacyId: {
+      type: Schema.Types.ObjectId,
+      ref: "Pharmacy",
+      required: true,
+      index: true,
+    },
     supplierId: {
       type: Schema.Types.ObjectId,
       ref: "Supplier",

@@ -4,6 +4,7 @@ import { connectDB, withDbWrite } from "@/lib/db";
 import { round2 } from "@/lib/purchase-math";
 import { getBalancesFor } from "@/lib/suppliers";
 import { Supplier } from "@/models/Supplier";
+import { pharmacyFilter, pharmacyObjectId } from "@/lib/tenant";
 import { supplierQuerySchema, supplierSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
@@ -17,11 +18,11 @@ export const dynamic = "force-dynamic";
  * without "what do I owe them" is not much use to whoever is paying the bills.
  */
 export const GET = withRoute(async (req) => {
-  await requirePermission("supplier:read");
+  const user = await requirePermission("supplier:read");
   const { q, status, page, pageSize } = parseQuery(req, supplierQuerySchema);
   await connectDB();
 
-  const filter: Record<string, unknown> = {};
+  const filter: Record<string, unknown> = { ...pharmacyFilter(user) };
   if (status === "active") filter.isActive = { $ne: false };
   if (status === "inactive") filter.isActive = false;
 
@@ -45,7 +46,10 @@ export const GET = withRoute(async (req) => {
     Supplier.countDocuments(filter),
   ]);
 
-  const balances = await getBalancesFor(docs.map((doc) => doc._id));
+  const balances = await getBalancesFor(
+    docs.map((doc) => doc._id),
+    pharmacyObjectId(user),
+  );
 
   let rows = docs.map((doc) => {
     const balance = balances.get(String(doc._id)) ?? { purchased: 0, paid: 0 };
@@ -86,10 +90,12 @@ export const GET = withRoute(async (req) => {
 
 /** POST /api/suppliers */
 export const POST = withRoute(async (req) => {
-  await requirePermission("supplier:write");
+  const user = await requirePermission("supplier:write");
   const input = await parseJson(req, supplierSchema);
 
-  const supplier = await withDbWrite(() => Supplier.create(input));
+  const supplier = await withDbWrite(() =>
+    Supplier.create({ ...input, ...pharmacyFilter(user) }),
+  );
   return created({
     id: String(supplier._id),
     name: supplier.name,

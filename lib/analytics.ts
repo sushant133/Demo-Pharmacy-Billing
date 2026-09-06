@@ -46,6 +46,18 @@ function round2(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
+/** Bill field minus customer returns recorded on it. Missing return totals count as zero. */
+function netSum(field: string, returnedField: string) {
+  return {
+    $sum: {
+      $subtract: [
+        { $ifNull: [`$${field}`, 0] },
+        { $ifNull: [`$${returnedField}`, 0] },
+      ],
+    },
+  };
+}
+
 /** Only completed sales count; voided bills are excluded everywhere. */
 function saleMatch(from: Date, to: Date, scope?: BranchScope): PipelineStage.Match {
   return {
@@ -89,13 +101,20 @@ export async function getProfitSummary(
     {
       $group: {
         _id: null,
-        revenue: { $sum: "$taxableAmount" },
-        cost: { $sum: "$totalCost" },
-        discount: { $sum: "$discount" },
-        vat: { $sum: "$vatAmount" },
-        collected: { $sum: "$totalAmount" },
+        revenue: netSum("taxableAmount", "returnedTaxable"),
+        cost: netSum("totalCost", "returnedCost"),
+        discount: netSum("discount", "returnedDiscount"),
+        vat: netSum("vatAmount", "returnedVat"),
+        collected: netSum("totalAmount", "returnedTotal"),
         billCount: { $sum: 1 },
-        unitCount: { $sum: { $sum: "$items.quantity" } },
+        unitCount: {
+          $sum: {
+            $subtract: [
+              { $sum: "$items.quantity" },
+              { $ifNull: ["$returnedUnits", 0] },
+            ],
+          },
+        },
         // A sale with revenue but no recorded cost predates Phase 3.
         missingCost: {
           $sum: {
@@ -167,8 +186,8 @@ export async function getSalesSeries(
             timezone: config.timezone,
           },
         },
-        revenue: { $sum: "$taxableAmount" },
-        cost: { $sum: "$totalCost" },
+        revenue: netSum("taxableAmount", "returnedTaxable"),
+        cost: netSum("totalCost", "returnedCost"),
         billCount: { $sum: 1 },
       },
     },
@@ -320,6 +339,17 @@ export async function getMedicinePerformance(
     { $unwind: "$items" },
     {
       $addFields: {
+        netQty: {
+          $subtract: [
+            "$items.quantity",
+            { $ifNull: ["$items.returnedQuantity", 0] },
+          ],
+        },
+      },
+    },
+    { $match: { netQty: { $gt: 0 } } },
+    {
+      $addFields: {
         // Guard the divide: a fully discounted bill can have subtotal 0.
         lineShare: {
           $cond: [
@@ -328,25 +358,38 @@ export async function getMedicinePerformance(
             0,
           ],
         },
+        qtyShare: {
+          $cond: [
+            { $gt: ["$items.quantity", 0] },
+            { $divide: ["$netQty", "$items.quantity"] },
+            0,
+          ],
+        },
       },
     },
     {
       $addFields: {
         lineNetRevenue: {
-          $subtract: [
-            "$items.subtotal",
-            { $multiply: ["$discount", "$lineShare"] },
+          $multiply: [
+            {
+              $subtract: [
+                "$items.subtotal",
+                { $multiply: ["$discount", "$lineShare"] },
+              ],
+            },
+            "$qtyShare",
           ],
         },
+        lineNetCost: { $multiply: ["$items.lineCost", "$qtyShare"] },
       },
     },
     {
       $group: {
         _id: "$items.medicineId",
         medicineName: { $last: "$items.medicineName" },
-        unitsSold: { $sum: "$items.quantity" },
+        unitsSold: { $sum: "$netQty" },
         revenue: { $sum: "$lineNetRevenue" },
-        cost: { $sum: "$items.lineCost" },
+        cost: { $sum: "$lineNetCost" },
         bills: { $addToSet: "$_id" },
       },
     },
@@ -399,7 +442,7 @@ export async function getPaymentMix(
       $group: {
         _id: "$paymentMode",
         billCount: { $sum: 1 },
-        amount: { $sum: "$totalAmount" },
+        amount: netSum("totalAmount", "returnedTotal"),
       },
     },
     { $sort: { amount: -1 } },
@@ -470,7 +513,7 @@ export async function getHourlySales(
     {
       $group: {
         _id: { $hour: { date: "$createdAt", timezone: config.timezone } },
-        amount: { $sum: "$totalAmount" },
+        amount: netSum("totalAmount", "returnedTotal"),
         billCount: { $sum: 1 },
       },
     },
@@ -505,6 +548,17 @@ export async function getCategoryMix(
     saleMatch(from, to, scope),
     { $unwind: "$items" },
     {
+      $addFields: {
+        netQty: {
+          $subtract: [
+            "$items.quantity",
+            { $ifNull: ["$items.returnedQuantity", 0] },
+          ],
+        },
+      },
+    },
+    { $match: { netQty: { $gt: 0 } } },
+    {
       $lookup: {
         from: "medicines",
         localField: "items.medicineId",
@@ -515,8 +569,21 @@ export async function getCategoryMix(
     {
       $group: {
         _id: { $ifNull: [{ $first: "$med.category" }, "Other"] },
-        revenue: { $sum: "$items.subtotal" },
-        units: { $sum: "$items.quantity" },
+        revenue: {
+          $sum: {
+            $cond: [
+              { $gt: ["$items.quantity", 0] },
+              {
+                $multiply: [
+                  "$items.subtotal",
+                  { $divide: ["$netQty", "$items.quantity"] },
+                ],
+              },
+              0,
+            ],
+          },
+        },
+        units: { $sum: "$netQty" },
       },
     },
     { $sort: { revenue: -1 } },
@@ -576,7 +643,7 @@ export async function getPurchaseVsSales(
     ]),
     Sale.aggregate([
       saleMatch(from, to, scope),
-      { $group: { _id: null, total: { $sum: "$totalCost" } } },
+      { $group: { _id: null, total: netSum("totalCost", "returnedCost") } },
     ]),
   ]);
 
@@ -606,7 +673,19 @@ export async function getUnitsSoldByMedicine(
       const rows = await Sale.aggregate([
         saleMatch(from, to, scope),
         { $unwind: "$items" },
-        { $group: { _id: "$items.medicineId", units: { $sum: "$items.quantity" } } },
+        {
+          $group: {
+            _id: "$items.medicineId",
+            units: {
+              $sum: {
+                $subtract: [
+                  "$items.quantity",
+                  { $ifNull: ["$items.returnedQuantity", 0] },
+                ],
+              },
+            },
+          },
+        },
       ]);
 
       return new Map(
@@ -633,6 +712,21 @@ export async function getLastSaleByMedicine(
     const rows = await Sale.aggregate([
       { $match: { voidedAt: null, createdAt: { $gte: since }, ...branchFilter(scope) } },
       { $unwind: "$items" },
+      {
+        $match: {
+          $expr: {
+            $gt: [
+              {
+                $subtract: [
+                  "$items.quantity",
+                  { $ifNull: ["$items.returnedQuantity", 0] },
+                ],
+              },
+              0,
+            ],
+          },
+        },
+      },
       { $group: { _id: "$items.medicineId", lastSoldAt: { $max: "$createdAt" } } },
     ]);
 

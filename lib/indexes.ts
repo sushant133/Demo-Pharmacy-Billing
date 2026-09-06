@@ -1,0 +1,34 @@
+import { Batch } from "@/models/Batch";
+import { Branch } from "@/models/Branch";
+import { Customer } from "@/models/Customer";
+import { Medicine } from "@/models/Medicine";
+import { Pharmacy } from "@/models/Pharmacy";
+import { Purchase } from "@/models/Purchase";
+import { Sale } from "@/models/Sale";
+import { Setting } from "@/models/Setting";
+import { Supplier } from "@/models/Supplier";
+import { SupplierPayment } from "@/models/SupplierPayment";
+import { User } from "@/models/User";
+
+/**
+ * Rebuild declared indexes and drop ones the schemas no longer list.
+ *
+ * Connection setup sets `autoIndex: false` so boot stays fast; seed and the
+ * pharmacy backfill call this after the tenant fields exist so unique rules
+ * become per-pharmacy rather than global.
+ */
+export async function syncTenantIndexes(): Promise<void> {
+  await Promise.all([
+    Pharmacy.syncIndexes(),
+    User.syncIndexes(),
+    Branch.syncIndexes(),
+    Medicine.syncIndexes(),
+    Batch.syncIndexes(),
+    Sale.syncIndexes(),
+    Purchase.syncIndexes(),
+    Supplier.syncIndexes(),
+    Customer.syncIndexes(),
+    Setting.syncIndexes(),
+    SupplierPayment.syncIndexes(),
+  ]);
+}

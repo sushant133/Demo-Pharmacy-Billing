@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Types } from "mongoose";
 import { requirePagePermission } from "@/lib/auth";
 import { branchFilter, resolveViewScope } from "@/lib/branch-scope";
+import { pharmacyFilter } from "@/lib/tenant";
 import { config } from "@/lib/config";
 import { withDbRead } from "@/lib/db";
 import { addDays, dateInputValue } from "@/lib/dates";
@@ -55,7 +56,10 @@ export default async function BatchesPage({
 
   const { batches, total, totals } = await withDbRead(async () => {
     const scope = await resolveViewScope(user, params.branch);
-    const filter: Record<string, unknown> = { ...branchFilter(scope) };
+    const filter: Record<string, unknown> = {
+      ...pharmacyFilter(user),
+      ...branchFilter(scope),
+    };
 
     if (status === "in-stock") {
       filter.quantity = { $gt: 0 };
@@ -75,6 +79,7 @@ export default async function BatchesPage({
       const safe = params.q.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const pattern = new RegExp(safe, "i");
       const matching = await Medicine.find({
+        ...pharmacyFilter(user),
         $or: [{ name: pattern }, { genericName: pattern }],
       })
         .select("_id")
@@ -132,7 +137,14 @@ export default async function BatchesPage({
         subtitle="Every lot on the shelf, with the delivery it arrived on. Stock enters only through a purchase."
         actions={
           editable ? (
-            <Link href="/purchases/new" className="btn-primary">
+            <Link
+              href={
+                params.medicineId
+                  ? `/purchases/new?medicineId=${params.medicineId}`
+                  : "/purchases/new"
+              }
+              className="btn-primary"
+            >
               Receive stock
             </Link>
           ) : null
@@ -213,7 +225,14 @@ export default async function BatchesPage({
             }
             action={
               editable ? (
-                <Link href="/purchases/new" className="btn-primary">
+                <Link
+                  href={
+                    params.medicineId
+                      ? `/purchases/new?medicineId=${params.medicineId}`
+                      : "/purchases/new"
+                  }
+                  className="btn-primary"
+                >
                   Receive stock
                 </Link>
               ) : null
@@ -309,13 +328,21 @@ export default async function BatchesPage({
                         {money(batch.quantity * batch.costPrice)}
                       </td>
                       {editable ? (
-                        <td className="td text-right">
+                        <td className="td text-right whitespace-nowrap">
                           <Link
                             href={`/batches?edit=${String(batch._id)}${baseQuery.toString() ? "&" + baseQuery.toString() : ""}`}
                             className="text-xs font-medium text-brand-700 hover:underline"
                           >
                             Edit
                           </Link>
+                          {medicine?._id && can(user.role, "purchase:write") ? (
+                            <Link
+                              href={`/purchases/new?medicineId=${String(medicine._id)}`}
+                              className="ml-3 text-xs font-medium text-slate-500 hover:text-brand-700"
+                            >
+                              Add stock
+                            </Link>
+                          ) : null}
                         </td>
                       ) : null}
                     </tr>

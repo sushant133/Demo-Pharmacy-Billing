@@ -2,13 +2,16 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePagePermission } from "@/lib/auth";
 import { branchFilter, resolveViewScope } from "@/lib/branch-scope";
+import { pharmacyFilter } from "@/lib/tenant";
 import { config } from "@/lib/config";
 import { withDbRead } from "@/lib/db";
 import { formatExpiry, integer } from "@/lib/format";
 import { can } from "@/lib/roles";
+import { mergeMedicineCategories } from "@/lib/constants";
 import { getLowStock } from "@/lib/reports";
+import { getSettings } from "@/lib/settings";
 import { Batch } from "@/models/Batch";
-import { Medicine, MEDICINE_CATEGORIES } from "@/models/Medicine";
+import { Medicine } from "@/models/Medicine";
 import { Badge, Card, EmptyState, PageHeader, Pagination, TableWrap } from "@/components/ui";
 import { MedicineFormPanel } from "@/components/medicines/MedicineFormPanel";
 
@@ -79,6 +82,9 @@ export default async function MedicinesPage({
                     <th className="th text-right">Reorder at</th>
                     <th className="th text-right">Batches</th>
                     <th className="th">Nearest expiry</th>
+                    {can(user.role, "purchase:write") ? (
+                      <th className="th"></th>
+                    ) : null}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -114,6 +120,16 @@ export default async function MedicinesPage({
                       <td className="td text-slate-600">
                         {row.nearestExpiry ? formatExpiry(row.nearestExpiry) : "—"}
                       </td>
+                      {can(user.role, "purchase:write") ? (
+                        <td className="td text-right">
+                          <Link
+                            href={`/purchases/new?medicineId=${row.medicineId}`}
+                            className="text-xs font-medium text-brand-700 hover:underline"
+                          >
+                            Add stock
+                          </Link>
+                        </td>
+                      ) : null}
                     </tr>
                   ))}
                 </tbody>
@@ -133,10 +149,11 @@ export default async function MedicinesPage({
   }
 
   // ---- Full catalogue ------------------------------------------------------
-  const { medicines, total, stock } = await withDbRead(async () => {
+  const { medicines, total, stock, settings, categories } = await withDbRead(
+    async () => {
     const scope = await resolveViewScope(user, params.branch);
 
-    const filter: Record<string, unknown> = {};
+    const filter: Record<string, unknown> = { ...pharmacyFilter(user) };
     if (params.category) filter.category = params.category;
     if (params.q?.trim()) {
       const safe = params.q.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -149,13 +166,19 @@ export default async function MedicinesPage({
       ];
     }
 
-    const [medicines, total] = await Promise.all([
+    const [medicines, total, settings, usedCategories] = await Promise.all([
       Medicine.find(filter)
         .sort({ name: 1 })
         .skip((page - 1) * PAGE_SIZE)
         .limit(PAGE_SIZE)
         .lean(),
       Medicine.countDocuments(filter),
+      getSettings(user.pharmacyId, user.pharmacyName),
+      Medicine.distinct("category", pharmacyFilter(user)),
+    ]);
+    const categories = mergeMedicineCategories([
+      ...settings.medicineCategories,
+      ...usedCategories.filter((name): name is string => typeof name === "string"),
     ]);
 
     // One aggregate for the whole page's stock, rather than a query per row.
@@ -185,6 +208,8 @@ export default async function MedicinesPage({
     return {
       medicines,
       total,
+      settings,
+      categories,
       stock: new Map(
         stockRows.map((row) => [
           String(row._id),
@@ -246,7 +271,7 @@ export default async function MedicinesPage({
               className="input"
             >
               <option value="">All categories</option>
-              {MEDICINE_CATEGORIES.map((category) => (
+              {categories.map((category) => (
                 <option key={category} value={category}>
                   {category}
                 </option>
@@ -355,12 +380,14 @@ export default async function MedicinesPage({
                           >
                             Edit
                           </Link>
-                          <Link
-                            href="/purchases/new"
-                            className="ml-3 text-xs font-medium text-slate-500 hover:text-brand-700"
-                          >
-                            Add stock
-                          </Link>
+                          {can(user.role, "purchase:write") ? (
+                            <Link
+                              href={`/purchases/new?medicineId=${String(medicine._id)}`}
+                              className="ml-3 text-xs font-medium text-slate-500 hover:text-brand-700"
+                            >
+                              Add stock
+                            </Link>
+                          ) : null}
                         </td>
                       ) : null}
                     </tr>
@@ -382,6 +409,7 @@ export default async function MedicinesPage({
       {editable && (params.new === "1" || editing) ? (
         <MedicineFormPanel
           canDelete={can(user.role, "medicine:delete")}
+          extraCategories={settings.medicineCategories}
           medicine={
             editing
               ? {
@@ -393,6 +421,7 @@ export default async function MedicinesPage({
                   category: editing.category ?? "Other",
                   unit: editing.unit ?? "tablet",
                   packSize: editing.packSize ?? "",
+                  unitsPerStrip: editing.unitsPerStrip ?? null,
                   requiresPrescription: Boolean(editing.requiresPrescription),
                   reorderLevel: editing.reorderLevel ?? null,
                   isActive: editing.isActive !== false,

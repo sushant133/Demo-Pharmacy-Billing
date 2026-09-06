@@ -13,16 +13,16 @@ const listQuery = z.object({
 
 /** GET /api/branches - the registry, with stock and staff counts. */
 export const GET = withRoute(async (req) => {
-  await requirePermission("branch:manage");
+  const user = await requirePermission("branch:manage");
   const { includeInactive } = parseQuery(req, listQuery);
-  const data = await listBranches(includeInactive === "1");
+  const data = await listBranches(user, includeInactive === "1");
   return ok(data);
 });
 
 /** POST /api/branches - open a new outlet. */
 export const POST = withRoute(async (req) => {
-  await requirePermission("branch:manage");
+  const user = await requirePermission("branch:manage");
   const input = await parseJson(req, branchSchema);
-  const branch = await createBranch(input);
+  const branch = await createBranch(user, input);
   return created(branch);
 });

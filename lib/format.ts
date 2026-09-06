@@ -108,3 +108,9 @@ export function initials(name: string): string {
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("");
 }
+
+/** Single letter for a pharmacy mark in the sidebar and tab icon. */
+export function brandLetter(name: string): string {
+  const letter = name.trim().charAt(0);
+  return letter ? letter.toUpperCase() : "P";
+}

@@ -31,9 +31,12 @@ function excelWidth(column: ReportColumn): number {
   return Math.max(12, Math.min(40, column.header.length + 4));
 }
 
-export async function toXlsxBuffer(dataset: ReportDataset): Promise<Buffer> {
+export async function toXlsxBuffer(
+  dataset: ReportDataset,
+  options?: { creator?: string },
+): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "MantraPharma";
+  workbook.creator = options?.creator?.trim() || dataset.title;
   workbook.created = dataset.generatedAt ?? new Date();
 
   // Excel forbids : \ / ? * [ ] in sheet names and caps them at 31 chars.

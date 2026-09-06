@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
+    "dev:clean": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true})\" && next dev --turbopack",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
@@ -17,6 +18,7 @@
     "smoke:phase3": "node scripts/smoke-phase3.mjs",
     "backfill:cogs": "tsx scripts/backfill-cogs.ts",
     "backfill:branches": "tsx scripts/backfill-branches.ts",
+    "backfill:pharmacies": "tsx scripts/backfill-pharmacies.ts",
     "migrate:roles": "tsx scripts/migrate-roles.ts"
   },
   "dependencies": {

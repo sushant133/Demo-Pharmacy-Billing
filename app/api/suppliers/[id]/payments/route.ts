@@ -3,6 +3,7 @@ import { requirePermission } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import { recordPayment } from "@/lib/suppliers";
 import { SupplierPayment } from "@/models/SupplierPayment";
+import { pharmacyFilter } from "@/lib/tenant";
 import { objectIdSchema, supplierPaymentSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
@@ -12,12 +13,15 @@ type Ctx = { params: Promise<{ id: string }> };
 
 /** GET /api/suppliers/:id/payments - payment history, newest first. */
 export const GET = withRoute<Ctx>(async (_req, ctx) => {
-  await requirePermission("supplier:read");
+  const user = await requirePermission("supplier:read");
   const { id } = await ctx.params;
   const supplierId = objectIdSchema.parse(id);
   await connectDB();
 
-  const payments = await SupplierPayment.find({ supplierId })
+  const payments = await SupplierPayment.find({
+    supplierId,
+    ...pharmacyFilter(user),
+  })
     .sort({ paidOn: -1, createdAt: -1 })
     .limit(200)
     .lean();

@@ -1,10 +1,17 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/client";
 import { money } from "@/lib/format";
+import {
+  describePurchaseQuantity,
+  formatUnitCount,
+  stripLabel,
+  unitWord,
+} from "@/lib/pack";
 import { calculatePurchaseTotals, unitMargin } from "@/lib/purchase-math";
+import { DualDateField } from "@/components/DualDateField";
 import { cx } from "@/components/ui";
 
 /**
@@ -25,6 +32,24 @@ export interface MedicineOption {
   name: string;
   unit: string;
   manufacturer: string;
+  genericName?: string;
+  packSize?: string;
+  unitsPerStrip?: number;
+  lastCostPrice?: number | null;
+  lastSalePrice?: number | null;
+}
+
+export interface StockPreset {
+  medicineId: string;
+  medicineName: string;
+  manufacturer?: string;
+  genericName?: string;
+  packSize?: string;
+  unit?: string;
+  unitsPerStrip?: number;
+  lastCostPrice?: number | null;
+  lastSalePrice?: number | null;
+  lastSupplierId?: string | null;
 }
 
 export interface SupplierOption {
@@ -44,6 +69,7 @@ interface LineState {
   costPrice: string;
   salePrice: string;
   discount: string;
+  applySalePriceToStock: boolean;
 }
 
 export interface PurchaseFormValues {
@@ -66,6 +92,7 @@ export interface PurchaseFormValues {
     costPrice: number;
     salePrice: number;
     discount: number;
+    applySalePriceToStock?: boolean;
   }>;
 }
 
@@ -83,6 +110,7 @@ function blankLine(): LineState {
     costPrice: "",
     salePrice: "",
     discount: "",
+    applySalePriceToStock: false,
   };
 }
 
@@ -98,6 +126,7 @@ export function PurchaseForm({
   today,
   purchase,
   canPost,
+  preset,
 }: {
   suppliers: SupplierOption[];
   medicines: MedicineOption[];
@@ -105,11 +134,21 @@ export function PurchaseForm({
   today: string;
   purchase: PurchaseFormValues | null;
   canPost: boolean;
+  preset?: StockPreset | null;
 }) {
   const router = useRouter();
   const isEdit = Boolean(purchase);
+  const medicineById = useMemo(
+    () => new Map(medicines.map((medicine) => [medicine.id, medicine])),
+    [medicines],
+  );
 
-  const [supplierId, setSupplierId] = useState(purchase?.supplierId ?? "");
+  const [supplierId, setSupplierId] = useState(
+    purchase?.supplierId ??
+      (preset?.lastSupplierId && suppliers.some((s) => s.id === preset.lastSupplierId)
+        ? preset.lastSupplierId
+        : ""),
+  );
   const [invoiceNo, setInvoiceNo] = useState(purchase?.invoiceNo ?? "");
   const [invoiceDate, setInvoiceDate] = useState(purchase?.invoiceDate ?? "");
   const [receivedDate, setReceivedDate] = useState(purchase?.receivedDate ?? today);
@@ -118,34 +157,69 @@ export function PurchaseForm({
   const [vatRate, setVatRate] = useState(String(purchase?.vatRate ?? defaultVatRate));
   const [notes, setNotes] = useState(purchase?.notes ?? "");
 
-  const [lines, setLines] = useState<LineState[]>(() =>
-    purchase && purchase.items.length > 0
-      ? purchase.items.map((item) => {
-          lineCounter += 1;
-          return {
-            key: `line-${lineCounter}`,
-            medicineId: item.medicineId,
-            batchNumber: item.batchNumber,
-            mfgDate: item.mfgDate,
-            expiryDate: item.expiryDate,
-            quantity: String(item.quantity),
-            freeQuantity: String(item.freeQuantity),
-            costPrice: String(item.costPrice),
-            salePrice: String(item.salePrice),
-            discount: String(item.discount),
-          };
-        })
-      : [blankLine()],
-  );
+  const [lines, setLines] = useState<LineState[]>(() => {
+    if (purchase && purchase.items.length > 0) {
+      return purchase.items.map((item) => {
+        lineCounter += 1;
+        return {
+          key: `line-${lineCounter}`,
+          medicineId: item.medicineId,
+          batchNumber: item.batchNumber,
+          mfgDate: item.mfgDate,
+          expiryDate: item.expiryDate,
+          quantity: String(item.quantity),
+          freeQuantity: String(item.freeQuantity),
+          costPrice: String(item.costPrice),
+          salePrice: String(item.salePrice),
+          discount: String(item.discount),
+          applySalePriceToStock: Boolean(item.applySalePriceToStock),
+        };
+      });
+    }
+    if (preset?.medicineId) {
+      lineCounter += 1;
+      return [
+        {
+          key: `line-${lineCounter}`,
+          medicineId: preset.medicineId,
+          batchNumber: "",
+          mfgDate: "",
+          expiryDate: "",
+          quantity: "",
+          freeQuantity: "",
+          costPrice:
+            preset.lastCostPrice != null ? String(preset.lastCostPrice) : "",
+          salePrice:
+            preset.lastSalePrice != null ? String(preset.lastSalePrice) : "",
+          discount: "",
+          applySalePriceToStock: false,
+        },
+      ];
+    }
+    return [blankLine()];
+  });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const inflight = useRef(false);
 
   function updateLine(key: string, patch: Partial<LineState>) {
     setLines((current) =>
       current.map((line) => (line.key === key ? { ...line, ...patch } : line)),
     );
+  }
+
+  function selectMedicine(key: string, medicineId: string) {
+    const hint = medicineById.get(medicineId);
+    updateLine(key, {
+      medicineId,
+      costPrice:
+        hint?.lastCostPrice != null ? String(hint.lastCostPrice) : "",
+      salePrice:
+        hint?.lastSalePrice != null ? String(hint.lastSalePrice) : "",
+      applySalePriceToStock: false,
+    });
   }
 
   function addLine() {
@@ -208,11 +282,13 @@ export function PurchaseForm({
         costPrice: num(line.costPrice),
         salePrice: num(line.salePrice),
         discount: num(line.discount),
+        applySalePriceToStock: line.applySalePriceToStock,
       })),
     };
   }
 
   async function submit(post: boolean) {
+    if (inflight.current) return;
     setFormError(null);
     setErrors({});
 
@@ -235,6 +311,7 @@ export function PurchaseForm({
       return;
     }
 
+    inflight.current = true;
     setSaving(true);
 
     const url = isEdit
@@ -257,6 +334,7 @@ export function PurchaseForm({
         }
         setErrors(flat);
       }
+      inflight.current = false;
       setSaving(false);
       return;
     }
@@ -267,6 +345,7 @@ export function PurchaseForm({
         method: "POST",
       });
       if (!posted.ok) {
+        inflight.current = false;
         setFormError(posted.message);
         setSaving(false);
         return;
@@ -290,8 +369,8 @@ export function PurchaseForm({
 
       {/* Invoice header */}
       <div className="card p-4">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="sm:col-span-2">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
             <label htmlFor="supplierId" className="label">
               Supplier
             </label>
@@ -327,38 +406,63 @@ export function PurchaseForm({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label htmlFor="invoiceDate" className="label">
-                Invoice date
-              </label>
-              <input
-                id="invoiceDate"
-                type="date"
-                value={invoiceDate}
-                onChange={(event) => setInvoiceDate(event.target.value)}
-                className="input"
-              />
-            </div>
-            <div>
-              <label htmlFor="receivedDate" className="label">
-                Received
-              </label>
-              <input
-                id="receivedDate"
-                type="date"
-                value={receivedDate}
-                onChange={(event) => setReceivedDate(event.target.value)}
-                className="input"
-                required
-              />
-            </div>
+          <div className="min-w-0">
+            <p className="label">Invoice date</p>
+            <DualDateField
+              id="invoiceDate"
+              value={invoiceDate}
+              onChange={setInvoiceDate}
+              compact
+              aria-label="Invoice date"
+            />
+          </div>
+          <div className="min-w-0">
+            <p className="label">Received</p>
+            <DualDateField
+              id="receivedDate"
+              value={receivedDate}
+              onChange={setReceivedDate}
+              required
+              compact
+              aria-label="Received date"
+            />
           </div>
         </div>
       </div>
 
       {/* Line items */}
       <div className="card overflow-hidden">
+        {preset && !isEdit ? (
+          <div className="border-b border-brand-100 bg-brand-50 px-4 py-3 text-sm text-brand-900">
+            <p>
+              Receiving stock for{" "}
+              <span className="font-semibold">{preset.medicineName}</span>
+              {preset.packSize ? ` (${preset.packSize})` : ""}
+              {preset.manufacturer ? ` · ${preset.manufacturer}` : ""}
+              {preset.genericName ? ` · ${preset.genericName}` : ""}.
+            </p>
+            {stripLabel(preset.unitsPerStrip ?? 1, preset.unit ?? "tablet") ? (
+              <p className="mt-1 text-xs text-brand-800">
+                Count {unitWord(preset.unit ?? "tablet", 2)}, not strips. One{" "}
+                {stripLabel(preset.unitsPerStrip ?? 1, preset.unit ?? "tablet")} is
+                quantity {preset.unitsPerStrip}.
+              </p>
+            ) : null}
+            <p className="mt-1 text-xs text-brand-800">
+              {preset.lastCostPrice != null ? (
+                <>Last cost {money(preset.lastCostPrice)}. </>
+              ) : null}
+              {preset.lastSalePrice != null ? (
+                <>
+                  Last selling price {money(preset.lastSalePrice)} — change MRP
+                  if this lot has a new price.
+                </>
+              ) : (
+                <>Fill the batch, expiry, quantity and prices for this delivery.</>
+              )}
+            </p>
+          </div>
+        ) : null}
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
           <h2 className="text-sm font-semibold text-slate-900">
             Items
@@ -372,14 +476,14 @@ export function PurchaseForm({
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1100px] border-collapse">
+          <table className="w-full min-w-[1180px] border-collapse">
             <thead className="border-b border-slate-200 bg-slate-50">
               <tr>
                 <th className="th w-[22%]">Medicine</th>
                 <th className="th">Batch no</th>
                 <th className="th">Mfg</th>
                 <th className="th">Expiry</th>
-                <th className="th text-right">Qty</th>
+                <th className="th text-right">Qty (pieces)</th>
                 <th className="th text-right">Free</th>
                 <th className="th text-right">Cost</th>
                 <th className="th text-right">Disc</th>
@@ -410,7 +514,7 @@ export function PurchaseForm({
                         aria-label={`Medicine for line ${index + 1}`}
                         value={line.medicineId}
                         onChange={(event) =>
-                          updateLine(line.key, { medicineId: event.target.value })
+                          selectMedicine(line.key, event.target.value)
                         }
                         className="input py-1.5 text-xs"
                       >
@@ -418,6 +522,7 @@ export function PurchaseForm({
                         {medicines.map((medicine) => (
                           <option key={medicine.id} value={medicine.id}>
                             {medicine.name}
+                            {medicine.manufacturer ? ` · ${medicine.manufacturer}` : ""}
                           </option>
                         ))}
                       </select>
@@ -441,29 +546,25 @@ export function PurchaseForm({
                     </td>
 
                     <td className="px-2 py-2">
-                      <input
-                        type="date"
-                        aria-label={`Manufacturing date for line ${index + 1}`}
+                      <DualDateField
+                        id={`${line.key}-mfg`}
                         value={line.mfgDate}
-                        onChange={(event) =>
-                          updateLine(line.key, { mfgDate: event.target.value })
-                        }
-                        className="input py-1.5 text-xs"
+                        onChange={(next) => updateLine(line.key, { mfgDate: next })}
+                        table
+                        aria-label={`Manufacturing date for line ${index + 1}`}
                       />
                     </td>
 
                     <td className="px-2 py-2">
-                      <input
-                        type="date"
-                        aria-label={`Expiry date for line ${index + 1}`}
+                      <DualDateField
+                        id={`${line.key}-exp`}
                         value={line.expiryDate}
-                        onChange={(event) =>
-                          updateLine(line.key, { expiryDate: event.target.value })
+                        onChange={(next) =>
+                          updateLine(line.key, { expiryDate: next })
                         }
-                        className={cx(
-                          "input py-1.5 text-xs",
-                          errors[`items.${index}.expiryDate`] && "border-rose-400",
-                        )}
+                        table
+                        error={Boolean(errors[`items.${index}.expiryDate`])}
+                        aria-label={`Expiry date for line ${index + 1}`}
                       />
                       {errors[`items.${index}.expiryDate`] ? (
                         <p className="mt-1 text-[11px] text-rose-600">
@@ -483,6 +584,19 @@ export function PurchaseForm({
                         }
                         className="input tnum w-20 py-1.5 text-right text-xs"
                       />
+                      {(() => {
+                        const medicine = medicineById.get(line.medicineId);
+                        const hint = describePurchaseQuantity(
+                          quantity,
+                          medicine?.unitsPerStrip ?? 1,
+                          medicine?.unit ?? "unit",
+                        );
+                        return hint ? (
+                          <p className="mt-1 max-w-[9rem] text-[11px] leading-snug text-slate-500">
+                            {hint}
+                          </p>
+                        ) : null;
+                      })()}
                     </td>
 
                     <td className="px-2 py-2">
@@ -555,13 +669,42 @@ export function PurchaseForm({
                           {margin.percent.toFixed(0)}%
                         </p>
                       ) : null}
+                      {(() => {
+                        const last =
+                          medicineById.get(line.medicineId)?.lastSalePrice ?? null;
+                        const typed = num(line.salePrice);
+                        if (last == null || !typed || typed === last) return null;
+                        return (
+                          <p className="mt-1 text-right text-[11px] text-amber-700">
+                            was {money(last)}
+                          </p>
+                        );
+                      })()}
+                      {line.medicineId ? (
+                        <label className="mt-1.5 flex items-start gap-1.5 text-[11px] leading-snug text-slate-500">
+                          <input
+                            type="checkbox"
+                            className="mt-0.5"
+                            checked={line.applySalePriceToStock}
+                            onChange={(event) =>
+                              updateLine(line.key, {
+                                applySalePriceToStock: event.target.checked,
+                              })
+                            }
+                          />
+                          <span>Apply this price to current stock</span>
+                        </label>
+                      ) : null}
                     </td>
 
                     <td className="tnum px-2 py-2 text-right text-sm font-medium text-slate-900">
                       {received > 0 ? money(net) : "—"}
                       {received > 0 ? (
                         <p className="text-[11px] font-normal text-slate-400">
-                          {received} units
+                          {formatUnitCount(
+                            received,
+                            medicineById.get(line.medicineId)?.unit ?? "unit",
+                          )}
                         </p>
                       ) : null}
                     </td>
@@ -680,7 +823,7 @@ export function PurchaseForm({
             </div>
             {totals ? (
               <p className="text-right text-xs text-slate-500">
-                {totals.totalUnits} units onto the shelf
+                {totals.totalUnits} pieces onto the shelf
               </p>
             ) : null}
           </div>

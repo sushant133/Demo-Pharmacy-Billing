@@ -5,6 +5,8 @@ import { requirePermission } from "@/lib/auth";
 import { connectDB, withDbWrite } from "@/lib/db";
 import { Batch } from "@/models/Batch";
 import { Medicine } from "@/models/Medicine";
+import { pharmacyFilter } from "@/lib/tenant";
+import { resolveUnitsPerStrip } from "@/lib/pack";
 import { medicineQuerySchema, medicineSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
@@ -25,7 +27,10 @@ export const GET = withRoute(async (req) => {
   );
   await connectDB();
 
-  const filter: Record<string, unknown> = {};
+  const filter: Record<string, unknown> = { ...pharmacyFilter(user) };
+  // POS search must not offer discontinued lines: the till will refuse them
+  // at checkout, which is too late once they are already in the cart.
+  if (withStock === "1") filter.isActive = { $ne: false };
   if (category) filter.category = category;
   if (q) {
     // Regex rather than $text: it matches mid-word, which is what staff expect
@@ -63,6 +68,7 @@ export const GET = withRoute(async (req) => {
     }>([
       {
         $match: {
+          ...pharmacyFilter(user),
           medicineId: { $in: docs.map((doc) => doc._id) },
           quantity: { $gt: 0 },
           expiryDate: { $gte: now },
@@ -96,6 +102,11 @@ export const GET = withRoute(async (req) => {
       category: doc.category ?? "Other",
       unit: doc.unit ?? "tablet",
       packSize: doc.packSize ?? "",
+      unitsPerStrip: resolveUnitsPerStrip(
+        doc.unit ?? "tablet",
+        doc.packSize ?? "",
+        doc.unitsPerStrip,
+      ),
       requiresPrescription: Boolean(doc.requiresPrescription),
       reorderLevel: doc.reorderLevel ?? null,
       isActive: doc.isActive !== false,
@@ -119,10 +130,12 @@ export const GET = withRoute(async (req) => {
 
 /** POST /api/medicines - add a medicine to the catalogue. */
 export const POST = withRoute(async (req) => {
-  await requirePermission("medicine:write");
+  const user = await requirePermission("medicine:write");
   const input = await parseJson(req, medicineSchema);
 
-  const medicine = await withDbWrite(() => Medicine.create(input));
+  const medicine = await withDbWrite(() =>
+    Medicine.create({ ...input, ...pharmacyFilter(user) }),
+  );
   return created({
     id: String(medicine._id),
     name: medicine.name,

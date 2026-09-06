@@ -5,6 +5,7 @@ import { connectDB } from "@/lib/db";
 import { dateRangeFromStrings } from "@/lib/dates";
 import { createSale } from "@/lib/sales";
 import { Sale } from "@/models/Sale";
+import { pharmacyFilter } from "@/lib/tenant";
 import { createSaleSchema, salesQuerySchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
@@ -26,7 +27,10 @@ export const GET = withRoute(async (req) => {
   await connectDB();
 
   const scope = await resolveRequestScope(user, req);
-  const filter: Record<string, unknown> = { ...branchFilter(scope) };
+  const filter: Record<string, unknown> = {
+    ...pharmacyFilter(user),
+    ...branchFilter(scope),
+  };
   const { start, end } = dateRangeFromStrings(from, to);
 
   if (start || end) {
@@ -62,9 +66,21 @@ export const GET = withRoute(async (req) => {
       {
         $group: {
           _id: null,
-          grossTotal: { $sum: "$totalAmount" },
-          vatTotal: { $sum: "$vatAmount" },
-          discountTotal: { $sum: "$discount" },
+          grossTotal: {
+            $sum: {
+              $subtract: ["$totalAmount", { $ifNull: ["$returnedTotal", 0] }],
+            },
+          },
+          vatTotal: {
+            $sum: {
+              $subtract: ["$vatAmount", { $ifNull: ["$returnedVat", 0] }],
+            },
+          },
+          discountTotal: {
+            $sum: {
+              $subtract: ["$discount", { $ifNull: ["$returnedDiscount", 0] }],
+            },
+          },
         },
       },
     ]),
@@ -91,6 +107,8 @@ export const GET = withRoute(async (req) => {
     paymentMode: sale.paymentMode,
     soldByName: sale.soldByName ?? "",
     voided: Boolean(sale.voidedAt),
+    returnedUnits: sale.returnedUnits ?? 0,
+    returnedTotal: sale.returnedTotal ?? 0,
     createdAt: sale.createdAt,
   }));
 

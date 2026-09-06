@@ -189,6 +189,7 @@ export default async function AlertsPage({
           tab={tab}
           showMoney={canSeeMoney}
           activeSeverity={params.severity}
+          canBuy={canBuy}
         />
       )}
     </>
@@ -328,12 +329,14 @@ function StockTable({
   tab,
   showMoney,
   activeSeverity,
+  canBuy,
 }: {
   result: Awaited<ReturnType<typeof getStockAlerts>>;
   page: number;
   tab: TabKey;
   showMoney: boolean;
   activeSeverity?: string;
+  canBuy: boolean;
 }) {
   const isDead = tab === "dead";
   const severities: StockSeverity[] = ["out", "critical", "low", "overstocked"];
@@ -393,6 +396,7 @@ function StockTable({
                   <th className="th text-right">Order</th>
                 )}
                 {showMoney ? <th className="th text-right">Value</th> : null}
+                {canBuy && !isDead ? <th className="th"></th> : null}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -461,6 +465,16 @@ function StockTable({
                   {showMoney ? (
                     <td className="td tnum text-right text-slate-600">
                       {money(row.stockValue)}
+                    </td>
+                  ) : null}
+                  {canBuy && !isDead ? (
+                    <td className="td text-right">
+                      <Link
+                        href={`/purchases/new?medicineId=${row.medicineId}`}
+                        className="text-xs font-medium text-brand-700 hover:underline"
+                      >
+                        Add stock
+                      </Link>
                     </td>
                   ) : null}
                 </tr>

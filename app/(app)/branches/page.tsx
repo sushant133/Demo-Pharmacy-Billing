@@ -28,9 +28,9 @@ export default async function BranchesPage({
 }: {
   searchParams: Promise<{ new?: string; edit?: string }>;
 }) {
-  await requirePagePermission("branch:manage");
+  const user = await requirePagePermission("branch:manage");
   const params = await searchParams;
-  const branches = await withDbRead(() => listBranches(true));
+  const branches = await withDbRead(() => listBranches(user, true));
 
   const editing = params.edit
     ? (branches.find((branch) => branch.id === params.edit) ?? null)

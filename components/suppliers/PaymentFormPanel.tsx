@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/client";
 import { money } from "@/lib/format";
+import { DualDateField } from "@/components/DualDateField";
 import { Field, SlideOver } from "@/components/SlideOver";
 import { SUPPLIER_PAYMENT_METHODS, SUPPLIER_PAYMENT_METHOD_LABELS } from "@/lib/constants";
 
@@ -177,33 +178,30 @@ export function PaymentFormPanel({
           />
         </Field>
 
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Method" htmlFor="method">
-            <select
-              id="method"
-              value={method}
-              onChange={(event) => setMethod(event.target.value)}
-              className="input"
-            >
-              {SUPPLIER_PAYMENT_METHODS.map((option) => (
-                <option key={option} value={option}>
-                  {SUPPLIER_PAYMENT_METHOD_LABELS[option]}
-                </option>
-              ))}
-            </select>
-          </Field>
+        <Field label="Method" htmlFor="method">
+          <select
+            id="method"
+            value={method}
+            onChange={(event) => setMethod(event.target.value)}
+            className="input"
+          >
+            {SUPPLIER_PAYMENT_METHODS.map((option) => (
+              <option key={option} value={option}>
+                {SUPPLIER_PAYMENT_METHOD_LABELS[option]}
+              </option>
+            ))}
+          </select>
+        </Field>
 
-          <Field label="Paid on" htmlFor="paidOn">
-            <input
-              id="paidOn"
-              type="date"
-              value={paidOn}
-              onChange={(event) => setPaidOn(event.target.value)}
-              className="input"
-              required
-            />
-          </Field>
-        </div>
+        <Field label="Paid on" htmlFor="paidOn">
+          <DualDateField
+            id="paidOn"
+            value={paidOn}
+            onChange={setPaidOn}
+            required
+            aria-label="Paid on"
+          />
+        </Field>
 
         <Field
           label="Reference"

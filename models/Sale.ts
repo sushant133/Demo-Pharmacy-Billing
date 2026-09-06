@@ -38,13 +38,69 @@ const saleItemSchema = new Schema(
     unitCost: { type: Number, required: true, min: 0, default: 0 },
     /** quantity * unitCost, rounded. */
     lineCost: { type: Number, required: true, min: 0, default: 0 },
+    /**
+     * Units from this line that have come back. The original quantity stays
+     * so the printed bill still matches what left the counter.
+     */
+    returnedQuantity: { type: Number, required: true, min: 0, default: 0 },
+  },
+  { _id: false },
+);
+
+const saleReturnItemSchema = new Schema(
+  {
+    lineIndex: { type: Number, required: true, min: 0 },
+    medicineId: { type: Schema.Types.ObjectId, ref: "Medicine", required: true },
+    batchId: { type: Schema.Types.ObjectId, ref: "Batch", required: true },
+    medicineName: { type: String, required: true },
+    batchNumber: { type: String, required: true },
+    quantity: { type: Number, required: true, min: 1 },
+    unitPrice: { type: Number, required: true, min: 0 },
+    unitCost: { type: Number, required: true, min: 0, default: 0 },
+    subtotal: { type: Number, required: true, min: 0 },
+    discount: { type: Number, required: true, min: 0, default: 0 },
+    taxableAmount: { type: Number, required: true, min: 0 },
+    vatAmount: { type: Number, required: true, min: 0, default: 0 },
+    totalAmount: { type: Number, required: true, min: 0 },
+    lineCost: { type: Number, required: true, min: 0, default: 0 },
+  },
+  { _id: false },
+);
+
+const saleReturnSchema = new Schema(
+  {
+    returnedAt: { type: Date, required: true },
+    returnedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    returnedByName: { type: String, default: "" },
+    reason: { type: String, trim: true, required: true, maxlength: 300 },
+    items: {
+      type: [saleReturnItemSchema],
+      required: true,
+      validate: {
+        validator: (items: unknown[]) => items.length > 0,
+        message: "A return must contain at least one item.",
+      },
+    },
+    units: { type: Number, required: true, min: 1 },
+    subtotal: { type: Number, required: true, min: 0 },
+    discount: { type: Number, required: true, min: 0, default: 0 },
+    taxableAmount: { type: Number, required: true, min: 0 },
+    vatAmount: { type: Number, required: true, min: 0, default: 0 },
+    totalAmount: { type: Number, required: true, min: 0 },
+    totalCost: { type: Number, required: true, min: 0, default: 0 },
   },
   { _id: false },
 );
 
 const saleSchema = new Schema(
   {
-    billNo: { type: String, required: true, unique: true, index: true },
+    pharmacyId: {
+      type: Schema.Types.ObjectId,
+      ref: "Pharmacy",
+      required: true,
+      index: true,
+    },
+    billNo: { type: String, required: true, index: true },
     /** Numeric form of billNo, for cheap ordering and range queries. */
     billSeq: { type: Number, required: true, index: true },
     customerId: {
@@ -117,12 +173,27 @@ const saleSchema = new Schema(
     voidedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     voidedByName: { type: String, default: "" },
     voidReason: { type: String, trim: true, default: "", maxlength: 300 },
+    /**
+     * Customer returns after the sale. Each entry is a dated, authored
+     * correction: stock goes back on the original lots, and the summary
+     * fields below are what reports subtract so takings stay honest.
+     */
+    returns: { type: [saleReturnSchema], default: [] },
+    returnedUnits: { type: Number, required: true, min: 0, default: 0 },
+    returnedDiscount: { type: Number, required: true, min: 0, default: 0 },
+    returnedTaxable: { type: Number, required: true, min: 0, default: 0 },
+    returnedVat: { type: Number, required: true, min: 0, default: 0 },
+    returnedTotal: { type: Number, required: true, min: 0, default: 0 },
+    returnedCost: { type: Number, required: true, min: 0, default: 0 },
   },
   { timestamps: true },
 );
 
+// Bill numbers are unique per pharmacy, not globally: two shops both start at INV-000001.
+saleSchema.index({ pharmacyId: 1, billNo: 1 }, { unique: true });
 // The sales-history screen and the dashboard both read by date, newest first.
 saleSchema.index({ createdAt: -1 });
+saleSchema.index({ pharmacyId: 1, createdAt: -1 });
 saleSchema.index({ branchId: 1, createdAt: -1 });
 
 export type SaleDoc = InferSchemaType<typeof saleSchema>;

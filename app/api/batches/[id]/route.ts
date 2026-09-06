@@ -4,6 +4,7 @@ import { assertVisibleInScope, resolveViewScope } from "@/lib/branch-scope";
 import { connectDB } from "@/lib/db";
 import { Batch } from "@/models/Batch";
 import { Sale } from "@/models/Sale";
+import { pharmacyFilter } from "@/lib/tenant";
 import { batchUpdateSchema, objectIdSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
@@ -23,7 +24,9 @@ export const GET = withRoute<Ctx>(async (_req, ctx) => {
   await connectDB();
   const scope = await resolveViewScope(user);
 
-  const batch = await Batch.findById(id).populate("medicineId", "name unit").lean();
+  const batch = await Batch.findOne({ _id: id, ...pharmacyFilter(user) })
+    .populate("medicineId", "name unit")
+    .lean();
   if (!batch) throw ApiError.notFound("That batch no longer exists.");
   assertVisibleInScope(batch.branchId, scope, "That batch no longer exists.");
 
@@ -43,11 +46,16 @@ export const PATCH = withRoute<Ctx>(async (req, ctx) => {
   await connectDB();
   const scope = await resolveViewScope(user);
 
-  const existing = await Batch.findById(id).select("branchId").lean();
+  const existing = await Batch.findOne({ _id: id, ...pharmacyFilter(user) })
+    .select("branchId")
+    .lean();
   if (!existing) throw ApiError.notFound("That batch no longer exists.");
   assertVisibleInScope(existing.branchId, scope, "That batch no longer exists.");
 
-  const batch = await Batch.findByIdAndUpdate(id, update, {
+  const batch = await Batch.findOneAndUpdate(
+    { _id: id, ...pharmacyFilter(user) },
+    update,
+    {
     new: true,
     runValidators: true,
   }).lean();
@@ -68,7 +76,7 @@ export const DELETE = withRoute<Ctx>(async (_req, ctx) => {
   await connectDB();
   const scope = await resolveViewScope(user);
 
-  const batch = await Batch.findById(id);
+  const batch = await Batch.findOne({ _id: id, ...pharmacyFilter(user) });
   if (!batch) throw ApiError.notFound("That batch no longer exists.");
   assertVisibleInScope(batch.branchId, scope, "That batch no longer exists.");
 

@@ -21,6 +21,7 @@ import { connectDB } from "../lib/db";
 import { ensureDefaultBranch } from "../lib/branches";
 import { Batch } from "../models/Batch";
 import { Branch } from "../models/Branch";
+import { Pharmacy } from "../models/Pharmacy";
 import { Purchase } from "../models/Purchase";
 import { Sale } from "../models/Sale";
 import { User } from "../models/User";
@@ -62,7 +63,16 @@ async function main() {
     return;
   }
 
-  const branch = APPLY ? await ensureDefaultBranch() : existing!;
+  const pharmacy = await Pharmacy.findOne().sort({ createdAt: 1 });
+  if (!pharmacy && APPLY) {
+    console.log("No pharmacy exists yet. Run `npm run backfill:pharmacies -- --apply` first.");
+    await mongoose.disconnect();
+    return;
+  }
+
+  const branch = APPLY
+    ? await ensureDefaultBranch(pharmacy!._id)
+    : existing!;
   console.log(`  default branch: ${branch.code} (${branch.name})  ${branch._id}`);
 
   await stamp(User, "users", branch._id);

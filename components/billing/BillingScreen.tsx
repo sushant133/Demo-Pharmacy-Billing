@@ -11,6 +11,13 @@ import {
 } from "react";
 import { apiFetch, qs } from "@/lib/client";
 import { describeExpiry, expiryTone, formatExpiry, money } from "@/lib/format";
+import {
+  describeQuantity,
+  describeStock,
+  formatUnitCount,
+  stripLabel,
+  unitWord,
+} from "@/lib/pack";
 import { Badge, cx } from "@/components/ui";
 import { CustomerField } from "@/components/billing/CustomerField";
 import {
@@ -40,7 +47,9 @@ interface MedicineHit {
   manufacturer: string;
   unit: string;
   packSize: string;
+  unitsPerStrip: number;
   requiresPrescription: boolean;
+  isActive?: boolean;
   stockQuantity: number;
   nearestExpiry: string | null;
 }
@@ -49,6 +58,8 @@ interface CartLine {
   medicineId: string;
   name: string;
   unit: string;
+  packSize: string;
+  unitsPerStrip: number;
   requiresPrescription: boolean;
   quantity: number;
   stockQuantity: number;
@@ -75,6 +86,7 @@ export function BillingScreen({
   const [highlight, setHighlight] = useState(0);
 
   const [cart, setCart] = useState<CartLine[]>([]);
+  const [qtyDraft, setQtyDraft] = useState<Record<string, string>>({});
   const [discount, setDiscount] = useState("0");
   const [discountPercent, setDiscountPercent] = useState("0");
   const [paymentMode, setPaymentMode] = useState<PaymentMode>("cash");
@@ -92,6 +104,7 @@ export function BillingScreen({
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const searchRef = useRef<HTMLInputElement>(null);
+  const submittingRef = useRef(false);
   const deferredQuery = useDeferredValue(query);
 
   // --- Search -------------------------------------------------------------
@@ -113,7 +126,9 @@ export function BillingScreen({
         { signal: controller.signal },
       );
       if (controller.signal.aborted) return;
-      setHits(result.ok ? result.data : []);
+      setHits(
+        result.ok ? result.data.filter((hit) => hit.isActive !== false) : [],
+      );
       setHighlight(0);
       setSearching(false);
     }, 180);
@@ -125,9 +140,20 @@ export function BillingScreen({
   }, [deferredQuery]);
 
   // --- Live quote ---------------------------------------------------------
+  const quantityFor = useCallback(
+    (line: CartLine) => {
+      const raw = qtyDraft[line.medicineId];
+      if (raw === undefined) return line.quantity;
+      const parsed = Math.floor(Number(raw));
+      if (!Number.isFinite(parsed) || parsed < 1) return line.quantity;
+      return Math.min(line.stockQuantity, parsed);
+    },
+    [qtyDraft],
+  );
+
   const cartKey = useMemo(
-    () => cart.map((line) => `${line.medicineId}:${line.quantity}`).join("|"),
-    [cart],
+    () => cart.map((line) => `${line.medicineId}:${quantityFor(line)}`).join("|"),
+    [cart, quantityFor],
   );
   const discountValue = Number(discount) || 0;
   // A percentage is resolved on the server, which is the only side that knows
@@ -138,6 +164,7 @@ export function BillingScreen({
     if (cart.length === 0) {
       setPlan(null);
       setPlanError(null);
+      setQuoting(false);
       return;
     }
 
@@ -151,7 +178,7 @@ export function BillingScreen({
         json: {
           items: cart.map((line) => ({
             medicineId: line.medicineId,
-            quantity: line.quantity,
+            quantity: quantityFor(line),
           })),
           discount: discountValue,
           discountPercent: percentValue,
@@ -173,17 +200,25 @@ export function BillingScreen({
       controller.abort();
       clearTimeout(timer);
     };
-    // cartKey captures the meaningful shape of `cart` for this effect.
-  }, [cartKey, discountValue, percentValue, cart]);
+  }, [cartKey, discountValue, percentValue, cart, quantityFor]);
 
   // --- Cart operations ----------------------------------------------------
-  const addToCart = useCallback((medicine: MedicineHit) => {
+  const addToCart = useCallback((medicine: MedicineHit, addQuantity = 1) => {
+    if (medicine.stockQuantity < 1 || medicine.isActive === false) return;
+    const add = Math.max(1, Math.floor(addQuantity) || 1);
     setCart((current) => {
       const existing = current.find((line) => line.medicineId === medicine.id);
       if (existing) {
         return current.map((line) =>
           line.medicineId === medicine.id
-            ? { ...line, quantity: line.quantity + 1 }
+            ? {
+                ...line,
+                quantity: Math.min(
+                  medicine.stockQuantity,
+                  line.quantity + add,
+                ),
+                stockQuantity: medicine.stockQuantity,
+              }
             : line,
         );
       }
@@ -193,8 +228,10 @@ export function BillingScreen({
           medicineId: medicine.id,
           name: medicine.name,
           unit: medicine.unit,
+          packSize: medicine.packSize,
+          unitsPerStrip: medicine.unitsPerStrip || 1,
           requiresPrescription: medicine.requiresPrescription,
-          quantity: 1,
+          quantity: Math.max(1, Math.min(medicine.stockQuantity, add)),
           stockQuantity: medicine.stockQuantity,
         },
       ];
@@ -206,16 +243,52 @@ export function BillingScreen({
   }, []);
 
   const setQuantity = useCallback((medicineId: string, quantity: number) => {
+    setQtyDraft((current) => {
+      if (!(medicineId in current)) return current;
+      const next = { ...current };
+      delete next[medicineId];
+      return next;
+    });
     setCart((current) =>
-      current.map((line) =>
-        line.medicineId === medicineId
-          ? { ...line, quantity: Math.max(1, Math.floor(quantity) || 1) }
-          : line,
-      ),
+      current.map((line) => {
+        if (line.medicineId !== medicineId) return line;
+        const next = Math.max(1, Math.floor(quantity) || 1);
+        return {
+          ...line,
+          quantity: Math.min(line.stockQuantity, next),
+        };
+      }),
     );
   }, []);
 
+  const commitQuantity = useCallback(
+    (medicineId: string, raw: string, stockQuantity: number) => {
+      const parsed = Math.floor(Number(raw));
+      const next = Number.isFinite(parsed) && parsed >= 1 ? parsed : 1;
+      setQtyDraft((current) => {
+        if (!(medicineId in current)) return current;
+        const copy = { ...current };
+        delete copy[medicineId];
+        return copy;
+      });
+      setCart((current) =>
+        current.map((line) =>
+          line.medicineId === medicineId
+            ? { ...line, quantity: Math.min(stockQuantity, Math.max(1, next)) }
+            : line,
+        ),
+      );
+    },
+    [],
+  );
+
   const removeLine = useCallback((medicineId: string) => {
+    setQtyDraft((current) => {
+      if (!(medicineId in current)) return current;
+      const next = { ...current };
+      delete next[medicineId];
+      return next;
+    });
     setCart((current) => current.filter((line) => line.medicineId !== medicineId));
   }, []);
 
@@ -237,7 +310,8 @@ export function BillingScreen({
 
   // --- Submit -------------------------------------------------------------
   async function completeSale() {
-    if (cart.length === 0 || submitting) return;
+    if (cart.length === 0 || submittingRef.current || quoting || !plan) return;
+    submittingRef.current = true;
     setSubmitting(true);
     setSubmitError(null);
 
@@ -246,7 +320,7 @@ export function BillingScreen({
       json: {
         items: cart.map((line) => ({
           medicineId: line.medicineId,
-          quantity: line.quantity,
+          quantity: quantityFor(line),
         })),
         customerId,
         customerName: customerName.trim(),
@@ -261,6 +335,7 @@ export function BillingScreen({
     });
 
     if (!result.ok) {
+      submittingRef.current = false;
       setSubmitError(result.message);
       setSubmitting(false);
       return;
@@ -280,7 +355,7 @@ export function BillingScreen({
         searchRef.current?.select();
       }
       // F9 completes the sale from anywhere on the screen.
-      if (event.key === "F9" && plan && !submitting) {
+      if (event.key === "F9" && plan && !submitting && !quoting) {
         event.preventDefault();
         void completeSale();
       }
@@ -314,7 +389,7 @@ export function BillingScreen({
     return map;
   }, [plan]);
 
-  const unitCount = cart.reduce((sum, line) => sum + line.quantity, 0);
+  const unitCount = cart.reduce((sum, line) => sum + quantityFor(line), 0);
 
   // Anything already typed, or pulled in with a saved customer, keeps the
   // buyer panel open so it never hides a value the counter can see is wrong.
@@ -340,8 +415,8 @@ export function BillingScreen({
               New sale
             </h1>
             <p className="mt-1 text-xs text-slate-300">
-              Batches are chosen automatically — earliest expiry first, never an
-              expired one.
+              Sell as many tablets as they asked for — 4 from a strip of 10 is
+              fine. Batches are earliest expiry first.
             </p>
           </div>
           <div className="flex flex-wrap items-end gap-4">
@@ -397,7 +472,10 @@ export function BillingScreen({
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={onSearchKeyDown}
-              placeholder="Start typing a name… (F4)"
+              placeholder="Search a name, generic or salt"
+              enterKeyHint="search"
+              autoCapitalize="none"
+              autoCorrect="off"
               className="pos-search"
               role="combobox"
               aria-expanded={hits.length > 0}
@@ -428,45 +506,59 @@ export function BillingScreen({
               {hits.map((hit, index) => {
                 const outOfStock = hit.stockQuantity <= 0;
                 const low = !outOfStock && hit.stockQuantity <= 10;
+                const perStrip = hit.unitsPerStrip || 1;
+                const pack = stripLabel(perStrip, hit.unit);
                 return (
                   <li key={hit.id} role="option" aria-selected={index === highlight}>
-                    <button
-                      type="button"
-                      disabled={outOfStock}
-                      onMouseEnter={() => setHighlight(index)}
-                      onClick={() => addToCart(hit)}
+                    <div
                       className={cx(
                         "flex w-full items-center gap-3 px-3 py-3 text-left transition-colors",
                         index === highlight && !outOfStock && "bg-brand-50",
-                        outOfStock ? "cursor-not-allowed opacity-55" : "hover:bg-brand-50",
+                        outOfStock ? "opacity-55" : "hover:bg-brand-50",
                       )}
+                      onMouseEnter={() => setHighlight(index)}
                     >
-                      <span
+                      <button
+                        type="button"
+                        disabled={outOfStock}
+                        onClick={() => addToCart(hit, 1)}
                         className={cx(
-                          "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-sm font-semibold",
-                          outOfStock
-                            ? "bg-rose-50 text-rose-700"
-                            : "bg-brand-50 text-brand-800",
+                          "flex min-w-0 flex-1 items-center gap-3 text-left",
+                          outOfStock && "cursor-not-allowed",
                         )}
-                        aria-hidden="true"
                       >
-                        {hit.name.slice(0, 1).toUpperCase()}
-                      </span>
+                        <span
+                          className={cx(
+                            "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-sm font-semibold",
+                            outOfStock
+                              ? "bg-rose-50 text-rose-700"
+                              : "bg-brand-50 text-brand-800",
+                          )}
+                          aria-hidden="true"
+                        >
+                          {hit.name.slice(0, 1).toUpperCase()}
+                        </span>
 
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-slate-900">
-                          {hit.name}
-                          {hit.packSize ? (
-                            <span className="ml-1.5 font-normal text-slate-400">
-                              {hit.packSize}
-                            </span>
-                          ) : null}
-                        </p>
-                        <p className="truncate text-xs text-slate-500">
-                          {[hit.genericName, hit.manufacturer].filter(Boolean).join(" · ") ||
-                            "—"}
-                        </p>
-                      </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-slate-900">
+                            {hit.name}
+                            {hit.packSize ? (
+                              <span className="ml-1.5 font-normal text-slate-400">
+                                {hit.packSize}
+                              </span>
+                            ) : null}
+                          </p>
+                          <p className="truncate text-xs text-slate-500">
+                            {[
+                              hit.genericName,
+                              hit.manufacturer,
+                              pack,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ") || "—"}
+                          </p>
+                        </div>
+                      </button>
 
                       {hit.requiresPrescription ? (
                         <Badge tone="amber" className="hidden sm:inline-flex">
@@ -485,22 +577,34 @@ export function BillingScreen({
                                 : "text-emerald-700",
                           )}
                         >
-                          {outOfStock ? "Out of stock" : `${hit.stockQuantity} left`}
+                          {outOfStock
+                            ? "Out of stock"
+                            : describeStock(hit.stockQuantity, perStrip, hit.unit)}
                         </p>
                         {hit.nearestExpiry ? (
                           <p className="text-[11px] text-slate-400">
                             exp {formatExpiry(hit.nearestExpiry)}
                           </p>
                         ) : null}
+                        {!outOfStock && perStrip > 1 && hit.stockQuantity >= perStrip ? (
+                          <button
+                            type="button"
+                            onClick={() => addToCart(hit, perStrip)}
+                            className="mt-1 rounded-md bg-white px-1.5 py-0.5 text-[10px] font-medium text-brand-800 ring-1 ring-brand-200 ring-inset hover:bg-brand-50"
+                          >
+                            + 1 strip
+                          </button>
+                        ) : null}
                       </div>
-                    </button>
+                    </div>
                   </li>
                 );
               })}
             </ul>
           ) : (
             <p className="mt-3 text-xs text-slate-400">
-              Type at least two letters. Enter adds the highlighted row.
+              Type at least two letters. Enter adds 1 tablet; use + 1 strip for a
+              full strip.
             </p>
           )}
         </div>
@@ -545,6 +649,8 @@ export function BillingScreen({
             <ul className="divide-y divide-slate-100">
               {cart.map((line, index) => {
                 const planLine = picksByMedicine.get(line.medicineId);
+                const perStrip = line.unitsPerStrip || 1;
+                const pack = stripLabel(perStrip, line.unit);
                 return (
                   <li key={line.medicineId} className="px-4 py-3.5">
                     <div className="flex items-start gap-3">
@@ -560,36 +666,67 @@ export function BillingScreen({
                             </Badge>
                           ) : null}
                         </p>
-                        <p className="text-xs text-slate-500 capitalize">{line.unit}</p>
+                        <p className="text-xs text-slate-500">
+                          {[pack, line.packSize].filter(Boolean).join(" · ") ||
+                            unitWord(line.unit, 1)}
+                        </p>
                       </div>
 
-                      <div className="flex items-center rounded-xl bg-slate-50 ring-1 ring-slate-200 ring-inset">
-                        <button
-                          type="button"
-                          aria-label={`Decrease ${line.name}`}
-                          onClick={() => setQuantity(line.medicineId, line.quantity - 1)}
-                          className="px-2.5 py-1.5 text-slate-500 hover:text-slate-900"
-                        >
-                          −
-                        </button>
-                        <input
-                          type="number"
-                          min={1}
-                          value={line.quantity}
-                          onChange={(event) =>
-                            setQuantity(line.medicineId, Number(event.target.value))
-                          }
-                          aria-label={`Quantity for ${line.name}`}
-                          className="tnum w-12 border-0 bg-transparent py-1.5 text-center text-sm font-semibold focus:ring-0 focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          aria-label={`Increase ${line.name}`}
-                          onClick={() => setQuantity(line.medicineId, line.quantity + 1)}
-                          className="px-2.5 py-1.5 text-slate-500 hover:text-slate-900"
-                        >
-                          +
-                        </button>
+                      <div className="shrink-0">
+                        <p className="mb-1 text-center text-[10px] font-medium tracking-wide text-slate-400 uppercase">
+                          {unitWord(line.unit, 2)}
+                        </p>
+                        <div className="flex items-center rounded-xl bg-slate-50 ring-1 ring-slate-200 ring-inset">
+                          <button
+                            type="button"
+                            aria-label={`Decrease ${line.name}`}
+                            onClick={() => setQuantity(line.medicineId, line.quantity - 1)}
+                            className="px-2.5 py-1.5 text-slate-500 hover:text-slate-900"
+                          >
+                            −
+                          </button>
+                          <input
+                            type="number"
+                            min={1}
+                            max={line.stockQuantity}
+                            value={qtyDraft[line.medicineId] ?? String(line.quantity)}
+                            onChange={(event) =>
+                              setQtyDraft((current) => ({
+                                ...current,
+                                [line.medicineId]: event.target.value,
+                              }))
+                            }
+                            onBlur={(event) =>
+                              commitQuantity(
+                                line.medicineId,
+                                event.target.value,
+                                line.stockQuantity,
+                              )
+                            }
+                            aria-label={`How many ${unitWord(line.unit, 2)} of ${line.name}`}
+                            className="tnum w-12 border-0 bg-transparent py-1.5 text-center text-sm font-semibold focus:ring-0 focus:outline-none"
+                          />
+                          <button
+                            type="button"
+                            aria-label={`Increase ${line.name}`}
+                            onClick={() => setQuantity(line.medicineId, line.quantity + 1)}
+                            className="px-2.5 py-1.5 text-slate-500 hover:text-slate-900"
+                          >
+                            +
+                          </button>
+                        </div>
+                        {perStrip > 1 ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setQuantity(line.medicineId, line.quantity + perStrip)
+                            }
+                            disabled={line.quantity + perStrip > line.stockQuantity}
+                            className="mt-1 w-full rounded-md px-1 py-0.5 text-[10px] font-medium text-brand-800 ring-1 ring-brand-200 ring-inset hover:bg-brand-50 disabled:opacity-40"
+                          >
+                            + 1 strip ({perStrip})
+                          </button>
+                        ) : null}
                       </div>
 
                       <div className="w-24 shrink-0 text-right">
@@ -616,6 +753,16 @@ export function BillingScreen({
                       </button>
                     </div>
 
+                    <p className="mt-1.5 ml-9 text-xs text-slate-600">
+                      {describeQuantity(quantityFor(line), perStrip, line.unit)}
+                      {planLine && !planLine.split && planLine.picks[0] ? (
+                        <span className="text-slate-400">
+                          {" "}
+                          · {money(planLine.picks[0].unitPrice)} each
+                        </span>
+                      ) : null}
+                    </p>
+
                     {planLine ? (
                       <div className="mt-2 ml-9 space-y-1">
                         {planLine.picks.map((pick) => {
@@ -632,7 +779,8 @@ export function BillingScreen({
                                 {pick.batchNumber}
                               </span>
                               <span className="tnum text-slate-600">
-                                {pick.quantity} × {money(pick.unitPrice)}
+                                {formatUnitCount(pick.quantity, line.unit)} ×{" "}
+                                {money(pick.unitPrice)}
                               </span>
                               <span
                                 className={cx(
@@ -953,8 +1101,8 @@ export function BillingScreen({
           <button
             type="button"
             onClick={completeSale}
-            disabled={!plan || submitting || cart.length === 0}
-            className="btn-primary w-full py-3.5 text-base shadow-lg shadow-brand-900/10"
+            disabled={!plan || quoting || submitting || cart.length === 0}
+            className="btn-primary hidden w-full py-3.5 text-base shadow-lg shadow-brand-900/10 lg:flex"
           >
             {submitting ? "Completing…" : "Complete sale"}
             {!submitting ? (
@@ -964,11 +1112,32 @@ export function BillingScreen({
             ) : null}
           </button>
 
-          <p className="text-center text-[11px] text-slate-400">
+          <p className="hidden text-center text-[11px] text-slate-400 lg:block">
             Billed by {cashierName}
           </p>
         </div>
       </aside>
+
+      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur lg:hidden">
+        {planError ? (
+          <p className="mb-2 line-clamp-2 text-[11px] text-amber-800">{planError}</p>
+        ) : null}
+        {submitError ? (
+          <p className="mb-2 line-clamp-2 text-[11px] text-rose-700">{submitError}</p>
+        ) : null}
+        <button
+          type="button"
+          onClick={completeSale}
+          disabled={!plan || quoting || submitting || cart.length === 0}
+          className="btn-primary w-full py-3.5 text-base"
+        >
+          {submitting
+            ? "Completing…"
+            : plan
+              ? `Complete · ${money(plan.totalAmount)}`
+              : "Complete sale"}
+        </button>
+      </div>
     </div>
     </>
   );

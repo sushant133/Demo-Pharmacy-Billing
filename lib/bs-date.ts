@@ -135,7 +135,7 @@ function yearRow(year: number): readonly number[] | undefined {
   return MONTHS[year - 2000];
 }
 
-function daysInBsMonth(year: number, month: number): number {
+export function daysInBsMonth(year: number, month: number): number {
   const row = yearRow(year);
   return row?.[month] ?? 30;
 }
@@ -196,6 +196,12 @@ export function nepaliFiscalYear(bs: BsDate): string {
   return `${start}-${String(start + 1).slice(-2)}`;
 }
 
+export const BS_MONTHS = MONTH_EN;
+
+export function formatYmd(date: { year: number; month: number; day: number }): string {
+  return `${date.year}-${String(date.month).padStart(2, "0")}-${String(date.day).padStart(2, "0")}`;
+}
+
 export function formatBs(bs: BsDate): string {
   const month = MONTH_EN[bs.month - 1] ?? String(bs.month);
   const dd = String(bs.day).padStart(2, "0");
@@ -203,5 +209,93 @@ export function formatBs(bs: BsDate): string {
 }
 
 export function formatBsIso(bs: BsDate): string {
-  return `${bs.year}-${String(bs.month).padStart(2, "0")}-${String(bs.day).padStart(2, "0")}`;
+  return formatYmd(bs);
+}
+
+/** YYYY-MM-DD, also accepts 2082/05/20 and 2082.05.20. */
+export function parseYmd(value: string): BsDate | null {
+  const match = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(value.trim());
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (!year || month < 1 || month > 12 || day < 1 || day > 32) return null;
+  return { year, month, day };
+}
+
+export function isValidAdDate(year: number, month: number, day: number): boolean {
+  if (year < 1944 || year > 2043) return false;
+  if (month < 1 || month > 12) return false;
+  return day >= 1 && day <= daysInGregorianMonth(year, month);
+}
+
+export function isValidBsDate(year: number, month: number, day: number): boolean {
+  if (year < 2000 || year > 2099) return false;
+  if (month < 1 || month > 12) return false;
+  return day >= 1 && day <= daysInBsMonth(year, month);
+}
+
+/**
+ * Convert a Bikram Sambat civil date to Gregorian.
+ * Inverse of `adToBs`. Range: 2000–2099 BS.
+ */
+export function bsToAd(year: number, month: number, day: number): BsDate {
+  const y0 = 1944;
+  const m0 = 1;
+  const d0 = 1;
+  const bsY0 = 2000;
+  const bsM0 = 9;
+  const bsD0 = 17;
+
+  let elapsed = 0;
+  for (let y = bsY0; y < year; y++) {
+    for (let m = 1; m <= 12; m++) elapsed += daysInBsMonth(y, m);
+  }
+  for (let m = 1; m < month; m++) elapsed += daysInBsMonth(year, m);
+  elapsed += day - 1;
+
+  let origin = 0;
+  for (let m = 1; m < bsM0; m++) origin += daysInBsMonth(bsY0, m);
+  origin += bsD0 - 1;
+
+  const remaining = elapsed - origin;
+  let y = y0;
+  let m = m0;
+  let d = d0 + remaining;
+
+  while (d <= 0) {
+    m -= 1;
+    if (m < 1) {
+      y -= 1;
+      m = 12;
+    }
+    d += daysInGregorianMonth(y, m);
+  }
+
+  while (true) {
+    const dim = daysInGregorianMonth(y, m);
+    if (d <= dim) break;
+    d -= dim;
+    m += 1;
+    if (m > 12) {
+      y += 1;
+      m = 1;
+    }
+  }
+
+  return { year: y, month: m, day: d };
+}
+
+/** AD YYYY-MM-DD → BS YYYY-MM-DD, or null if the date is outside the table. */
+export function adIsoToBsIso(adIso: string): string | null {
+  const ad = parseYmd(adIso);
+  if (!ad || !isValidAdDate(ad.year, ad.month, ad.day)) return null;
+  return formatYmd(adToBs(ad.year, ad.month, ad.day));
+}
+
+/** BS YYYY-MM-DD → AD YYYY-MM-DD, or null if the date is outside the table. */
+export function bsIsoToAdIso(bsIso: string): string | null {
+  const bs = parseYmd(bsIso);
+  if (!bs || !isValidBsDate(bs.year, bs.month, bs.day)) return null;
+  return formatYmd(bsToAd(bs.year, bs.month, bs.day));
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { apiFetch } from "@/lib/client";
 
 /**
@@ -36,8 +36,11 @@ export function VoidSaleAction({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
+  const inflight = useRef(false);
 
   async function submit() {
+    if (inflight.current) return;
+    inflight.current = true;
     setBusy(true);
     setError(null);
 
@@ -47,6 +50,7 @@ export function VoidSaleAction({
     });
 
     if (!result.ok) {
+      inflight.current = false;
       setError(result.message);
       setBusy(false);
       return;
@@ -65,6 +69,7 @@ export function VoidSaleAction({
     }
 
     setConfirming(false);
+    inflight.current = false;
     setBusy(false);
     router.refresh();
   }

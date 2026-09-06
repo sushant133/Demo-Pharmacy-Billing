@@ -1,27 +1,36 @@
+import { Types } from "mongoose";
 import { config } from "@/lib/config";
 import { connectDB } from "@/lib/db";
 import { invalidateTtl, onceTtl } from "@/lib/ttl-cache";
 import { Branch } from "@/models/Branch";
+import { Pharmacy } from "@/models/Pharmacy";
 import { Setting } from "@/models/Setting";
 import type { SettingsInput } from "@/lib/validation";
 
 /**
- * The shop's own details.
+ * One pharmacy's own details.
  *
- * One record, read on nearly every page - the bill header, the letterhead on
- * an exported report, the browser title, the sign-in card - so it is cached
- * for a few seconds rather than fetched each time, and the cache is dropped
- * the moment someone saves.
+ * One record per pharmacy, read on nearly every page - the bill header, the
+ * letterhead on an exported report, the browser title, the sign-in card for
+ * staff who already know which shop they are in - so it is cached for a few
+ * seconds rather than fetched each time, and the cache is dropped the moment
+ * someone saves.
  *
  * Reads never throw. The settings record is decoration on most screens and the
  * legally-required header on one; a Mongo hiccup should degrade the first and
  * be visible on the second, not return a 500 for the whole application. When
  * the database cannot be reached the environment defaults are used, which is
  * exactly where these values lived before this record existed.
+ *
+ * Superadmin and the public login screen have no pharmacy, so they see the
+ * platform defaults rather than any one shop's identity.
  */
 
-const CACHE_KEY = "business-settings";
 const CACHE_MS = 15_000;
+
+function cacheKey(pharmacyId: string): string {
+  return `business-settings:${pharmacyId}`;
+}
 
 export interface BusinessSettings {
   businessName: string;
@@ -41,6 +50,8 @@ export interface BusinessSettings {
   website: string;
   billTerms: string;
   billFooterNote: string;
+  /** Shop-defined medicine categories, on top of the built-in list. */
+  medicineCategories: string[];
 }
 
 /**
@@ -67,19 +78,32 @@ export const DEFAULT_SETTINGS: BusinessSettings = {
   billTerms:
     "Goods once sold are not returnable except as required by law. Keep this tax invoice for your records.",
   billFooterNote: "Thank you.",
+  medicineCategories: [],
 };
 
 type SettingsShape = Partial<Record<keyof BusinessSettings, unknown>>;
 
 /** Fill every field, so a record saved before a field existed still reads. */
-function hydrate(doc: SettingsShape | null): BusinessSettings {
-  if (!doc) return { ...DEFAULT_SETTINGS };
+function hydrate(
+  doc: SettingsShape | null,
+  fallbackName?: string | null,
+): BusinessSettings {
+  // A pharmacy with no settings row must still wear its own name, never the
+  // platform default - that is how one vendor would see "Mantra Pharmacy"
+  // on another shop's door.
+  const defaultName = fallbackName?.trim() || "";
+  if (!doc) {
+    return {
+      ...DEFAULT_SETTINGS,
+      businessName: defaultName,
+    };
+  }
 
   const str = (value: unknown, fallback = ""): string =>
     typeof value === "string" ? value : fallback;
 
   return {
-    businessName: str(doc.businessName, DEFAULT_SETTINGS.businessName),
+    businessName: str(doc.businessName, defaultName || DEFAULT_SETTINGS.businessName),
     legalName: str(doc.legalName),
     pan: str(doc.pan),
     vatRegistered: doc.vatRegistered !== false,
@@ -96,23 +120,62 @@ function hydrate(doc: SettingsShape | null): BusinessSettings {
     altPhone: str(doc.altPhone),
     email: str(doc.email),
     website: str(doc.website),
-    billTerms: str(doc.billTerms),
-    billFooterNote: str(doc.billFooterNote),
+    billTerms: str(doc.billTerms, DEFAULT_SETTINGS.billTerms),
+    billFooterNote: str(doc.billFooterNote, DEFAULT_SETTINGS.billFooterNote),
+    medicineCategories: Array.isArray(doc.medicineCategories)
+      ? doc.medicineCategories
+          .filter((value): value is string => typeof value === "string")
+          .map((value) => value.trim())
+          .filter(Boolean)
+      : [],
   };
 }
 
-async function loadSettings(): Promise<BusinessSettings> {
-  await connectDB();
-  const doc = await Setting.findOne({ key: "business" }).lean();
-  return hydrate(doc as SettingsShape | null);
+function asObjectId(pharmacyId: string | Types.ObjectId): Types.ObjectId {
+  return typeof pharmacyId === "string"
+    ? new Types.ObjectId(pharmacyId)
+    : pharmacyId;
 }
 
-/** The shop's details. Falls back to the environment if Mongo is unreachable. */
-export async function getSettings(): Promise<BusinessSettings> {
+async function loadSettings(
+  pharmacyId: string | Types.ObjectId,
+  fallbackName?: string | null,
+): Promise<BusinessSettings> {
+  await connectDB();
+  const doc = await Setting.findOne({
+    pharmacyId: asObjectId(pharmacyId),
+    key: "business",
+  }).lean();
+  return hydrate(doc as SettingsShape | null, fallbackName);
+}
+
+/**
+ * One pharmacy's details. Pass no id for the platform defaults (login screen,
+ * superadmin, or Mongo unreachable).
+ *
+ * `fallbackName` is the pharmacy's own name from the session, so a missing
+ * settings record still brands the shop as itself rather than the platform.
+ */
+export async function getSettings(
+  pharmacyId?: string | Types.ObjectId | null,
+  fallbackName?: string | null,
+): Promise<BusinessSettings> {
+  if (!pharmacyId) {
+    return {
+      ...DEFAULT_SETTINGS,
+      ...(fallbackName?.trim() ? { businessName: fallbackName.trim() } : {}),
+    };
+  }
+
   try {
-    return await onceTtl(CACHE_KEY, CACHE_MS, loadSettings);
+    return await onceTtl(cacheKey(String(pharmacyId)), CACHE_MS, () =>
+      loadSettings(pharmacyId, fallbackName),
+    );
   } catch {
-    return { ...DEFAULT_SETTINGS };
+    return {
+      ...DEFAULT_SETTINGS,
+      businessName: fallbackName?.trim() || "",
+    };
   }
 }
 
@@ -125,20 +188,34 @@ export async function getSettings(): Promise<BusinessSettings> {
  */
 export async function saveSettings(
   input: SettingsInput,
+  pharmacyId: string | Types.ObjectId,
 ): Promise<BusinessSettings> {
   await connectDB();
 
   // The form asks for a percentage because that is how people say it; the
   // record stores a fraction because that is how the VAT maths uses it.
   const { vatRate, ...rest } = input;
+  const id = asObjectId(pharmacyId);
 
   const doc = await Setting.findOneAndUpdate(
-    { key: "business" },
-    { $set: { ...rest, vatRate: round4(vatRate / 100) }, $setOnInsert: { key: "business" } },
+    { pharmacyId: id, key: "business" },
+    {
+      $set: { ...rest, vatRate: round4(vatRate / 100) },
+      $setOnInsert: { pharmacyId: id, key: "business" },
+    },
     { new: true, upsert: true, runValidators: true },
   ).lean();
 
-  invalidateTtl(CACHE_KEY);
+  invalidateTtl(cacheKey(String(pharmacyId)));
+  invalidateTtl(`active-branch-count:${String(pharmacyId)}`);
+
+  // The sidebar, tab title and superadmin list all read this name. Keeping it
+  // in step with Settings means renaming the shop on the bill also renames
+  // the shop on the door.
+  if (rest.businessName) {
+    await Pharmacy.updateOne({ _id: id }, { $set: { name: rest.businessName } });
+  }
+
   return hydrate(doc as SettingsShape | null);
 }
 
@@ -196,16 +273,17 @@ export function issuerFor(
 export async function printedIssuer(
   settings: BusinessSettings,
   branchId?: unknown,
+  pharmacyId?: string | Types.ObjectId | null,
 ): Promise<Issuer> {
   if (!branchId) return issuerFor(settings, null);
 
   try {
-    if ((await activeBranchCount()) <= 1) return issuerFor(settings, null);
+    if ((await activeBranchCount(pharmacyId)) <= 1) return issuerFor(settings, null);
 
     await connectDB();
-    const branch = await Branch.findById(branchId)
-      .select("name address phone panNo")
-      .lean();
+    const filter: Record<string, unknown> = { _id: branchId };
+    if (pharmacyId) filter.pharmacyId = asObjectId(pharmacyId);
+    const branch = await Branch.findOne(filter).select("name address phone panNo").lean();
     return issuerFor(settings, branch);
   } catch {
     // A bill that prints the shop's own header beats one that fails to print.
@@ -213,10 +291,15 @@ export async function printedIssuer(
   }
 }
 
-function activeBranchCount(): Promise<number> {
-  return onceTtl("active-branch-count", CACHE_MS, async () => {
+function activeBranchCount(
+  pharmacyId?: string | Types.ObjectId | null,
+): Promise<number> {
+  const key = `active-branch-count:${pharmacyId ? String(pharmacyId) : "none"}`;
+  return onceTtl(key, CACHE_MS, async () => {
     await connectDB();
-    return Branch.countDocuments({ isActive: true });
+    const filter: Record<string, unknown> = { isActive: true };
+    if (pharmacyId) filter.pharmacyId = asObjectId(pharmacyId);
+    return Branch.countDocuments(filter);
   });
 }
 

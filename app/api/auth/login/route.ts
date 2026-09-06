@@ -7,6 +7,7 @@ import { signSession, sessionCookieOptions } from "@/lib/session";
 import { loginSchema } from "@/lib/validation";
 import { User } from "@/models/User";
 import { Branch } from "@/models/Branch";
+import { Pharmacy } from "@/models/Pharmacy";
 import { normalizeRole } from "@/lib/roles";
 
 export const runtime = "nodejs";
@@ -33,10 +34,38 @@ export const POST = withRoute(async (req) => {
     throw ApiError.forbidden("This account has been deactivated.");
   }
   // An account still stored as pharmacist or cashier signs in as admin: there
-  // is only the one role now, and `npm run migrate:roles` writes it to the row.
+  // is only the one shop role now, and `npm run migrate:roles` writes it to the row.
   const role = normalizeRole(user.role);
   if (!role) {
     throw ApiError.forbidden("This account has an unrecognised role.");
+  }
+
+  let pharmacyId = "";
+  let pharmacyName = "";
+  let pharmacySlug = "";
+
+  if (role !== "superadmin") {
+    if (!user.pharmacyId) {
+      throw ApiError.forbidden(
+        "This account is not attached to a pharmacy. Ask the platform administrator to issue a new login.",
+      );
+    }
+    const pharmacy = await Pharmacy.findById(user.pharmacyId)
+      .select("name slug status")
+      .lean();
+    if (!pharmacy) {
+      throw ApiError.forbidden(
+        "This pharmacy no longer exists. Ask the platform administrator for a new account.",
+      );
+    }
+    if (pharmacy.status === "suspended") {
+      throw ApiError.forbidden(
+        "This pharmacy has been suspended. Contact the platform administrator.",
+      );
+    }
+    pharmacyId = String(pharmacy._id);
+    pharmacyName = pharmacy.name;
+    pharmacySlug = pharmacy.slug;
   }
 
   // The branch travels in the token so middleware and every server component
@@ -51,6 +80,9 @@ export const POST = withRoute(async (req) => {
     name: user.name,
     email: user.email,
     role,
+    pharmacyId,
+    pharmacyName,
+    pharmacySlug,
     branchId: branch ? String(branch._id) : "",
     branchCode: branch?.code ?? "",
     branchName: branch?.name ?? "",
@@ -72,4 +104,3 @@ export const POST = withRoute(async (req) => {
 export const GET = withRoute(async () => {
   throw ApiError.badRequest("Use POST to sign in.");
 });
-

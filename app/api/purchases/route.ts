@@ -6,6 +6,7 @@ import { connectDB } from "@/lib/db";
 import { dateRangeFromStrings } from "@/lib/dates";
 import { createPurchase } from "@/lib/purchases";
 import { Purchase } from "@/models/Purchase";
+import { pharmacyFilter } from "@/lib/tenant";
 import { purchaseQuerySchema, purchaseSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
@@ -22,7 +23,10 @@ export const GET = withRoute(async (req) => {
   await connectDB();
 
   const scope = await resolveRequestScope(user, req);
-  const filter: Record<string, unknown> = { ...branchFilter(scope) };
+  const filter: Record<string, unknown> = {
+    ...pharmacyFilter(user),
+    ...branchFilter(scope),
+  };
   if (supplierId) filter.supplierId = new Types.ObjectId(supplierId);
   if (status !== "all") filter.status = status;
   if (paymentStatus !== "all") {

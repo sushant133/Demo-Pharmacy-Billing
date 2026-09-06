@@ -17,14 +17,17 @@ async function branchId(ctx: Ctx): Promise<string> {
 
 /** GET /api/branches/:id */
 export const GET = withRoute<Ctx>(async (_req, ctx) => {
-  await requirePermission("branch:manage");
+  const user = await requirePermission("branch:manage");
   const id = await branchId(ctx);
   await connectDB();
 
-  const branch = await Branch.findById(id).lean();
+  const branch = await Branch.findOne({
+    _id: id,
+    ...(user.pharmacyId ? { pharmacyId: user.pharmacyId } : {}),
+  }).lean();
   if (!branch) throw ApiError.notFound("That branch no longer exists.");
 
-  const activity = await branchActivity(id);
+  const activity = await branchActivity(id, user.pharmacyId);
   return ok({
     id: String(branch._id),
     code: branch.code,
@@ -41,9 +44,9 @@ export const GET = withRoute<Ctx>(async (_req, ctx) => {
 
 /** PATCH /api/branches/:id */
 export const PATCH = withRoute<Ctx>(async (req, ctx) => {
-  await requirePermission("branch:manage");
+  const user = await requirePermission("branch:manage");
   const id = await branchId(ctx);
   const input = await parseJson(req, branchSchema);
-  const branch = await updateBranch(id, input);
+  const branch = await updateBranch(user, id, input);
   return ok(branch);
 });

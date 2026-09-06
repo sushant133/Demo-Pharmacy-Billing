@@ -10,6 +10,12 @@ import { Schema, model, models, type InferSchemaType, type Model } from "mongoos
  */
 const supplierSchema = new Schema(
   {
+    pharmacyId: {
+      type: Schema.Types.ObjectId,
+      ref: "Pharmacy",
+      required: true,
+      index: true,
+    },
     name: { type: String, required: true, trim: true, maxlength: 200 },
     contactPerson: { type: String, trim: true, default: "", maxlength: 120 },
     phone: { type: String, trim: true, default: "", maxlength: 40, index: true },
@@ -30,7 +36,7 @@ const supplierSchema = new Schema(
   { timestamps: true },
 );
 
-supplierSchema.index({ name: 1 }, { unique: true });
+supplierSchema.index({ pharmacyId: 1, name: 1 }, { unique: true });
 supplierSchema.index({ name: "text", contactPerson: "text", phone: "text" });
 
 export type SupplierDoc = InferSchemaType<typeof supplierSchema>;

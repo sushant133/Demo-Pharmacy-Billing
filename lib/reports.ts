@@ -1,5 +1,6 @@
 import type { PipelineStage, Types } from "mongoose";
 import { branchFilter, type BranchScope } from "@/lib/branch-scope";
+import { pharmacyMatch } from "@/lib/tenant";
 import { config } from "@/lib/config";
 import { connectDB } from "@/lib/db";
 import { addDays, localDayRange } from "@/lib/dates";
@@ -48,7 +49,7 @@ export async function getLowStock(options?: {
   const now = new Date();
 
   const pipeline: PipelineStage[] = [
-    { $match: { isActive: { $ne: false } } },
+    { $match: { isActive: { $ne: false }, ...pharmacyMatch(options?.scope) } },
     {
       $lookup: {
         from: Batch.collection.name,
@@ -285,9 +286,23 @@ async function loadDashboardSummary(scope?: BranchScope): Promise<DashboardSumma
         {
           $group: {
             _id: null,
-            salesTotal: { $sum: "$totalAmount" },
+            salesTotal: {
+              $sum: {
+                $subtract: [
+                  "$totalAmount",
+                  { $ifNull: ["$returnedTotal", 0] },
+                ],
+              },
+            },
             billCount: { $sum: 1 },
-            itemCount: { $sum: { $sum: "$items.quantity" } },
+            itemCount: {
+              $sum: {
+                $subtract: [
+                  { $sum: "$items.quantity" },
+                  { $ifNull: ["$returnedUnits", 0] },
+                ],
+              },
+            },
           },
         },
       ]),

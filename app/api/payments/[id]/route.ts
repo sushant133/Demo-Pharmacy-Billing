@@ -16,8 +16,8 @@ type Ctx = { params: Promise<{ id: string }> };
  * being adjusted by hand.
  */
 export const DELETE = withRoute<Ctx>(async (_req, ctx) => {
-  await requirePermission("payment:write");
+  const user = await requirePermission("payment:write");
   const { id } = await ctx.params;
-  await deletePayment(objectIdSchema.parse(id));
+  await deletePayment(objectIdSchema.parse(id), user);
   return ok({ id, deleted: true });
 });

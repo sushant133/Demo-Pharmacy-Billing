@@ -6,6 +6,7 @@ import { integer, money } from "@/lib/format";
 import { round2 } from "@/lib/purchase-math";
 import { can } from "@/lib/roles";
 import { getBalancesFor, getTotalPayables } from "@/lib/suppliers";
+import { pharmacyFilter, pharmacyObjectId } from "@/lib/tenant";
 import { Supplier } from "@/models/Supplier";
 import {
   Badge,
@@ -56,7 +57,7 @@ export default async function SuppliersPage({
   const status = (params.status ?? "all") as (typeof TABS)[number]["value"];
   const canWrite = can(user.role, "supplier:write");
 
-  const filter: Record<string, unknown> = {};
+  const filter: Record<string, unknown> = { ...pharmacyFilter(user) };
   if (status === "active" || status === "owing") filter.isActive = { $ne: false };
   if (status === "inactive") filter.isActive = false;
 
@@ -82,9 +83,12 @@ export default async function SuppliersPage({
         .limit(fetchAll ? 1000 : PAGE_SIZE)
         .lean(),
       Supplier.countDocuments(filter),
-      getTotalPayables(),
+      getTotalPayables(user),
     ]);
-    const balances = await getBalancesFor(docs.map((doc) => doc._id));
+    const balances = await getBalancesFor(
+      docs.map((doc) => doc._id),
+      pharmacyObjectId(user),
+    );
     return [docs, total, payables, balances] as const;
   });
 

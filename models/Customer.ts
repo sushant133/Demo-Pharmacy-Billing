@@ -2,6 +2,12 @@ import { Schema, model, models, type InferSchemaType, type Model } from "mongoos
 
 const customerSchema = new Schema(
   {
+    pharmacyId: {
+      type: Schema.Types.ObjectId,
+      ref: "Pharmacy",
+      required: true,
+      index: true,
+    },
     name: { type: String, required: true, trim: true, maxlength: 160 },
     phone: { type: String, trim: true, default: "", maxlength: 30, index: true },
     address: { type: String, trim: true, default: "", maxlength: 300 },
@@ -13,6 +19,7 @@ const customerSchema = new Schema(
 );
 
 customerSchema.index({ name: "text", phone: "text" });
+customerSchema.index({ pharmacyId: 1, phone: 1 });
 
 export type CustomerDoc = InferSchemaType<typeof customerSchema>;
 

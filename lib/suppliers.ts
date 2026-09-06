@@ -3,6 +3,7 @@ import { ApiError } from "@/lib/api";
 import { connectDB } from "@/lib/db";
 import { round2 } from "@/lib/purchase-math";
 import { refreshPaymentStatus } from "@/lib/purchases";
+import { pharmacyFilter, pharmacyObjectId } from "@/lib/tenant";
 import { Purchase } from "@/models/Purchase";
 import { Supplier } from "@/models/Supplier";
 import { SupplierPayment } from "@/models/SupplierPayment";
@@ -39,16 +40,18 @@ export interface SupplierBalance {
 
 export async function getSupplierBalance(
   supplierId: string,
+  pharmacyId: Types.ObjectId,
 ): Promise<SupplierBalance> {
   await connectDB();
 
   const objectId = new Types.ObjectId(supplierId);
   const now = new Date();
+  const tenant = { pharmacyId, supplierId: objectId };
 
   const [supplier, purchaseAgg, paymentAgg, overdueAgg] = await Promise.all([
-    Supplier.findById(objectId).select("openingBalance").lean(),
+    Supplier.findOne({ _id: objectId, pharmacyId }).select("openingBalance").lean(),
     Purchase.aggregate([
-      { $match: { supplierId: objectId, status: "posted" } },
+      { $match: { ...tenant, status: "posted" } },
       {
         $group: {
           _id: null,
@@ -61,13 +64,13 @@ export async function getSupplierBalance(
       },
     ]),
     SupplierPayment.aggregate([
-      { $match: { supplierId: objectId } },
+      { $match: tenant },
       { $group: { _id: null, paid: { $sum: "$amount" } } },
     ]),
     Purchase.aggregate([
       {
         $match: {
-          supplierId: objectId,
+          ...tenant,
           status: "posted",
           paymentStatus: { $ne: "paid" },
           dueDate: { $lt: now },
@@ -110,17 +113,22 @@ export async function getSupplierBalance(
 /** Balances for many suppliers at once, for the supplier list screen. */
 export async function getBalancesFor(
   supplierIds: readonly Types.ObjectId[],
+  pharmacyId?: Types.ObjectId | null,
 ): Promise<Map<string, { purchased: number; paid: number }>> {
   if (supplierIds.length === 0) return new Map();
   await connectDB();
 
+  const tenant = pharmacyId
+    ? { pharmacyId }
+    : { pharmacyId: { $in: [] as const } };
+
   const [purchases, payments] = await Promise.all([
     Purchase.aggregate([
-      { $match: { supplierId: { $in: supplierIds }, status: "posted" } },
+      { $match: { ...tenant, supplierId: { $in: supplierIds }, status: "posted" } },
       { $group: { _id: "$supplierId", purchased: { $sum: "$totalAmount" } } },
     ]),
     SupplierPayment.aggregate([
-      { $match: { supplierId: { $in: supplierIds } } },
+      { $match: { ...tenant, supplierId: { $in: supplierIds } } },
       { $group: { _id: "$supplierId", paid: { $sum: "$amount" } } },
     ]),
   ]);
@@ -153,13 +161,16 @@ export async function recordPayment(
 ): Promise<{ id: string; amount: number }> {
   await connectDB();
 
-  const supplier = await Supplier.findById(input.supplierId).select("_id name").lean();
+  const pharmacyId = pharmacyObjectId(user);
+  const supplier = await Supplier.findOne({ _id: input.supplierId, pharmacyId })
+    .select("_id name")
+    .lean();
   if (!supplier) throw ApiError.notFound("That supplier no longer exists.");
 
   let grnNo = "";
 
   if (input.purchaseId) {
-    const purchase = await Purchase.findById(input.purchaseId)
+    const purchase = await Purchase.findOne({ _id: input.purchaseId, pharmacyId })
       .select("_id grnNo supplierId status totalAmount amountPaid")
       .lean();
 
@@ -185,6 +196,7 @@ export async function recordPayment(
   }
 
   const payment = await SupplierPayment.create({
+    pharmacyId,
     supplierId: supplier._id,
     purchaseId: input.purchaseId ? new Types.ObjectId(input.purchaseId) : null,
     grnNo,
@@ -203,42 +215,51 @@ export async function recordPayment(
 }
 
 /** Remove a payment and re-derive the affected invoice's status. */
-export async function deletePayment(paymentId: string): Promise<void> {
+export async function deletePayment(
+  paymentId: string,
+  user: SessionUser,
+): Promise<void> {
   await connectDB();
 
-  const payment = await SupplierPayment.findById(paymentId)
+  const payment = await SupplierPayment.findOne({
+    _id: paymentId,
+    ...pharmacyFilter(user),
+  })
     .select("_id purchaseId")
     .lean();
   if (!payment) throw ApiError.notFound("That payment no longer exists.");
 
-  await SupplierPayment.deleteOne({ _id: paymentId });
+  await SupplierPayment.deleteOne({ _id: paymentId, ...pharmacyFilter(user) });
   if (payment.purchaseId) await refreshPaymentStatus(payment.purchaseId);
 }
 
 /** Total the shop owes across every supplier - shown on the dashboard. */
-export async function getTotalPayables(): Promise<{
+export async function getTotalPayables(user: SessionUser): Promise<{
   outstanding: number;
   overdue: number;
   supplierCount: number;
 }> {
   await connectDB();
+  const scoped = pharmacyFilter(user);
 
   const [openingAgg, purchaseAgg, paymentAgg, overdueAgg, supplierCount] =
     await Promise.all([
       Supplier.aggregate([
-        { $match: { isActive: { $ne: false } } },
+        { $match: { ...scoped, isActive: { $ne: false } } },
         { $group: { _id: null, opening: { $sum: "$openingBalance" } } },
       ]),
       Purchase.aggregate([
-        { $match: { status: "posted" } },
+        { $match: { ...scoped, status: "posted" } },
         { $group: { _id: null, purchased: { $sum: "$totalAmount" } } },
       ]),
       SupplierPayment.aggregate([
+        { $match: scoped },
         { $group: { _id: null, paid: { $sum: "$amount" } } },
       ]),
       Purchase.aggregate([
         {
           $match: {
+            ...scoped,
             status: "posted",
             paymentStatus: { $ne: "paid" },
             dueDate: { $lt: new Date() },
@@ -251,7 +272,7 @@ export async function getTotalPayables(): Promise<{
           },
         },
       ]),
-      Supplier.countDocuments({ isActive: { $ne: false } }),
+      Supplier.countDocuments({ ...scoped, isActive: { $ne: false } }),
     ]);
 
   const opening = (openingAgg[0] as { opening?: number } | undefined)?.opening ?? 0;

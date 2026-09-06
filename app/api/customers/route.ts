@@ -2,6 +2,7 @@ import { created, ok, parseJson, withRoute } from "@/lib/api";
 import { requirePermission } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import { Customer } from "@/models/Customer";
+import { pharmacyFilter } from "@/lib/tenant";
 import { customerSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
@@ -9,11 +10,11 @@ export const dynamic = "force-dynamic";
 
 /** GET /api/customers?q= - lookup for the billing screen's customer field. */
 export const GET = withRoute(async (req) => {
-  await requirePermission("customer:read");
+  const user = await requirePermission("customer:read");
   await connectDB();
 
   const q = new URL(req.url).searchParams.get("q")?.trim() ?? "";
-  const filter: Record<string, unknown> = {};
+  const filter: Record<string, unknown> = { ...pharmacyFilter(user) };
 
   if (q) {
     const safe = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -36,10 +37,10 @@ export const GET = withRoute(async (req) => {
 
 /** POST /api/customers - save a walk-in as a returning customer. */
 export const POST = withRoute(async (req) => {
-  await requirePermission("customer:write");
+  const user = await requirePermission("customer:write");
   const input = await parseJson(req, customerSchema);
   await connectDB();
 
-  const customer = await Customer.create(input);
+  const customer = await Customer.create({ ...input, ...pharmacyFilter(user) });
   return created({ id: String(customer._id), ...customer.toJSON() });
 });
