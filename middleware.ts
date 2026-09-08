@@ -11,7 +11,13 @@ import { ROUTE_PERMISSIONS, can, homePath } from "@/lib/roles";
  * only line of defence.
  */
 
-const PUBLIC_PATHS = ["/login", "/api/auth/login", "/api/auth/logout"];
+const PUBLIC_PATHS = [
+  "/login",
+  "/api/auth/login",
+  "/api/auth/logout",
+  "/manifest.webmanifest",
+  "/icon",
+];
 
 function isPublic(pathname: string): boolean {
   return PUBLIC_PATHS.some(
@@ -124,5 +130,7 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   // Everything except Next internals and static files.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)"],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|webmanifest)$).*)",
+  ],
 };

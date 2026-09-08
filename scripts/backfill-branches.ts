@@ -14,7 +14,7 @@
  * which is now per-branch.
  */
 
-import "dotenv/config";
+import "./load-env";
 import mongoose from "mongoose";
 
 import { connectDB } from "../lib/db";

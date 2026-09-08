@@ -23,11 +23,10 @@
  * register still reads correctly afterwards.
  */
 
-import "dotenv/config";
+import "./load-env";
 import mongoose from "mongoose";
 
 import { connectDB } from "../lib/db";
-import { User } from "../models/User";
 
 const APPLY = process.argv.includes("--apply");
 const DROP_DEMO = process.argv.includes("--drop-demo-logins");
@@ -44,7 +43,7 @@ function users() {
 }
 
 async function promoteStaleRoles(): Promise<void> {
-  const filter = { role: { $ne: "admin" } };
+  const filter = { role: { $in: ["pharmacist", "cashier"] } };
   const stale = await users()
     .find(filter, { projection: { email: 1, role: 1 } })
     .toArray();
@@ -101,10 +100,16 @@ async function main() {
 
   // A session cookie signed with an old role keeps working - lib/roles.ts reads
   // it as admin - so a shift in progress is not interrupted by this migration.
-  const remaining = await User.countDocuments({ role: { $ne: "admin" } });
+  const remaining = await users().countDocuments({
+    role: { $in: ["pharmacist", "cashier"] },
+  });
   console.log("");
   if (APPLY) {
-    console.log(remaining === 0 ? "All accounts are admin." : `${remaining} still not admin?`);
+    console.log(
+      remaining === 0
+        ? "No pharmacist or cashier accounts left."
+        : `${remaining} pharmacist/cashier account(s) still present?`,
+    );
   } else {
     console.log("Re-run with --apply to write these changes.");
   }

@@ -9,7 +9,7 @@
  * a server before the app is started.
  */
 
-import "dotenv/config";
+import "./load-env";
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 

@@ -10,7 +10,7 @@
  * missing one, then rebuilds indexes so uniqueness is per-pharmacy.
  */
 
-import "dotenv/config";
+import "./load-env";
 import mongoose from "mongoose";
 
 import bcrypt from "bcryptjs";
