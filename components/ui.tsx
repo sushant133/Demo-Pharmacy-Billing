@@ -1,4 +1,9 @@
-import type { ReactNode } from "react";
+import {
+  Children,
+  isValidElement,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 
 /**
  * Small presentational primitives shared across screens.
@@ -147,19 +152,37 @@ export function EmptyState({
   );
 }
 
-/** Horizontally scrollable table wrapper - narrow screens must never break layout. */
+/**
+ * Scroll container plus the one `<table>`.
+ *
+ * Children must be `<thead>` / `<tbody>` / `<tfoot>`. A nested `<table>`
+ * (stale Fast Refresh still emitting one) is unwrapped rather than nested.
+ */
+function rowsFrom(children: ReactNode): ReactNode {
+  const items = Children.toArray(children);
+  if (items.length === 1 && isValidElement(items[0])) {
+    const el = items[0] as ReactElement<{ children?: ReactNode }>;
+    if (el.type === "table") return rowsFrom(el.props.children);
+  }
+  return children;
+}
+
 export function TableWrap({ children }: { children: ReactNode }) {
   return (
-    /*
-      Narrow screens scroll the table sideways. Above md the columns fit, so
-      the minimum width is dropped and the table simply fills the card.
-    */
     <div className="overflow-x-auto md:overflow-x-visible">
-      <table className="w-full min-w-[640px] border-collapse md:min-w-0">
-        {children}
+      <table className="w-full min-w-[640px] border-collapse text-sm md:min-w-0">
+        {rowsFrom(children)}
       </table>
     </div>
   );
+}
+
+/**
+ * No-op kept so a stale Fast Refresh tree that still wraps rows in `<Table>`
+ * cannot nest a second `<table>` inside TableWrap.
+ */
+export function Table({ children }: { children: ReactNode }) {
+  return <>{children}</>;
 }
 
 export function Pagination({

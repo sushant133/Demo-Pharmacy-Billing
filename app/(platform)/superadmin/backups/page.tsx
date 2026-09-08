@@ -32,54 +32,52 @@ export default async function BackupsPage() {
           />
         ) : (
           <TableWrap>
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-100 text-left text-xs tracking-wide text-slate-500 uppercase">
-                  <th className="px-5 py-3 font-medium">Pharmacy</th>
-                  <th className="px-5 py-3 font-medium">Owner</th>
-                  <th className="px-5 py-3 font-medium">Status</th>
-                  <th className="px-5 py-3 font-medium">Created</th>
-                  <th className="px-5 py-3 font-medium">
-                    <span className="sr-only">Download</span>
-                  </th>
+            <thead>
+              <tr className="border-b border-slate-100 text-left text-xs tracking-wide text-slate-500 uppercase">
+                <th className="px-5 py-3 font-medium">Pharmacy</th>
+                <th className="px-5 py-3 font-medium">Owner</th>
+                <th className="px-5 py-3 font-medium">Status</th>
+                <th className="px-5 py-3 font-medium">Created</th>
+                <th className="px-5 py-3 font-medium">
+                  <span className="sr-only">Download</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.id} className="border-b border-slate-50 last:border-0">
+                  <td className="px-5 py-3">
+                    <Link
+                      href={`/superadmin/pharmacies/${row.id}`}
+                      className="font-medium text-slate-900 hover:text-brand-700"
+                    >
+                      {row.name}
+                    </Link>
+                    <p className="text-xs text-slate-500">{row.slug}</p>
+                  </td>
+                  <td className="px-5 py-3">
+                    <p>{row.ownerName}</p>
+                    <p className="text-xs text-slate-500">{row.ownerEmail}</p>
+                  </td>
+                  <td className="px-5 py-3">
+                    <Badge tone={row.status === "active" ? "green" : "amber"}>
+                      {row.status === "active" ? "Active" : "Suspended"}
+                    </Badge>
+                  </td>
+                  <td className="px-5 py-3 text-slate-600">
+                    {row.createdAt ? formatDateTime(row.createdAt) : "—"}
+                  </td>
+                  <td className="px-5 py-3 text-right">
+                    <a
+                      href={`/api/pharmacies/${row.id}/backup`}
+                      className="btn-secondary px-3 py-1.5 text-xs"
+                    >
+                      Download backup
+                    </a>
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.id} className="border-b border-slate-50 last:border-0">
-                    <td className="px-5 py-3">
-                      <Link
-                        href={`/superadmin/pharmacies/${row.id}`}
-                        className="font-medium text-slate-900 hover:text-brand-700"
-                      >
-                        {row.name}
-                      </Link>
-                      <p className="text-xs text-slate-500">{row.slug}</p>
-                    </td>
-                    <td className="px-5 py-3">
-                      <p>{row.ownerName}</p>
-                      <p className="text-xs text-slate-500">{row.ownerEmail}</p>
-                    </td>
-                    <td className="px-5 py-3">
-                      <Badge tone={row.status === "active" ? "green" : "amber"}>
-                        {row.status === "active" ? "Active" : "Suspended"}
-                      </Badge>
-                    </td>
-                    <td className="px-5 py-3 text-slate-600">
-                      {row.createdAt ? formatDateTime(row.createdAt) : "—"}
-                    </td>
-                    <td className="px-5 py-3 text-right">
-                      <a
-                        href={`/api/pharmacies/${row.id}/backup`}
-                        className="btn-secondary px-3 py-1.5 text-xs"
-                      >
-                        Download backup
-                      </a>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+              ))}
+            </tbody>
           </TableWrap>
         )}
       </Card>
