@@ -33,9 +33,10 @@ export const POST = withRoute(async (req) => {
   if (user.isActive === false) {
     throw ApiError.forbidden("This account has been deactivated.");
   }
-  // An account still stored as pharmacist or cashier signs in as admin: there
-  // is only the one shop role now, and `npm run migrate:roles` writes it to the row.
-  const role = normalizeRole(user.role);
+  // A row written before narrower roles existed carries no `roleVersion`, so
+  // a stored "pharmacist" or "cashier" still signs in as the owner it used to
+  // mean. `npm run migrate:roles` resolves those rows to an explicit role.
+  const role = normalizeRole(user.role, user.roleVersion);
   if (!role) {
     throw ApiError.forbidden("This account has an unrecognised role.");
   }

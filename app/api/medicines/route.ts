@@ -42,6 +42,12 @@ export const GET = withRoute(async (req) => {
       { genericName: pattern },
       { saltComposition: pattern },
       { manufacturer: pattern },
+      // A scanned code is an exact string, not a fragment of a name: matching
+      // it loosely would let "500" from a barcode pull up every 500mg line.
+      { barcode: q },
+      // The shop's own code, matched exactly and case-insensitively for the
+      // same reason. Stored upper-cased, so the typed form is raised to match.
+      { sku: q.toUpperCase() },
     ];
   }
 
@@ -95,6 +101,7 @@ export const GET = withRoute(async (req) => {
     const stock = stockByMedicine.get(String(doc._id));
     return {
       id: String(doc._id),
+      sku: doc.sku ?? "",
       name: doc.name,
       genericName: doc.genericName ?? "",
       saltComposition: doc.saltComposition ?? "",
@@ -102,6 +109,7 @@ export const GET = withRoute(async (req) => {
       category: doc.category ?? "Other",
       unit: doc.unit ?? "tablet",
       packSize: doc.packSize ?? "",
+      barcode: doc.barcode ?? "",
       unitsPerStrip: resolveUnitsPerStrip(
         doc.unit ?? "tablet",
         doc.packSize ?? "",
@@ -138,6 +146,7 @@ export const POST = withRoute(async (req) => {
   );
   return created({
     id: String(medicine._id),
+    sku: medicine.sku ?? "",
     name: medicine.name,
     genericName: medicine.genericName ?? "",
     saltComposition: medicine.saltComposition ?? "",
@@ -145,6 +154,7 @@ export const POST = withRoute(async (req) => {
     category: medicine.category ?? "Other",
     unit: medicine.unit ?? "tablet",
     packSize: medicine.packSize ?? "",
+    barcode: medicine.barcode ?? "",
     requiresPrescription: Boolean(medicine.requiresPrescription),
     reorderLevel: medicine.reorderLevel ?? null,
     isActive: medicine.isActive !== false,

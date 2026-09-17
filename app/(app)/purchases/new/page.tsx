@@ -1,3 +1,4 @@
+import { config } from "@/lib/config";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePagePermission } from "@/lib/auth";
@@ -140,6 +141,7 @@ export default async function NewPurchasePage({
         }))}
         medicines={medicineOptions}
         defaultVatRate={settings.vatRate}
+        expiryAlertDays={config.expiryAlertDays}
         today={toDateInputValue()}
         purchase={null}
         canPost={can(user.role, "purchase:post")}

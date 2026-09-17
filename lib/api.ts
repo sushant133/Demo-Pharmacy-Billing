@@ -105,6 +105,38 @@ function isDuplicateKeyError(
   );
 }
 
+/**
+ * Which field a duplicate-key error is actually about.
+ *
+ * Every unique index in this system is scoped - `{pharmacyId, barcode}`,
+ * `{pharmacyId, billNo}` - and Mongo reports the keys in index order, so the
+ * first one is the tenant, not the thing the user typed. Taking it naively
+ * produced "That pharmacyId is already in use", which names an internal
+ * column and tells nobody which box to change.
+ *
+ * So the scoping keys are skipped, and what is left is said in the words the
+ * form uses.
+ */
+const SCOPE_KEYS = new Set(["pharmacyId", "branchId", "_id"]);
+
+const FIELD_LABELS: Record<string, string> = {
+  sku: "medicine code",
+  barcode: "barcode",
+  billNo: "bill number",
+  grnNo: "GRN number",
+  email: "email address",
+  panNo: "PAN",
+  phone: "phone number",
+  code: "code",
+  name: "name",
+};
+
+function duplicateField(keyValue?: Record<string, unknown>): string {
+  const key =
+    Object.keys(keyValue ?? {}).find((name) => !SCOPE_KEYS.has(name)) ?? "value";
+  return FIELD_LABELS[key] ?? key;
+}
+
 function isMongooseValidationError(
   err: unknown,
 ): err is { name: string; errors: Record<string, { message: string }> } {
@@ -138,8 +170,7 @@ export function toErrorResponse(err: unknown) {
   }
 
   if (isDuplicateKeyError(err)) {
-    const field = Object.keys(err.keyValue ?? {})[0] ?? "value";
-    return fail("CONFLICT", `That ${field} is already in use.`);
+    return fail("CONFLICT", `That ${duplicateField(err.keyValue)} is already in use.`);
   }
 
   if (isMongooseValidationError(err)) {

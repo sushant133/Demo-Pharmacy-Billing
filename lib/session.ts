@@ -1,6 +1,6 @@
 import { SignJWT, jwtVerify } from "jose";
 import { SESSION_COOKIE, config, requireAuthSecret } from "@/lib/config";
-import { normalizeRole, type Role } from "@/lib/roles";
+import { ROLE_SCHEME_VERSION, normalizeRole, type Role } from "@/lib/roles";
 
 /**
  * Stateless session tokens (HS256 JWT) stored in an httpOnly cookie.
@@ -43,6 +43,10 @@ export async function signSession(user: SessionUser): Promise<string> {
     name: user.name,
     email: user.email,
     role: user.role,
+    // The role scheme this token was signed under. Without it a cookie
+    // holding "cashier" is ambiguous: under scheme 1 that word meant the
+    // owner, under scheme 2 it means an actual cashier. See lib/roles.ts.
+    rv: ROLE_SCHEME_VERSION,
     pharmacyId: user.pharmacyId,
     pharmacyName: user.pharmacyName,
     pharmacySlug: user.pharmacySlug,
@@ -69,10 +73,10 @@ export async function verifySession(token: string): Promise<SessionUser | null> 
       algorithms: ["HS256"],
     });
 
-    // Cookies signed before the pharmacist and cashier roles were folded into
-    // admin are still valid sessions; `normalizeRole` reads them as admin so a
-    // shift in progress is not ended by a deploy.
-    const role = normalizeRole(payload.role);
+    // A cookie signed before narrower roles existed carries no `rv`, and
+    // `normalizeRole` reads its role under the old meaning - so a shift in
+    // progress is neither ended nor quietly demoted by a deploy.
+    const role = normalizeRole(payload.role, payload.rv);
     if (!payload.sub || !role) return null;
 
     return {

@@ -15,7 +15,9 @@ import {
   type StockReturn,
 } from "@/lib/fefo";
 import { branchForWrite } from "@/lib/branches";
+import { can } from "@/lib/roles";
 import { planSaleReturn } from "@/lib/sale-return";
+import { settleSale, type PaymentStatus } from "@/lib/sale-payment";
 import { sessionOption, withTransaction } from "@/lib/transaction";
 import { Batch } from "@/models/Batch";
 import { Medicine } from "@/models/Medicine";
@@ -24,7 +26,11 @@ import { formatBillNo, nextSequence } from "@/models/Counter";
 import { Customer } from "@/models/Customer";
 import { adToBs, nepaliFiscalYear } from "@/lib/bs-date";
 import { localParts } from "@/lib/dates";
-import type { CreateSaleInput, ReturnSaleInput } from "@/lib/validation";
+import type {
+  CreateSaleInput,
+  ReceiveSalePaymentInput,
+  ReturnSaleInput,
+} from "@/lib/validation";
 import type { SessionUser } from "@/lib/session";
 
 /**
@@ -55,6 +61,11 @@ export interface SalePlanLine {
   medicineId: string;
   medicineName: string;
   unit: string;
+  /**
+   * The lot the counter pinned this line to, or null when FEFO chose.
+   * Echoed back so the cart can tell two lines of the same medicine apart.
+   */
+  requestedBatchId: string | null;
   requestedQuantity: number;
   lineTotal: number;
   lineCost: number;
@@ -177,6 +188,7 @@ async function buildPlan(
     medicineId: line.medicineId,
     medicineName: medicineNames.get(line.medicineId) ?? "Unknown",
     unit: medicineUnits.get(line.medicineId) ?? "unit",
+    requestedBatchId: line.requestedBatchId,
     requestedQuantity: line.requestedQuantity,
     lineTotal: line.lineTotal,
     lineCost: line.lineCost,
@@ -285,10 +297,38 @@ export async function createSale(
     }
 
     const issuedAt = new Date();
+    const received = round2(Math.max(0, input.amountReceived ?? 0));
+
+    // Letting a bill leave short is extending credit, whichever button the
+    // till had lit. The route can only check the *mode* before planning,
+    // because until the plan exists there is no total to compare against - so
+    // the real check is here, where both figures are known.
+    const settlement = settleSale({
+      totalAmount: plan.totalAmount,
+      amountReceived: received,
+    });
+    if (settlement.remaining > 0 && !can(user.role, "sale:credit")) {
+      throw ApiError.forbidden(
+        "You are not allowed to let a bill leave the counter unpaid.",
+      );
+    }
     const local = localParts(issuedAt);
     const bs = adToBs(local.year, local.month, local.day);
     const fiscalYear = nepaliFiscalYear(bs);
-    const seq = await nextSequence(`${String(pharmacyId)}:sale:${fiscalYear}`, session);
+    // Bill numbers restart each Nepali fiscal year, so the high-water mark is
+    // read within this pharmacy's own year rather than across its whole history.
+    const seq = await nextSequence(
+      `${String(pharmacyId)}:sale:${fiscalYear}`,
+      session,
+      async () => {
+        const last = await Sale.findOne({ pharmacyId, fiscalYear })
+          .sort({ billSeq: -1 })
+          .select("billSeq")
+          .session(session)
+          .lean();
+        return last?.billSeq ?? 0;
+      },
+    );
     const billNo = formatBillNo(seq, fiscalYear);
 
     let customerPan = input.customerPan ?? "";
@@ -347,6 +387,26 @@ export async function createSale(
           vatAmount: plan.vatAmount,
           totalAmount: plan.totalAmount,
           paymentMode: input.paymentMode,
+          amountReceived: received,
+          // The till payment is the first entry in the bill's own ledger, so
+          // "what has this bill been paid?" has one answer from day one and
+          // does not need a special case for the money taken at the counter.
+          payments:
+            received > 0
+              ? [
+                  {
+                    amount: received,
+                    method: input.paymentMode,
+                    receivedAt: issuedAt,
+                    receivedBy: new Types.ObjectId(user.id),
+                    receivedByName: user.name,
+                    note: "",
+                    reference: "",
+                    atTill: true,
+                  },
+                ]
+              : [],
+          paymentStatus: settlement.status,
           soldBy: new Types.ObjectId(user.id),
           soldByName: user.name,
           branchId: branch.id,
@@ -368,6 +428,117 @@ export async function createSale(
       plan,
     };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Receiving payment against an outstanding bill
+// ---------------------------------------------------------------------------
+
+export interface ReceivedPayment {
+  id: string;
+  billNo: string;
+  totalDue: number;
+  paid: number;
+  remaining: number;
+  status: PaymentStatus;
+}
+
+/**
+ * Take money against a bill that is not fully paid.
+ *
+ * This is the other half of a partial or credit sale: without it a due can be
+ * created and never cleared. It appends to the bill's own payment ledger
+ * rather than editing a balance, so the history of how a debt was settled
+ * survives.
+ *
+ * Deliberately refuses to take more than is owed. Over-tendering at the till
+ * is change handed straight back; a customer paying off a due by transfer has
+ * no such moment, so an overpayment here is a mistake worth stopping rather
+ * than a credit balance the shop then has to track.
+ */
+export async function receiveSalePayment(
+  id: string,
+  input: ReceiveSalePaymentInput,
+  user: SessionUser,
+): Promise<ReceivedPayment> {
+  await connectDB();
+
+  const sale = await Sale.findOne({ _id: id, ...pharmacyFilter(user) })
+    .select("billNo totalAmount amountReceived returnedTotal voidedAt")
+    .lean();
+  if (!sale) throw ApiError.notFound("That bill no longer exists.");
+  if (sale.voidedAt) {
+    throw ApiError.conflict(
+      `${sale.billNo} has been voided, so there is nothing left to pay on it.`,
+    );
+  }
+
+  const before = settleSale({
+    totalAmount: sale.totalAmount,
+    amountReceived: sale.amountReceived ?? 0,
+    returnedTotal: sale.returnedTotal,
+  });
+
+  if (before.remaining <= 0) {
+    throw ApiError.conflict(`${sale.billNo} is already settled in full.`);
+  }
+
+  const amount = round2(input.amount);
+  if (amount > before.remaining) {
+    throw ApiError.badRequest(
+      `Only ${before.remaining.toFixed(2)} is outstanding on ${sale.billNo}.`,
+    );
+  }
+
+  const receivedAt = new Date();
+  const paid = round2(before.paid + amount);
+  const after = settleSale({
+    totalAmount: sale.totalAmount,
+    amountReceived: paid,
+    returnedTotal: sale.returnedTotal,
+  });
+
+  // Guarded on the balance this was computed against, so two clerks taking the
+  // same due at once cannot both succeed and overpay the bill.
+  const updated = await Sale.findOneAndUpdate(
+    {
+      _id: id,
+      ...pharmacyFilter(user),
+      voidedAt: null,
+      amountReceived: sale.amountReceived ?? 0,
+    },
+    {
+      $set: { amountReceived: paid, paymentStatus: after.status },
+      $push: {
+        payments: {
+          amount,
+          method: input.method,
+          receivedAt,
+          receivedBy: new Types.ObjectId(user.id),
+          receivedByName: user.name,
+          reference: input.reference ?? "",
+          note: input.note ?? "",
+          atTill: false,
+        },
+      },
+    },
+    { new: true },
+  ).lean();
+
+  if (!updated) {
+    throw ApiError.conflict(
+      `Another payment was recorded against ${sale.billNo} a moment ago. Open the bill and try again.`,
+    );
+  }
+
+  return {
+    id: String(updated._id),
+    billNo: updated.billNo,
+    totalDue: after.totalDue,
+    paid: after.paid,
+    remaining: after.remaining,
+    status: after.status,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -438,6 +609,10 @@ export async function voidSale(
           voidedBy: new Types.ObjectId(user.id),
           voidedByName: user.name,
           voidReason: reason,
+          // A voided bill is owed nothing, so it must stop appearing in the
+          // customer's dues. Any money taken against it is refunded at the
+          // counter, not carried as a credit balance here.
+          paymentStatus: "paid",
         },
       },
       { new: true, ...sessionOption(session) },
@@ -514,6 +689,8 @@ export async function voidSale(
 export interface RecordedReturn {
   id: string;
   billNo: string;
+  /** Where this return sits in the bill's `returns` array - its receipt id. */
+  returnIndex: number;
   units: number;
   totalAmount: number;
   restored: StockReturn[];
@@ -548,6 +725,10 @@ export async function returnSaleItems(
       throw ApiError.conflict(`${existing.billNo} has been voided and cannot take a return.`);
     }
 
+    // One instant for the whole return: the expiry check that decides what
+    // may come back and the timestamp written on it must not disagree.
+    const returnedAt = new Date();
+
     let plan;
     try {
       plan = planSaleReturn(
@@ -563,20 +744,47 @@ export async function returnSaleItems(
             medicineName: item.medicineName,
             batchId: String(item.batchId),
             batchNumber: item.batchNumber,
+            expiryDate: item.expiryDate as unknown as Date,
           })),
           subtotal: sale.subtotal,
           discount: sale.discount,
           vatRate: sale.vatRate,
         },
         input.items,
+        returnedAt,
       );
     } catch (error) {
       if (error instanceof FefoError) throw ApiError.badRequest(error.message);
       throw error;
     }
 
-    const returnedAt = new Date();
     const pharmacyId = pharmacyObjectId(user);
+
+    /*
+      "Reduce what they owe" has to be checked against the bill, not trusted
+      from the form. The screen only offers it when something is outstanding,
+      but the screen is a convenience: a request naming `adjust` on a bill
+      already settled would record that nothing changed hands and nothing was
+      owed, leaving the refund owed to a customer with no trace anywhere.
+
+      Measured before the return is applied, which is the state the cashier was
+      looking at when they chose.
+    */
+    const outstandingBefore = round2(
+      Math.max(
+        0,
+        sale.totalAmount -
+          (sale.returnedTotal ?? 0) -
+          (sale.amountReceived ?? 0),
+      ),
+    );
+
+    const refundMethod = input.refundMethod ?? "cash";
+    if (refundMethod === "adjust" && outstandingBefore <= 0) {
+      throw ApiError.badRequest(
+        `${sale.billNo} is settled in full, so there is no balance to reduce. Refund the money instead.`,
+      );
+    }
 
     const restored: StockReturn[] = [];
     const unreturned: StockReturn[] = [];
@@ -620,7 +828,10 @@ export async function returnSaleItems(
       returnedAt,
       returnedBy: new Types.ObjectId(user.id),
       returnedByName: user.name,
+      reasonCode: input.reasonCode,
       reason: input.reason,
+      conditionConfirmed: input.conditionConfirmed,
+      refundMethod,
       items: plan.items.map((item) => ({
         lineIndex: item.lineIndex,
         medicineId: new Types.ObjectId(item.medicineId),
@@ -652,6 +863,16 @@ export async function returnSaleItems(
     sale.returnedVat = round2((sale.returnedVat ?? 0) + plan.vatAmount);
     sale.returnedTotal = round2((sale.returnedTotal ?? 0) + plan.totalAmount);
     sale.returnedCost = round2((sale.returnedCost ?? 0) + plan.totalCost);
+
+    // A return lowers what the bill asks for, so a customer who owed money on
+    // it may now owe less, or nothing. Recomputed here rather than left for a
+    // nightly job: the counter is about to be asked "is this cleared?".
+    sale.paymentStatus = settleSale({
+      totalAmount: sale.totalAmount,
+      amountReceived: sale.amountReceived ?? 0,
+      returnedTotal: sale.returnedTotal,
+    }).status;
+
     sale.markModified("items");
     sale.markModified("returns");
 
@@ -660,6 +881,9 @@ export async function returnSaleItems(
     return {
       id: String(sale._id),
       billNo: sale.billNo,
+      // The entry just pushed. Numbering returns by position keeps the receipt
+      // addressable without a second id sequence to keep in step.
+      returnIndex: sale.returns.length - 1,
       units: plan.units,
       totalAmount: plan.totalAmount,
       restored,

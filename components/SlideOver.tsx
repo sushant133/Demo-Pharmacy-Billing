@@ -100,6 +100,7 @@ export function Field({
   htmlFor,
   error,
   hint,
+  required,
   children,
   className,
 }: {
@@ -107,6 +108,8 @@ export function Field({
   htmlFor: string;
   error?: string;
   hint?: string;
+  /** Marks the label. The control still carries its own `required`. */
+  required?: boolean;
   children: ReactNode;
   className?: string;
 }) {
@@ -114,6 +117,11 @@ export function Field({
     <div className={className}>
       <label htmlFor={htmlFor} className="label">
         {label}
+        {required ? (
+          <span className="ml-0.5 text-rose-500" aria-hidden="true">
+            *
+          </span>
+        ) : null}
       </label>
       {children}
       {error ? (

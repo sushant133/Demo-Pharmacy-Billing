@@ -2,6 +2,7 @@ import { created, ok, parseJson, withRoute } from "@/lib/api";
 import { requirePermission } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import { Customer } from "@/models/Customer";
+import { outstandingByCustomer } from "@/lib/customer-dues";
 import { pharmacyFilter } from "@/lib/tenant";
 import { customerSchema } from "@/lib/validation";
 
@@ -24,6 +25,13 @@ export const GET = withRoute(async (req) => {
 
   const docs = await Customer.find(filter).sort({ name: 1 }).limit(20).lean();
 
+  // What each one already owes, so the till can say so before the counter
+  // extends more credit to somebody who is behind on three bills.
+  const dues = await outstandingByCustomer(
+    user,
+    docs.map((doc) => String(doc._id)),
+  );
+
   return ok(
     docs.map((doc) => ({
       id: String(doc._id),
@@ -31,6 +39,7 @@ export const GET = withRoute(async (req) => {
       phone: doc.phone ?? "",
       address: doc.address ?? "",
       panNo: doc.panNo ?? "",
+      outstanding: dues.get(String(doc._id)) ?? 0,
     })),
   );
 });

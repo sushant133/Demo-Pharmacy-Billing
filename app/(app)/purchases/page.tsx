@@ -33,6 +33,27 @@ export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 25;
 
+/**
+ * Columns the register may be ordered by.
+ *
+ * A whitelist, not a passthrough: `sort` arrives from the query string, and
+ * handing an arbitrary string to Mongo would let a crafted URL order by
+ * anything on the document.
+ */
+const SORT_FIELDS = {
+  grn: "grnSeq",
+  supplier: "supplierName",
+  received: "receivedDate",
+  total: "totalAmount",
+  due: "dueDate",
+} as const;
+
+type SortKey = keyof typeof SORT_FIELDS;
+
+function isSortKey(value: unknown): value is SortKey {
+  return typeof value === "string" && value in SORT_FIELDS;
+}
+
 const STATUS_TABS = [
   { value: "all", label: "All" },
   { value: "draft", label: "Drafts" },
@@ -52,6 +73,8 @@ export default async function PurchasesPage({
     to?: string;
     q?: string;
     page?: string;
+    sort?: string;
+    dir?: string;
     branch?: string;
   }>;
 }) {
@@ -61,6 +84,11 @@ export default async function PurchasesPage({
   const page = Math.max(1, Number(params.page) || 1);
   const status = (params.status ?? "all") as (typeof STATUS_TABS)[number]["value"];
   const canWrite = can(user.role, "purchase:write");
+  const canPay = can(user.role, "payment:write");
+
+  // Newest delivery first is what a register is for; the rest is opt-in.
+  const sort: SortKey = isSortKey(params.sort) ? params.sort : "received";
+  const dir: "asc" | "desc" = params.dir === "asc" ? "asc" : "desc";
 
   const { purchases, total, purchased, paid, units, suppliers } = await withDbRead(
     async () => {
@@ -102,7 +130,10 @@ export default async function PurchasesPage({
 
       const [purchases, total, summaryAgg, suppliers] = await Promise.all([
         Purchase.find(filter)
-          .sort({ createdAt: -1 })
+          // `_id` breaks ties: two deliveries keyed the same afternoon would
+          // otherwise shuffle between pages, repeating one row and dropping
+          // another.
+          .sort({ [SORT_FIELDS[sort]]: dir === "asc" ? 1 : -1, _id: -1 })
           .skip((page - 1) * PAGE_SIZE)
           .limit(PAGE_SIZE)
           .lean(),
@@ -155,6 +186,20 @@ export default async function PurchasesPage({
   if (params.from) baseQuery.set("from", params.from);
   if (params.to) baseQuery.set("to", params.to);
   if (params.q) baseQuery.set("q", params.q);
+  if (sort !== "received") baseQuery.set("sort", sort);
+  if (dir !== "desc") baseQuery.set("dir", dir);
+
+  /** Clicking the sorted column flips it; a new one starts the sensible way. */
+  const sortHref = (key: SortKey) => {
+    const query = new URLSearchParams(baseQuery);
+    query.set("sort", key);
+    query.set(
+      "dir",
+      sort === key ? (dir === "asc" ? "desc" : "asc") : key === "supplier" ? "asc" : "desc",
+    );
+    query.delete("page");
+    return `/purchases?${query.toString()}`;
+  };
 
   const now = Date.now();
 
@@ -312,14 +357,16 @@ export default async function PurchasesPage({
             <TableWrap>
               <thead className="border-b border-slate-200 bg-slate-50">
                 <tr>
-                  <th className="th">GRN no</th>
-                  <th className="th">Supplier</th>
+                  <SortableTh label="GRN no" href={sortHref("grn")} active={sort === "grn"} dir={dir} />
+                  <SortableTh label="Supplier" href={sortHref("supplier")} active={sort === "supplier"} dir={dir} />
                   <th className="th">Invoice</th>
-                  <th className="th">Received</th>
+                  <SortableTh label="Received" href={sortHref("received")} active={sort === "received"} dir={dir} />
                   <th className="th text-right">Units</th>
-                  <th className="th text-right">Total</th>
+                  <SortableTh label="Total" href={sortHref("total")} active={sort === "total"} dir={dir} align="right" />
+                  <SortableTh label="Due" href={sortHref("due")} active={sort === "due"} dir={dir} align="right" className="hidden lg:table-cell" />
                   <th className="th">Status</th>
                   <th className="th">Payment</th>
+                  <th className="th text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -328,11 +375,25 @@ export default async function PurchasesPage({
                     (sum, item) => sum + item.quantity + item.freeQuantity,
                     0,
                   );
-                  const overdue =
+                  const overdue = Boolean(
                     purchase.status === "posted" &&
-                    purchase.paymentStatus !== "paid" &&
-                    purchase.dueDate &&
-                    new Date(purchase.dueDate).getTime() < now;
+                      purchase.paymentStatus !== "paid" &&
+                      purchase.dueDate &&
+                      new Date(purchase.dueDate).getTime() < now,
+                  );
+
+                  const id = String(purchase._id);
+                  // Net of anything sent back on a debit note, which is what
+                  // the supplier ledger also nets off.
+                  const outstanding = Math.max(
+                    0,
+                    Math.round(
+                      (purchase.totalAmount -
+                        (purchase.returnedTotal ?? 0) -
+                        (purchase.amountPaid ?? 0)) *
+                        100,
+                    ) / 100,
+                  );
 
                   return (
                     <tr key={String(purchase._id)} className="hover:bg-slate-50">
@@ -354,6 +415,31 @@ export default async function PurchasesPage({
                       <td className="td tnum text-right">{integer(units)}</td>
                       <td className="td tnum text-right font-semibold text-slate-900">
                         {money(purchase.totalAmount)}
+                      </td>
+
+                      {/*
+                        What is still owed on this delivery, netted of anything
+                        sent back. Only a posted GRN owes anything: a draft is
+                        not yet a liability and a cancelled one never was.
+                      */}
+                      <td className="td tnum hidden text-right lg:table-cell">
+                        {purchase.status === "posted" ? (
+                          outstanding > 0 ? (
+                            <span
+                              className={
+                                overdue
+                                  ? "font-semibold text-rose-600"
+                                  : "font-medium text-amber-700"
+                              }
+                            >
+                              {money(outstanding)}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
                       </td>
                       <td className="td">
                         <Badge
@@ -390,6 +476,45 @@ export default async function PurchasesPage({
                           <span className="text-xs text-slate-400">—</span>
                         )}
                       </td>
+
+                      {/*
+                        Only the actions the state actually permits.
+
+                        A posted GRN cannot be edited - it is an accounting
+                        document with stock behind it - so Edit appears on
+                        drafts alone, and correcting a posted one goes through
+                        cancellation on the detail screen where a reason is
+                        required. Record payment appears only where something
+                        is genuinely owed. Rather than greying out four
+                        controls on every row, each is simply absent when it
+                        would not work.
+                      */}
+                      <td className="td text-right whitespace-nowrap">
+                        <Link
+                          href={`/purchases/${id}`}
+                          className="text-xs font-medium text-brand-700 hover:underline"
+                        >
+                          View
+                        </Link>
+
+                        {canWrite && purchase.status === "draft" ? (
+                          <Link
+                            href={`/purchases/${id}/edit`}
+                            className="ml-3 text-xs font-medium text-slate-500 hover:text-brand-700"
+                          >
+                            Edit
+                          </Link>
+                        ) : null}
+
+                        {canPay && purchase.status === "posted" && outstanding > 0 ? (
+                          <Link
+                            href={`/payments?supplierId=${String(purchase.supplierId)}&purchaseId=${id}`}
+                            className="ml-3 text-xs font-medium text-slate-500 hover:text-brand-700"
+                          >
+                            Pay
+                          </Link>
+                        ) : null}
+                      </td>
                     </tr>
                   );
                 })}
@@ -406,5 +531,62 @@ export default async function PurchasesPage({
         )}
       </Card>
     </>
+  );
+}
+
+/**
+ * A column heading that sorts.
+ *
+ * `aria-sort` carries to a screen reader what the arrow carries to everyone
+ * else - that the table is ordered, and which way.
+ */
+function SortableTh({
+  label,
+  href,
+  active,
+  dir,
+  align = "left",
+  className,
+}: {
+  label: string;
+  href: string;
+  active: boolean;
+  dir: "asc" | "desc";
+  align?: "left" | "right";
+  className?: string;
+}) {
+  return (
+    <th
+      className={cx("th", align === "right" && "text-right", className)}
+      aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}
+    >
+      <Link
+        href={href}
+        scroll={false}
+        className={cx(
+          "group inline-flex items-center gap-1 transition-colors hover:text-slate-900",
+          align === "right" && "flex-row-reverse",
+          active && "text-slate-900",
+        )}
+      >
+        {label}
+        <svg
+          className={cx(
+            "h-3 w-3 shrink-0 transition",
+            active
+              ? "text-brand-600"
+              : "text-slate-300 opacity-0 group-hover:opacity-100",
+            active && dir === "asc" && "rotate-180",
+          )}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2.4}
+          aria-hidden="true"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14m0 0l-6-6m6 6l6-6" />
+        </svg>
+      </Link>
+    </th>
   );
 }

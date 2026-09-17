@@ -19,7 +19,11 @@ import { Purchase } from "@/models/Purchase";
 import { Sale } from "@/models/Sale";
 import { Supplier } from "@/models/Supplier";
 import { formatGrnNo, nextSequence } from "@/models/Counter";
-import type { PurchaseInput } from "@/lib/validation";
+import {
+  PurchaseReturnError,
+  planPurchaseReturn,
+} from "@/lib/purchase-return";
+import type { PurchaseInput, PurchaseReturnInput } from "@/lib/validation";
 import type { SessionUser } from "@/lib/session";
 
 /**
@@ -178,7 +182,19 @@ export async function createPurchase(
     );
     const { items, totals } = buildItemsAndTotals(input, medicinesById);
 
-    const seq = await nextSequence(`${String(pharmacyId)}:grn`, session);
+    // GRN numbers run continuously, not per fiscal year.
+    const seq = await nextSequence(
+      `${String(pharmacyId)}:grn`,
+      session,
+      async () => {
+        const last = await Purchase.findOne({ pharmacyId })
+          .sort({ grnSeq: -1 })
+          .select("grnSeq")
+          .session(session)
+          .lean();
+        return last?.grnSeq ?? 0;
+      },
+    );
     const grnNo = formatGrnNo(seq);
 
     const [purchase] = await Purchase.create(
@@ -203,7 +219,12 @@ export async function createPurchase(
           totalAmount: totals.totalAmount,
           amountPaid: 0,
           paymentStatus: "unpaid",
-          dueDate: addDays(input.receivedDate, supplier.paymentTermsDays ?? 0),
+          dueDate: addDays(
+            input.receivedDate,
+            // A per-delivery term beats the supplier default; 0 is a real
+            // answer ("due on receipt"), so only null falls back.
+            input.creditDays ?? supplier.paymentTermsDays ?? 0,
+          ),
           createdBy: new Types.ObjectId(user.id),
           createdByName: user.name,
           notes: input.notes,
@@ -229,7 +250,7 @@ export async function createPurchase(
 
   // Posting runs in its own transaction so a failure there leaves a usable
   // draft behind rather than losing the whole typed invoice.
-  const posted = await postPurchase(created.id, user);
+  const posted = await postPurchase(created.id, user, input.payment);
 
   // Carry the posting stats through: a caller using the one-step flow needs to
   // know what actually landed on the shelf, exactly as if they had posted
@@ -275,7 +296,10 @@ export async function updateDraftPurchase(
     vatRate: totals.vatRate,
     vatAmount: totals.vatAmount,
     totalAmount: totals.totalAmount,
-    dueDate: addDays(input.receivedDate, supplier.paymentTermsDays ?? 0),
+    dueDate: addDays(
+      input.receivedDate,
+      input.creditDays ?? supplier.paymentTermsDays ?? 0,
+    ),
     notes: input.notes,
   });
 
@@ -342,9 +366,17 @@ export interface PostedPurchase {
  * Everything happens in one transaction, so a GRN can never be half-posted:
  * either all its stock exists and the document says "posted", or neither.
  */
+/** Money handed over as the delivery was received. */
+export interface PostPayment {
+  amount: number;
+  method: string;
+  reference?: string;
+}
+
 export async function postPurchase(
   id: string,
   user: SessionUser,
+  payment?: PostPayment,
 ): Promise<PostedPurchase> {
   await connectDB();
 
@@ -468,6 +500,59 @@ export async function postPurchase(
     purchase.status = "posted";
     purchase.postedAt = new Date();
     purchase.postedBy = new Types.ObjectId(user.id);
+
+    /*
+      Money handed over at the door, recorded in the same transaction as the
+      stock it paid for.
+
+      Written straight to the ledger rather than through `recordPayment`,
+      because that helper opens its own transaction - nesting one inside this
+      would leave a payment that could commit while the stock it settles rolled
+      back. Same reason the paid total is set here rather than by calling
+      `refreshPaymentStatus` afterwards: a second pass is a second chance to be
+      interrupted, and this has to be all-or-nothing.
+
+      Overpayment is refused rather than accepted as a credit. A supplier
+      credit balance is a thing this system does not track, and quietly
+      creating one would put money somewhere nothing can later spend it.
+    */
+    if (payment && payment.amount > 0) {
+      const paid = round2(payment.amount);
+
+      if (paid > purchase.totalAmount) {
+        throw ApiError.badRequest(
+          `${purchase.grnNo} totals ${purchase.totalAmount.toFixed(2)}, so ${paid.toFixed(2)} is more than is owed on it. Record the difference as a separate on-account payment.`,
+        );
+      }
+
+      const { SupplierPayment } = await import("@/models/SupplierPayment");
+
+      const [recorded] = await SupplierPayment.create(
+        [
+          {
+            pharmacyId,
+            supplierId: purchase.supplierId,
+            purchaseId: purchase._id,
+            grnNo: purchase.grnNo,
+            amount: paid,
+            method: payment.method,
+            paidOn: purchase.receivedDate,
+            reference: payment.reference ?? "",
+            note: "Paid when the delivery was received.",
+            recordedBy: new Types.ObjectId(user.id),
+            recordedByName: user.name,
+          },
+        ],
+        sessionOption(session),
+      );
+
+      if (!recorded) throw new Error("Payment record was not created.");
+      onRollback(() => SupplierPayment.deleteOne({ _id: recorded._id }).exec());
+
+      purchase.amountPaid = paid;
+      purchase.paymentStatus = paymentStatusFor(purchase.totalAmount, paid);
+    }
+
     await purchase.save({ session: session ?? undefined });
 
     return {
@@ -489,9 +574,12 @@ export async function postPurchase(
  * has already walked out with would leave a batch short and the sale record
  * pointing at a lot that no longer accounts for it.
  *
- * There is no purchase-return flow yet, so the documented workaround is a
- * manual batch correction plus a direct settlement with the supplier. A proper
- * debit-note flow is the obvious future addition here.
+ * Cancelling is for a GRN that should never have been posted - the wrong
+ * supplier, a duplicate entry, a delivery keyed twice. Sending goods *back* is
+ * a different act on a delivery that was correctly recorded, and it has its
+ * own flow in `returnPurchaseItems`: the GRN stays posted, the units leave,
+ * and a debit note reduces what the shop owes. Reach for that one whenever the
+ * delivery genuinely happened.
  */
 export async function cancelPurchase(
   id: string,
@@ -588,7 +676,7 @@ export async function refreshPaymentStatus(
 
   const purchaseObjectId = new Types.ObjectId(String(purchaseId));
   const purchase = await Purchase.findById(purchaseObjectId)
-    .select("totalAmount pharmacyId")
+    .select("totalAmount returnedTotal pharmacyId")
     .session(session)
     .lean();
   if (!purchase) return;
@@ -603,12 +691,20 @@ export async function refreshPaymentStatus(
 
   const paid = round2((agg[0] as { paid?: number } | undefined)?.paid ?? 0);
 
+  // Netted against what is actually owed, not the invoice face value. A
+  // delivery half of which went back is settled by paying half - and if this
+  // compared against the gross figure, recording that payment would flip a
+  // GRN the credit note had already closed straight back to "partial".
+  const netPayable = round2(
+    Math.max(0, purchase.totalAmount - (purchase.returnedTotal ?? 0)),
+  );
+
   await Purchase.updateOne(
     { _id: purchaseObjectId, ...(purchase.pharmacyId ? { pharmacyId: purchase.pharmacyId } : {}) },
     {
       $set: {
         amountPaid: paid,
-        paymentStatus: paymentStatusFor(purchase.totalAmount, paid),
+        paymentStatus: paymentStatusFor(netPayable, paid),
       },
     },
     sessionOption(session),
@@ -647,7 +743,7 @@ export async function latestBatchPrices(
     },
   ]);
 
-  return new Map(
+  const prices = new Map(
     rows.map((row) => [
       String(row._id),
       {
@@ -657,6 +753,217 @@ export async function latestBatchPrices(
       },
     ]),
   );
+
+  /*
+    A medicine that has never been delivered has no lot to copy from, so the
+    GRN form opened blank and somebody typed the MRP off the box - every time,
+    for every new line. The catalogue's indicative prices fill exactly that
+    gap.
+
+    Only where there is no real lot. A delivered medicine's last actual cost
+    beats a figure somebody typed into the catalogue months ago, and a default
+    that quietly overrode history would be the second source of truth this
+    system is built to avoid.
+  */
+  const missing = await Medicine.find({
+    pharmacyId,
+    _id: { $nin: [...prices.keys()].map((id) => new Types.ObjectId(id)) },
+    $or: [
+      { defaultCostPrice: { $ne: null } },
+      { defaultSalePrice: { $ne: null } },
+    ],
+  })
+    .select("_id defaultCostPrice defaultSalePrice")
+    .lean();
+
+  for (const medicine of missing) {
+    prices.set(String(medicine._id), {
+      costPrice: medicine.defaultCostPrice ?? 0,
+      salePrice: medicine.defaultSalePrice ?? 0,
+      supplierId: null,
+    });
+  }
+
+  return prices;
 }
 
 export { round4 };
+
+// ---------------------------------------------------------------------------
+// Returning goods to the supplier
+// ---------------------------------------------------------------------------
+
+export interface RecordedPurchaseReturn {
+  id: string;
+  grnNo: string;
+  supplierName: string;
+  units: number;
+  totalAmount: number;
+  returnedTotal: number;
+  /** What is still owed on this GRN after the credit. */
+  netPayable: number;
+  lines: Array<{ medicineName: string; batchNumber: string; quantity: number }>;
+}
+
+/**
+ * Send units from a posted GRN back to the supplier.
+ *
+ * The mirror of `returnSaleItems`, and built the same way on purpose: the GRN
+ * is never rewritten, stock leaves through a guarded decrement, and the credit
+ * is appended so the history of a disputed delivery survives.
+ *
+ * What the shop is owed is subtracted from what it owes - a debit note, not a
+ * refund to chase. `lib/suppliers.ts` nets `returnedTotal` off the posted
+ * purchase value, so the payables figure moves the moment this commits and no
+ * second step can be forgotten.
+ *
+ * The stock decrement is the interesting guard. Unlike a customer return,
+ * which puts units *back*, this takes them away, so it can lose a race with a
+ * sale: a cashier may dispense the last two of a lot while the storekeeper is
+ * typing the return. `$gte` refuses rather than driving the lot negative, and
+ * the message says what actually happened.
+ */
+export async function returnPurchaseItems(
+  id: string,
+  input: PurchaseReturnInput,
+  user: SessionUser,
+): Promise<RecordedPurchaseReturn> {
+  await connectDB();
+
+  return withTransaction(async ({ session, onRollback }) => {
+    const pharmacyId = pharmacyObjectId(user);
+
+    const purchase = await Purchase.findOne({ _id: id, pharmacyId }).session(
+      session,
+    );
+    if (!purchase) throw ApiError.notFound("That delivery no longer exists.");
+
+    // What is physically left in each lot decides what may go back, so the
+    // lots are read now rather than trusted from the GRN's own quantities.
+    const batchIds = purchase.items
+      .map((item) => item.batchId)
+      .filter((batchId): batchId is Types.ObjectId => Boolean(batchId));
+
+    const lots = await Batch.find({ _id: { $in: batchIds }, pharmacyId })
+      .select("_id quantity")
+      .session(session)
+      .lean();
+
+    const onHand = new Map(lots.map((lot) => [String(lot._id), lot.quantity]));
+
+    let plan;
+    try {
+      plan = planPurchaseReturn(
+        {
+          status: purchase.status,
+          items: purchase.items.map((item) => ({
+            receivedQuantity: item.quantity + item.freeQuantity,
+            returnedQuantity: item.returnedQuantity ?? 0,
+            onHandQuantity: item.batchId
+              ? (onHand.get(String(item.batchId)) ?? 0)
+              : 0,
+            effectiveUnitCost: item.effectiveUnitCost,
+            medicineId: String(item.medicineId),
+            medicineName: item.medicineName,
+            batchId: item.batchId ? String(item.batchId) : null,
+            batchNumber: item.batchNumber,
+          })),
+        },
+        input.items,
+      );
+    } catch (error) {
+      if (error instanceof PurchaseReturnError) {
+        throw ApiError.badRequest(error.message);
+      }
+      throw error;
+    }
+
+    const returnedAt = new Date();
+
+    for (const item of plan.items) {
+      const updated = await Batch.findOneAndUpdate(
+        { _id: item.batchId, pharmacyId, quantity: { $gte: item.quantity } },
+        { $inc: { quantity: -item.quantity } },
+        { new: true, ...sessionOption(session) },
+      );
+
+      if (!updated) {
+        throw ApiError.insufficientStock(
+          `${item.medicineName}: lot ${item.batchNumber} no longer holds ${item.quantity} unit(s) - it was dispensed while this return was open.`,
+        );
+      }
+
+      onRollback(() =>
+        Batch.updateOne(
+          { _id: item.batchId, pharmacyId },
+          { $inc: { quantity: item.quantity } },
+        ).exec(),
+      );
+
+      const line = purchase.items[item.lineIndex];
+      if (line) {
+        line.returnedQuantity = (line.returnedQuantity ?? 0) + item.quantity;
+      }
+    }
+
+    if (!purchase.returns) purchase.set("returns", []);
+    purchase.returns.push({
+      returnedAt,
+      returnedBy: new Types.ObjectId(user.id),
+      returnedByName: user.name,
+      reasonCode: input.reasonCode,
+      reason: input.reason ?? "",
+      creditNoteNo: input.creditNoteNo ?? "",
+      items: plan.items.map((item) => ({
+        lineIndex: item.lineIndex,
+        medicineId: new Types.ObjectId(item.medicineId),
+        batchId: new Types.ObjectId(item.batchId),
+        medicineName: item.medicineName,
+        batchNumber: item.batchNumber,
+        quantity: item.quantity,
+        unitCost: item.unitCost,
+        lineTotal: item.lineTotal,
+      })),
+      units: plan.units,
+      totalAmount: plan.totalAmount,
+    });
+
+    purchase.returnedUnits = (purchase.returnedUnits ?? 0) + plan.units;
+    purchase.returnedTotal = round2(
+      (purchase.returnedTotal ?? 0) + plan.totalAmount,
+    );
+
+    await purchase.save({ session: session ?? undefined });
+
+    // A credit can settle an invoice outright, so the payment status is
+    // recomputed against the reduced figure rather than left saying "unpaid"
+    // on a GRN nobody owes anything on.
+    const netPayable = round2(
+      Math.max(0, purchase.totalAmount - purchase.returnedTotal),
+    );
+    await Purchase.updateOne(
+      { _id: purchase._id, pharmacyId },
+      {
+        $set: {
+          paymentStatus: paymentStatusFor(netPayable, purchase.amountPaid ?? 0),
+        },
+      },
+      sessionOption(session),
+    );
+
+    return {
+      id: String(purchase._id),
+      grnNo: purchase.grnNo,
+      supplierName: purchase.supplierName,
+      units: plan.units,
+      totalAmount: plan.totalAmount,
+      returnedTotal: purchase.returnedTotal,
+      netPayable,
+      lines: plan.items.map((item) => ({
+        medicineName: item.medicineName,
+        batchNumber: item.batchNumber,
+        quantity: item.quantity,
+      })),
+    };
+  });
+}

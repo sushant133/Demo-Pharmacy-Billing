@@ -3,13 +3,18 @@
 import { useEffect, useRef, useState } from "react";
 import { encodeEscPos } from "@/lib/escpos";
 import { formatThermalReceipt, type ThermalReceipt } from "@/lib/receipt-text";
-import { canUseBluetoothPrinter, printViaBluetooth } from "@/components/bills/print-bluetooth";
+import {
+  canPrintToRoll,
+  openPrintSheet,
+  printToRoll,
+} from "@/components/bills/print-transport";
 
 /**
  * Records the original vs reprint, then sends the bill to paper.
  *
- * Desktop and Wi-Fi printers use the browser print sheet (80mm CSS).
- * Android Chrome can also talk to a Bluetooth ESC/POS printer directly.
+ * Desktop and Wi-Fi printers use the system print sheet (80mm CSS). Android
+ * Chrome and the Android app can also talk to a Bluetooth ESC/POS printer
+ * directly; `print-transport` picks the route the current shell supports.
  * Mobile browsers block print() without a tap, so auto-print is desktop-only.
  */
 export function PrintController({
@@ -38,7 +43,7 @@ export function PrintController({
   const started = useRef(false);
 
   useEffect(() => {
-    setBluetoothOk(canUseBluetoothPrinter());
+    setBluetoothOk(canPrintToRoll());
   }, []);
 
   async function recordPrint(): Promise<string> {
@@ -64,7 +69,7 @@ export function PrintController({
         // Still print; the copy count may be stale.
       }
       if (coarse) return;
-      window.setTimeout(() => window.print(), 150);
+      window.setTimeout(() => openPrintSheet("Bill"), 150);
     }
 
     if (!autoPrint || started.current) return;
@@ -81,7 +86,11 @@ export function PrintController({
       // Still print.
     }
     window.setTimeout(() => {
-      window.print();
+      if (!openPrintSheet("Bill")) {
+        setError(
+          "This device has no print sheet. Use the Bluetooth printer button for the 80mm roll.",
+        );
+      }
       setBusy(null);
     }, 150);
   }
@@ -92,7 +101,7 @@ export function PrintController({
     try {
       const nextLabel = await recordPrint();
       const payload = { ...receipt, copyLabel: nextLabel };
-      await printViaBluetooth(encodeEscPos(formatThermalReceipt(payload)));
+      await printToRoll(encodeEscPos(formatThermalReceipt(payload)));
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Could not reach the Bluetooth printer.";
@@ -130,8 +139,8 @@ export function PrintController({
           </button>
         ) : null}
         <p className="receipt-print-hint">
-          Phone + Wi-Fi printer: tap Print bill and pick the printer. Bluetooth
-          80mm roll: tap Bluetooth printer (Android Chrome).
+          Wi-Fi or USB printer: tap Print bill and pick it in the system sheet.
+          80mm roll: tap Bluetooth printer and choose the till printer.
         </p>
         {error ? (
           <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">

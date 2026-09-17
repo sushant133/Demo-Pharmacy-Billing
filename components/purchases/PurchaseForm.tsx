@@ -10,7 +10,11 @@ import {
   stripLabel,
   unitWord,
 } from "@/lib/pack";
-import { calculatePurchaseTotals, unitMargin } from "@/lib/purchase-math";
+import { calculatePurchaseTotals, round2, unitMargin } from "@/lib/purchase-math";
+import {
+  SUPPLIER_PAYMENT_METHODS,
+  SUPPLIER_PAYMENT_METHOD_LABELS,
+} from "@/lib/constants";
 import { DualDateField } from "@/components/DualDateField";
 import { cx } from "@/components/ui";
 
@@ -123,6 +127,7 @@ export function PurchaseForm({
   suppliers,
   medicines,
   defaultVatRate,
+  expiryAlertDays,
   today,
   purchase,
   canPost,
@@ -131,6 +136,8 @@ export function PurchaseForm({
   suppliers: SupplierOption[];
   medicines: MedicineOption[];
   defaultVatRate: number;
+  /** Shelf-life floor from settings; lots under it get a short-dated warning. */
+  expiryAlertDays: number;
   today: string;
   purchase: PurchaseFormValues | null;
   canPost: boolean;
@@ -138,6 +145,8 @@ export function PurchaseForm({
 }) {
   const router = useRouter();
   const isEdit = Boolean(purchase);
+  // A new delivery has no GRN yet - the server allocates it on save.
+  const grnLabel = purchase ? `GRN ${purchase.id.slice(-6).toUpperCase()}` : "this delivery";
   const medicineById = useMemo(
     () => new Map(medicines.map((medicine) => [medicine.id, medicine])),
     [medicines],
@@ -156,6 +165,13 @@ export function PurchaseForm({
   const [otherCharges, setOtherCharges] = useState(String(purchase?.otherCharges ?? 0));
   const [vatRate, setVatRate] = useState(String(purchase?.vatRate ?? defaultVatRate));
   const [notes, setNotes] = useState(purchase?.notes ?? "");
+
+  // Payment taken at the door, and the term for whatever is left.
+  const [paidAmount, setPaidAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<string>("cash");
+  const [paymentReference, setPaymentReference] = useState("");
+  const [creditDays, setCreditDays] = useState("");
+  const [confirming, setConfirming] = useState(false);
 
   const [lines, setLines] = useState<LineState[]>(() => {
     if (purchase && purchase.items.length > 0) {
@@ -262,6 +278,26 @@ export function PurchaseForm({
     }
   }, [pricedLines, discount, otherCharges, vatRate]);
 
+  const paidNow = Math.max(0, num(paidAmount));
+  const dueAfter = round2((totals?.totalAmount ?? 0) - paidNow);
+  const overpaid = Boolean(totals) && paidNow > (totals?.totalAmount ?? 0) + 0.001;
+
+  /**
+   * Lots arriving with less shelf life than the shop's expiry alert window.
+   *
+   * A warning, never a block. Short-dated stock is routinely accepted - often
+   * at a discount, and knowingly - so refusing it would send people around the
+   * system rather than through it. What it must not do is arrive unremarked
+   * and surface three months later as dead stock nobody chose to buy.
+   */
+  const shortDated = pricedLines.filter((line) => {
+    if (!line.expiryDate) return false;
+    const days = Math.floor(
+      (new Date(line.expiryDate).getTime() - Date.now()) / 86_400_000,
+    );
+    return days <= expiryAlertDays;
+  });
+
   function payload() {
     return {
       supplierId,
@@ -271,6 +307,18 @@ export function PurchaseForm({
       discount: num(discount),
       otherCharges: num(otherCharges),
       vatRate: num(vatRate),
+      creditDays: creditDays.trim() === "" ? "" : Math.trunc(num(creditDays)),
+      // Only sent when money actually changed hands, and only ever applied on
+      // posting - the server ignores it on a draft.
+      ...(paidNow > 0
+        ? {
+            payment: {
+              amount: paidNow,
+              method: paymentMethod,
+              reference: paymentReference.trim(),
+            },
+          }
+        : {}),
       notes: notes.trim(),
       items: pricedLines.map((line) => ({
         medicineId: line.medicineId,
@@ -325,6 +373,8 @@ export function PurchaseForm({
 
     if (!result.ok) {
       setFormError(result.message);
+      // Back to the form rather than stuck on a confirmation the server refused.
+      setConfirming(false);
       // Surface per-field messages next to the field that caused them.
       const details = result.details as Record<string, string[]> | undefined;
       if (details) {
@@ -826,33 +876,249 @@ export function PurchaseForm({
                 {totals.totalUnits} pieces onto the shelf
               </p>
             ) : null}
+
+            {/*
+              Said before posting, not after. Short-dated stock is a legitimate
+              purchase - often discounted and knowingly taken - so this warns
+              and never blocks. What it prevents is a lot arriving unremarked
+              and turning up months later as dead stock nobody chose to buy.
+            */}
+            {shortDated.length > 0 ? (
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                <p className="text-xs font-medium text-amber-900">
+                  {shortDated.length} lot{shortDated.length === 1 ? "" : "s"}{" "}
+                  expire within {expiryAlertDays} days
+                </p>
+                <ul className="mt-1 space-y-0.5">
+                  {shortDated.slice(0, 4).map((line) => (
+                    <li key={line.key} className="text-[11px] text-amber-800">
+                      {medicineById.get(line.medicineId)?.name ?? "Line"} ·{" "}
+                      <span className="font-mono">{line.batchNumber}</span> · exp{" "}
+                      {line.expiryDate}
+                    </li>
+                  ))}
+                  {shortDated.length > 4 ? (
+                    <li className="text-[11px] text-amber-800">
+                      and {shortDated.length - 4} more.
+                    </li>
+                  ) : null}
+                </ul>
+              </div>
+            ) : null}
           </div>
 
-          <div className="space-y-2 p-4">
-            {canPost ? (
-              <button
-                type="button"
-                onClick={() => submit(true)}
-                disabled={saving || !totals}
-                className="btn-primary w-full py-2.5"
+          {/*
+            Payment, and only where it can mean anything.
+
+            A draft is not yet a liability, so money cannot be paid against
+            one - recording it would book cash leaving the shop for a delivery
+            the system does not believe happened. The section therefore belongs
+            to posting, and is hidden from a role that cannot post.
+          */}
+          {canPost ? (
+            <div className="space-y-3 border-t border-slate-100 p-4">
+              <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                Payment
+              </p>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label htmlFor="paidAmount" className="label">
+                    Paid now
+                  </label>
+                  <input
+                    id="paidAmount"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={paidAmount}
+                    onChange={(event) => setPaidAmount(event.target.value)}
+                    placeholder="0.00"
+                    className="input tnum"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="paymentMethod" className="label">
+                    Method
+                  </label>
+                  <select
+                    id="paymentMethod"
+                    value={paymentMethod}
+                    onChange={(event) => setPaymentMethod(event.target.value)}
+                    disabled={paidNow <= 0}
+                    className="input disabled:bg-slate-50 disabled:text-slate-400"
+                  >
+                    {SUPPLIER_PAYMENT_METHODS.map((method) => (
+                      <option key={method} value={method}>
+                        {SUPPLIER_PAYMENT_METHOD_LABELS[method]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {paidNow > 0 ? (
+                <div>
+                  <label htmlFor="paymentReference" className="label">
+                    Reference{" "}
+                    <span className="font-normal text-slate-400">(optional)</span>
+                  </label>
+                  <input
+                    id="paymentReference"
+                    value={paymentReference}
+                    onChange={(event) => setPaymentReference(event.target.value)}
+                    maxLength={120}
+                    placeholder="Cheque no, transaction id"
+                    className="input"
+                  />
+                </div>
+              ) : null}
+
+              <div>
+                <label htmlFor="creditDays" className="label">
+                  Credit days{" "}
+                  <span className="font-normal text-slate-400">
+                    (supplier default if blank)
+                  </span>
+                </label>
+                <input
+                  id="creditDays"
+                  type="number"
+                  min={0}
+                  max={365}
+                  value={creditDays}
+                  onChange={(event) => setCreditDays(event.target.value)}
+                  placeholder="Supplier terms"
+                  className="input tnum"
+                />
+              </div>
+
+              {/* What the shop will still owe once this posts. */}
+              <div
+                className={cx(
+                  "rounded-lg px-3 py-2",
+                  dueAfter <= 0 ? "bg-emerald-50" : "bg-amber-50",
+                )}
               >
-                {saving ? "Working…" : "Receive & post"}
-              </button>
-            ) : null}
+                <div className="flex items-center justify-between text-sm">
+                  <span
+                    className={
+                      dueAfter <= 0 ? "text-emerald-800" : "text-amber-900"
+                    }
+                  >
+                    {dueAfter <= 0 ? "Settled in full" : "Still owing"}
+                  </span>
+                  <span
+                    className={cx(
+                      "tnum font-semibold",
+                      dueAfter <= 0 ? "text-emerald-700" : "text-amber-800",
+                    )}
+                  >
+                    {money(Math.max(0, dueAfter))}
+                  </span>
+                </div>
+              </div>
 
-            <button
-              type="button"
-              onClick={() => submit(false)}
-              disabled={saving || !totals}
-              className="btn-secondary w-full"
-            >
-              {isEdit ? "Save draft" : "Save as draft"}
-            </button>
+              {overpaid ? (
+                <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                  That is more than this delivery comes to. Record the
+                  difference as a separate on-account payment instead.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
 
-            <p className="pt-1 text-center text-[11px] leading-relaxed text-slate-400">
-              Posting creates the stock and cannot be edited afterwards. A draft
-              changes nothing on the shelf.
-            </p>
+          <div className="space-y-2 border-t border-slate-100 p-4">
+            {/*
+              Posting is the one irreversible step in this form: it creates
+              batches, moves stock and books money. It gets a confirmation that
+              states the consequence in units rather than a generic "are you
+              sure", because the number worth checking is what lands on the
+              shelf.
+            */}
+            {confirming ? (
+              <div className="rounded-lg border border-brand-200 bg-brand-50/60 p-3">
+                <p className="text-sm font-medium text-slate-900">
+                  Post {grnLabel} and add stock?
+                </p>
+                <ul className="mt-2 space-y-1 border-y border-brand-200/60 py-2 text-xs text-slate-700">
+                  <li className="flex justify-between gap-3">
+                    <span className="text-slate-500">Onto the shelf</span>
+                    <span className="tnum font-medium">
+                      {totals?.totalUnits ?? 0} pieces across{" "}
+                      {pricedLines.length} lot
+                      {pricedLines.length === 1 ? "" : "s"}
+                    </span>
+                  </li>
+                  <li className="flex justify-between gap-3">
+                    <span className="text-slate-500">Invoice total</span>
+                    <span className="tnum font-medium">
+                      {money(totals?.totalAmount ?? 0)}
+                    </span>
+                  </li>
+                  <li className="flex justify-between gap-3">
+                    <span className="text-slate-500">Paying now</span>
+                    <span className="tnum font-medium">{money(paidNow)}</span>
+                  </li>
+                  <li className="flex justify-between gap-3">
+                    <span className="text-slate-500">Left owing</span>
+                    <span className="tnum font-medium">
+                      {money(Math.max(0, dueAfter))}
+                    </span>
+                  </li>
+                </ul>
+                <p className="mt-2 text-[11px] text-slate-500">
+                  A posted delivery cannot be edited. Correcting one means
+                  cancelling it, which is only possible while none of it has
+                  been sold.
+                </p>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setConfirming(false)}
+                    disabled={saving}
+                    className="btn-secondary flex-1"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => submit(true)}
+                    disabled={saving}
+                    className="btn-primary flex-[2]"
+                  >
+                    {saving ? "Posting…" : "Receive & post"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {canPost ? (
+                  <button
+                    type="button"
+                    onClick={() => setConfirming(true)}
+                    disabled={saving || !totals || overpaid}
+                    className="btn-primary w-full py-2.5"
+                  >
+                    Receive &amp; post
+                  </button>
+                ) : null}
+
+                <button
+                  type="button"
+                  onClick={() => submit(false)}
+                  disabled={saving || !totals}
+                  className="btn-secondary w-full"
+                >
+                  {isEdit ? "Save draft" : "Save as draft"}
+                </button>
+
+                <p className="pt-1 text-center text-[11px] leading-relaxed text-slate-400">
+                  Posting adds the received quantity to inventory and cannot be
+                  edited afterwards. A draft changes nothing on the shelf.
+                </p>
+              </>
+            )}
           </div>
         </div>
       </div>

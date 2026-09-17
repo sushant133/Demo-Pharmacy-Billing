@@ -53,6 +53,51 @@ describe("medicineSchema reorderLevel", () => {
   });
 });
 
+describe("medicineSchema sku", () => {
+  const base = { name: "Amoxil 500mg", unit: "capsule" as const };
+
+  it("upper-cases the code, so one product cannot be filed under two", () => {
+    expect(medicineSchema.parse({ ...base, sku: "amx-500" }).sku).toBe("AMX-500");
+    expect(medicineSchema.parse({ ...base, sku: " amx-500 " }).sku).toBe("AMX-500");
+  });
+
+  it("defaults to blank for a shop that does not use codes", () => {
+    expect(medicineSchema.parse(base).sku).toBe("");
+    expect(medicineSchema.parse({ ...base, sku: "" }).sku).toBe("");
+    expect(medicineSchema.parse({ ...base, sku: "   " }).sku).toBe("");
+  });
+
+  it("accepts the punctuation shelf codes actually use", () => {
+    for (const code of ["AMX500", "AMX-500", "AMX.500", "AMX_500", "A/500", "12345"]) {
+      expect(medicineSchema.parse({ ...base, sku: code }).sku).toBe(code);
+    }
+  });
+
+  it("rejects a code with spaces or symbols that would not scan or sort", () => {
+    for (const code of ["AMX 500", "AMX#500", "-AMX", "amx@500"]) {
+      expect(medicineSchema.safeParse({ ...base, sku: code }).success).toBe(false);
+    }
+  });
+
+  it("rejects a code too long for a shelf label", () => {
+    expect(
+      medicineSchema.safeParse({ ...base, sku: "A".repeat(41) }).success,
+    ).toBe(false);
+    expect(
+      medicineSchema.safeParse({ ...base, sku: "A".repeat(40) }).success,
+    ).toBe(true);
+  });
+
+  it("stores the code upper-cased on the document too", () => {
+    const medicine = new Medicine({
+      pharmacyId: new Types.ObjectId(),
+      name: "Amoxil 500mg",
+      sku: "amx-500",
+    });
+    expect(medicine.sku).toBe("AMX-500");
+  });
+});
+
 describe("storedBillNo", () => {
   it("looks up the printed slash form against the stored hyphen form", () => {
     expect(displayBillNo("INV-2082-83-000173")).toBe("INV-2082/83-000173");

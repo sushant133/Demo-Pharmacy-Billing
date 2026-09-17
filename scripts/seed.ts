@@ -33,7 +33,7 @@ import { createPurchase } from "../lib/purchases";
 import { createSale } from "../lib/sales";
 import { recordPayment } from "../lib/suppliers";
 import type { SessionUser } from "../lib/session";
-import type { Role } from "../lib/roles";
+import { ROLE_SCHEME_VERSION, type Role } from "../lib/roles";
 
 const FRESH = process.argv.includes("--fresh");
 /**
@@ -433,6 +433,7 @@ async function main() {
       email: SUPERADMIN.email,
       passwordHash: await bcrypt.hash(SUPERADMIN.password, 12),
       role: "superadmin",
+      roleVersion: ROLE_SCHEME_VERSION,
     });
     console.log(`  + superadmin ${SUPERADMIN.email}`);
   }
@@ -506,6 +507,7 @@ async function main() {
       email: SAMPLE_PHARMACY.ownerEmail,
       passwordHash: await bcrypt.hash(SAMPLE_PHARMACY.ownerPassword, 12),
       role: "admin",
+      roleVersion: ROLE_SCHEME_VERSION,
       pharmacyId,
       branchId: mainBranch._id,
     });
@@ -538,12 +540,35 @@ async function main() {
   let medicineCount = 0;
   const medicineIdByName = new Map<string, string>();
 
+  /*
+    Shelf codes for the sample catalogue.
+
+    Taken from each medicine's own batch prefix - Cetzine's lots are CTZ-2205
+    and CTZ-2201, so its code is CTZ - which is how a real shop picks one. The
+    counter guards the case where two medicines share a prefix: the SKU index
+    is unique per pharmacy, and a seed that dies on a duplicate key teaches
+    nobody anything.
+  */
+  const takenSkus = new Set<string>();
+  const skuFor = (seed: SeedMedicine): string => {
+    const stem = (seed.batches[0]?.[0] ?? seed.name)
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+.*$/, "")
+      .slice(0, 8);
+    if (!stem) return "";
+
+    let sku = stem;
+    for (let n = 2; takenSkus.has(sku); n++) sku = `${stem}-${n}`;
+    takenSkus.add(sku);
+    return sku;
+  };
+
   for (const seed of MEDICINES) {
     const { batches: _batches, ...details } = seed;
 
     const medicine = await Medicine.findOneAndUpdate(
       { pharmacyId, name: details.name, manufacturer: details.manufacturer },
-      { $setOnInsert: { ...details, pharmacyId } },
+      { $setOnInsert: { ...details, sku: skuFor(seed), pharmacyId } },
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
     medicineIdByName.set(details.name, String(medicine._id));
@@ -614,6 +639,7 @@ async function main() {
           otherCharges: 0,
           vatRate: 0.13,
           notes: "Opening stock, loaded by the seed script.",
+          creditDays: null,
         },
         actor,
         true, // post immediately - this is what creates the batches
@@ -710,6 +736,9 @@ async function main() {
               // a counter actually gives one.
               discountPercent: rand() > 0.85 ? [5, 10, 15][Math.floor(rand() * 3)] ?? 5 : 0,
               paymentMode: modes[Math.floor(rand() * modes.length)] ?? "cash",
+              // Seeded bills are settled in full; the till records what was
+              // actually handed over, and there is nobody here to hand less.
+              amountReceived: 0,
               note: "",
             },
             seller,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { openPrintSheet } from "@/components/bills/print-transport";
 
 /**
  * Print island for the bill page.
@@ -11,20 +12,27 @@ import { useEffect } from "react";
  *   - default     fires the print dialog once on mount, used by ?print=1 so
  *                 the POS goes straight from "Complete sale" to the printer.
  */
-export function AutoPrint({ asButton = false }: { asButton?: boolean }) {
+export function AutoPrint({
+  asButton = false,
+  label = "Print bill",
+}: {
+  asButton?: boolean;
+  /** What the button says. A credit note is not a bill. */
+  label?: string;
+}) {
   useEffect(() => {
     if (asButton) return;
 
     // One frame's delay lets fonts and layout settle, otherwise the print
     // preview can capture a half-styled page.
-    const timer = setTimeout(() => window.print(), 350);
+    const timer = setTimeout(() => openPrintSheet(label), 350);
     return () => clearTimeout(timer);
-  }, [asButton]);
+  }, [asButton, label]);
 
   if (!asButton) return null;
 
   return (
-    <button type="button" onClick={() => window.print()} className="btn-primary">
+    <button type="button" onClick={() => openPrintSheet(label)} className="btn-primary">
       <svg
         className="h-4 w-4"
         fill="none"
@@ -39,7 +47,7 @@ export function AutoPrint({ asButton = false }: { asButton?: boolean }) {
           d="M6 9V4h12v5M6 18H4v-6h16v6h-2M8 14h8v6H8v-6z"
         />
       </svg>
-      Print bill
+      {label}
     </button>
   );
 }

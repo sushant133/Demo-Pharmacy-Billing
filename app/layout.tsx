@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { getSession } from "@/lib/auth";
 import { getSettings } from "@/lib/settings";
+import { CapacitorBoot } from "@/components/native/CapacitorBoot";
 import "./globals.css";
 
 /**
@@ -49,7 +50,10 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body className="min-h-dvh">{children}</body>
+      <body className="min-h-dvh">
+        {children}
+        <CapacitorBoot />
+      </body>
     </html>
   );
 }

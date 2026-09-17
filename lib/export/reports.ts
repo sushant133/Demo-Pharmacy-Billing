@@ -6,7 +6,13 @@ import { getMedicinePerformance, getProfitSummary } from "@/lib/analytics";
 import { branchFilter, type BranchScope } from "@/lib/branch-scope";
 import { pharmacyMatch } from "@/lib/tenant";
 import { EXPIRY_LABEL, STOCK_LABEL } from "@/lib/alert-rules";
+import {
+  MOVEMENT_KIND_LABELS,
+  type MovementDirection,
+  type MovementKind,
+} from "@/lib/movement-kinds";
 import { PAYMENT_MODE_LABELS, type PaymentMode } from "@/lib/constants";
+import { REFUND_METHOD_LABELS, isRefundMethod } from "@/lib/return-eligibility";
 import { Batch } from "@/models/Batch";
 import { Purchase } from "@/models/Purchase";
 import { Sale } from "@/models/Sale";
@@ -26,6 +32,8 @@ import type { ReportDataset } from "@/lib/export/dataset";
 export const REPORT_KEYS = [
   "sales-register",
   "sales-detail",
+  "sales-returns",
+  "stock-movements",
   "profit-by-medicine",
   "stock-valuation",
   "expiry",
@@ -41,11 +49,23 @@ export interface ReportRequest {
   /** Inclusive label for the range, e.g. "1 Aug 2026 - 31 Aug 2026". */
   rangeLabel: string;
   scope?: BranchScope;
+  /**
+   * Narrowing that only some reports understand.
+   *
+   * Carried on the request rather than encoded into more report keys: "stock
+   * in" and "stock out" are the same report read in one direction, and minting
+   * a key per combination would multiply the list every time a screen gained a
+   * filter. Reports that do not read these ignore them.
+   */
+  direction?: MovementDirection | "both";
+  kinds?: readonly MovementKind[];
 }
 
 export const REPORT_LABELS: Record<ReportKey, string> = {
   "sales-register": "Sales register",
   "sales-detail": "Sales detail (per item)",
+  "sales-returns": "Returns register",
+  "stock-movements": "Stock movements",
   "profit-by-medicine": "Profit by medicine",
   "stock-valuation": "Stock valuation",
   expiry: "Expiry report",
@@ -57,6 +77,8 @@ export const REPORT_LABELS: Record<ReportKey, string> = {
 export const REPORT_DESCRIPTIONS: Record<ReportKey, string> = {
   "sales-register": "One row per bill, with VAT and payment mode.",
   "sales-detail": "One row per dispensed line, including batch and expiry.",
+  "sales-returns": "One row per return, with reason, refund method and value.",
+  "stock-movements": "Everything that moved stock, from every source.",
   "profit-by-medicine": "Revenue, cost and margin per medicine.",
   "stock-valuation": "Every lot on the shelf, valued at cost.",
   expiry: "Batches graded by urgency, with the money genuinely at risk.",
@@ -69,6 +91,8 @@ export const REPORT_DESCRIPTIONS: Record<ReportKey, string> = {
 export const DATED_REPORTS: ReadonlySet<ReportKey> = new Set([
   "sales-register",
   "sales-detail",
+  "sales-returns",
+  "stock-movements",
   "profit-by-medicine",
   "purchase-register",
 ]);
@@ -538,9 +562,195 @@ async function payablesReport(request: ReportRequest): Promise<ReportDataset> {
 // Dispatch
 // ---------------------------------------------------------------------------
 
+/**
+ * Returns register: one row per return event, not per bill.
+ *
+ * Two returns on the same invoice are two things that happened - different
+ * days, different reasons, possibly different cashiers - and rolling them into
+ * one row would hide the second. The screen's history table is built the same
+ * way, so the export and what it was exported from agree.
+ *
+ * Voided bills are excluded: voiding already put every unit back, so counting
+ * its returns as well would double the stock that came off the shelf.
+ */
+async function salesReturns({
+  from,
+  to,
+  rangeLabel,
+  scope,
+}: ReportRequest): Promise<ReportDataset> {
+  await connectDB();
+
+  const rows = await Sale.aggregate<{
+    billNo: string;
+    customerName: string;
+    customerPhone: string;
+    returnedAt: Date;
+    returnedByName: string;
+    reason: string;
+    refundMethod: string;
+    conditionConfirmed: boolean;
+    units: number;
+    taxableAmount: number;
+    vatAmount: number;
+    totalAmount: number;
+    totalCost: number;
+  }>([
+    { $match: { ...branchFilter(scope), voidedAt: null, "returns.0": { $exists: true } } },
+    { $unwind: "$returns" },
+    { $match: { "returns.returnedAt": { $gte: from, $lt: to } } },
+    { $sort: { "returns.returnedAt": 1 } },
+    {
+      $project: {
+        _id: 0,
+        billNo: 1,
+        customerName: 1,
+        customerPhone: 1,
+        returnedAt: "$returns.returnedAt",
+        returnedByName: "$returns.returnedByName",
+        reason: "$returns.reason",
+        refundMethod: "$returns.refundMethod",
+        conditionConfirmed: "$returns.conditionConfirmed",
+        units: "$returns.units",
+        taxableAmount: "$returns.taxableAmount",
+        vatAmount: "$returns.vatAmount",
+        totalAmount: "$returns.totalAmount",
+        totalCost: "$returns.totalCost",
+      },
+    },
+  ]);
+
+  const refunded = round2(rows.reduce((sum, row) => sum + (row.totalAmount ?? 0), 0));
+  const units = rows.reduce((sum, row) => sum + (row.units ?? 0), 0);
+
+  return {
+    title: "Returns Register",
+    subtitle: rangeLabel,
+    generatedAt: new Date(),
+    meta: [
+      { label: "Returns", value: String(rows.length) },
+      { label: "Units back on the shelf", value: String(units) },
+      { label: "Refunded", value: refunded.toFixed(2) },
+    ],
+    columns: [
+      { key: "date", header: "Returned", type: "date" },
+      { key: "billNo", header: "Bill no", type: "text", width: 16 },
+      { key: "customer", header: "Customer", type: "text", width: 22 },
+      { key: "phone", header: "Phone", type: "text", width: 14 },
+      { key: "reason", header: "Reason", type: "text", width: 30 },
+      { key: "refund", header: "Refunded as", type: "text", width: 18 },
+      { key: "units", header: "Units", type: "integer", total: true },
+      { key: "taxable", header: "Taxable", type: "money", total: true },
+      { key: "vat", header: "VAT", type: "money", total: true },
+      { key: "total", header: "Refund", type: "money", total: true },
+      { key: "cost", header: "Cost returned", type: "money", total: true },
+      { key: "checked", header: "Condition checked", type: "text" },
+      { key: "by", header: "By", type: "text", width: 18 },
+    ],
+    rows: rows.map((row) => ({
+      date: new Date(row.returnedAt),
+      billNo: row.billNo,
+      customer: row.customerName || "Walk-in",
+      phone: row.customerPhone || "",
+      reason: row.reason || "",
+      // Blank on returns taken before the method was recorded. Said plainly
+      // rather than defaulted to cash: a till reconciliation that assumes
+      // money left the drawer is worse than one admitting it cannot tell.
+      refund: isRefundMethod(row.refundMethod)
+        ? REFUND_METHOD_LABELS[row.refundMethod]
+        : "Not recorded",
+      units: row.units ?? 0,
+      taxable: round2(row.taxableAmount ?? 0),
+      vat: round2(row.vatAmount ?? 0),
+      total: round2(row.totalAmount ?? 0),
+      cost: round2(row.totalCost ?? 0),
+      checked: row.conditionConfirmed ? "Yes" : "No",
+      by: row.returnedByName || "",
+    })),
+  };
+}
+
+/**
+ * Stock movements: the ledger, exported.
+ *
+ * Reads through `readLedger` rather than re-querying, so the file and the
+ * screen are the same list by construction. A stock-in export and a stock-out
+ * export are this report with a different `direction`, which is why that lives
+ * on the request instead of being two more report keys.
+ */
+async function stockMovements({
+  from,
+  to,
+  rangeLabel,
+  scope,
+  direction,
+  kinds,
+}: ReportRequest): Promise<ReportDataset> {
+  const { readLedger } = await import("@/lib/stock-ledger");
+
+  const page = await readLedger({
+    scope,
+    start: from,
+    end: to,
+    direction: direction ?? "both",
+    kinds,
+  });
+
+  const title =
+    direction === "in"
+      ? "Stock In"
+      : direction === "out"
+        ? "Stock Out"
+        : "Stock Movements";
+
+  return {
+    title,
+    subtitle: rangeLabel,
+    generatedAt: new Date(),
+    meta: [
+      { label: "Movements", value: String(page.entries.length) },
+      { label: "Units", value: String(page.totalUnits) },
+      { label: "Value at cost", value: page.totalValue.toFixed(2) },
+    ],
+    columns: [
+      { key: "date", header: "When", type: "date" },
+      { key: "kind", header: "Movement", type: "text", width: 20 },
+      { key: "medicine", header: "Medicine", type: "text", width: 28 },
+      { key: "lot", header: "Lot", type: "text", width: 14 },
+      { key: "expiry", header: "Expiry", type: "date" },
+      { key: "supplier", header: "Supplier", type: "text", width: 22 },
+      { key: "units", header: "Units", type: "integer", total: true },
+      { key: "unitCost", header: "Unit cost", type: "money" },
+      { key: "value", header: "Value", type: "money", total: true },
+      { key: "reference", header: "Reference", type: "text", width: 18 },
+      { key: "branch", header: "Branch", type: "text", width: 16 },
+      { key: "reason", header: "Reason", type: "text", width: 26 },
+      { key: "by", header: "By", type: "text", width: 18 },
+    ],
+    rows: page.entries.map((entry) => ({
+      date: entry.at,
+      kind: MOVEMENT_KIND_LABELS[entry.kind] ?? entry.kind,
+      medicine: entry.medicineName,
+      lot: entry.batchNumber,
+      expiry: entry.expiryDate,
+      supplier: entry.supplier,
+      units: entry.quantity,
+      unitCost: entry.unitCost,
+      value: entry.value,
+      reference: entry.reference,
+      branch: entry.branchName,
+      reason: entry.reason,
+      by: entry.by,
+    })),
+    note: "Deliveries and dispensing are read from the GRN and the bill; adjustments, write-offs and transfers from the movement ledger.",
+  };
+}
+
 const BUILDERS: Record<ReportKey, (request: ReportRequest) => Promise<ReportDataset>> = {
   "sales-register": salesRegister,
   "sales-detail": salesDetail,
+  "sales-returns": salesReturns,
+  "stock-movements": stockMovements,
   "profit-by-medicine": profitByMedicine,
   "stock-valuation": stockValuation,
   expiry: expiryReport,

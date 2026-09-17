@@ -1,4 +1,5 @@
 import { FefoError, round2 } from "@/lib/fefo";
+import { returnEligibility } from "@/lib/return-eligibility";
 
 /**
  * Customer returns: how many units can still come back, and what money and
@@ -20,6 +21,8 @@ export interface SaleLineForReturn {
   medicineName: string;
   batchId: string;
   batchNumber: string;
+  /** The lot's expiry. An expired lot cannot go back on a sellable shelf. */
+  expiryDate: Date | string;
 }
 
 export interface ReturnRequest {
@@ -55,7 +58,10 @@ export interface PlannedReturn {
   totalCost: number;
 }
 
-export function remainingQuantity(line: SaleLineForReturn): number {
+/** Narrowed to what it actually reads, so callers need not build a full line. */
+export function remainingQuantity(
+  line: Pick<SaleLineForReturn, "quantity" | "returnedQuantity">,
+): number {
   return Math.max(0, line.quantity - (line.returnedQuantity ?? 0));
 }
 
@@ -67,6 +73,8 @@ export function planSaleReturn(
     vatRate: number;
   },
   requests: readonly ReturnRequest[],
+  /** Injected so the expiry rule is testable rather than clock-dependent. */
+  asOf: Date = new Date(),
 ): PlannedReturn {
   if (requests.length === 0) {
     throw new FefoError("Add at least one medicine to return.");
@@ -92,12 +100,20 @@ export function planSaleReturn(
       throw new FefoError("That item is not on this bill.");
     }
 
-    const remaining = remainingQuantity(line);
+    // The eligibility rules are applied here, not only on the screen that
+    // chose the lines: a hand-made request must not be able to put an expired
+    // lot back on the shelf.
+    const eligibility = returnEligibility(line, asOf);
+    if (!eligibility.eligible) {
+      throw new FefoError(
+        `${line.medicineName} (${line.batchNumber}): ${eligibility.message}`,
+      );
+    }
+
+    const remaining = eligibility.returnable;
     if (request.quantity > remaining) {
       throw new FefoError(
-        remaining === 0
-          ? `${line.medicineName} (${line.batchNumber}) has already been returned in full.`
-          : `Only ${remaining} unit(s) of ${line.medicineName} (${line.batchNumber}) can still be returned.`,
+        `Only ${remaining} unit(s) of ${line.medicineName} (${line.batchNumber}) can still be returned.`,
       );
     }
 

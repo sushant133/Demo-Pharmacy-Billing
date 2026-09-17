@@ -6,8 +6,19 @@ import {
   type PaymentMode,
 } from "@/lib/constants";
 
-export { PAYMENT_MODES, PAYMENT_MODE_LABELS };
-export type { PaymentMode };
+import {
+  PAYMENT_STATUSES,
+  PAYMENT_STATUS_LABELS,
+  type PaymentStatus,
+} from "@/lib/sale-payment";
+
+export {
+  PAYMENT_MODES,
+  PAYMENT_MODE_LABELS,
+  PAYMENT_STATUSES,
+  PAYMENT_STATUS_LABELS,
+};
+export type { PaymentMode, PaymentStatus };
 
 /**
  * One dispensed line. A single cart line can produce several of these when
@@ -72,7 +83,26 @@ const saleReturnSchema = new Schema(
     returnedAt: { type: Date, required: true },
     returnedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
     returnedByName: { type: String, default: "" },
+    /** One of RETURN_REASONS. Blank on returns taken before the list existed. */
+    reasonCode: { type: String, trim: true, default: "" },
     reason: { type: String, trim: true, required: true, maxlength: 300 },
+    /**
+     * The counter confirmed the goods were sealed, undamaged and in their
+     * original packaging. Stored rather than assumed: it is the only record
+     * that the physical check was made, and the only thing that distinguishes
+     * a sound return from stock that should have been written off.
+     */
+    conditionConfirmed: { type: Boolean, default: false },
+    /**
+     * How the money went back: cash, reversed to the original payment, or
+     * taken off what the customer still owed.
+     *
+     * Blank on returns recorded before the field existed. Read as "not
+     * recorded" rather than defaulted to cash - a till reconciliation that
+     * silently assumes cash left the drawer is worse than one that says it
+     * does not know.
+     */
+    refundMethod: { type: String, trim: true, default: "" },
     items: {
       type: [saleReturnItemSchema],
       required: true,
@@ -88,6 +118,31 @@ const saleReturnSchema = new Schema(
     vatAmount: { type: Number, required: true, min: 0, default: 0 },
     totalAmount: { type: Number, required: true, min: 0 },
     totalCost: { type: Number, required: true, min: 0, default: 0 },
+  },
+  { _id: false },
+);
+
+/**
+ * One receipt against a bill.
+ *
+ * Append-only, exactly like `returns`: money taken at the till is the first
+ * entry, and settling a due later adds another. Nothing edits a running
+ * balance, so what was received can always be recomputed from the entries and
+ * a mistaken receipt is corrected by a reversing one rather than by rewriting
+ * history.
+ */
+const salePaymentSchema = new Schema(
+  {
+    amount: { type: Number, required: true, min: 0 },
+    method: { type: String, enum: PAYMENT_MODES, required: true, default: "cash" },
+    receivedAt: { type: Date, required: true },
+    receivedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    receivedByName: { type: String, default: "" },
+    /** Cheque number, wallet transaction id, or similar. */
+    reference: { type: String, trim: true, default: "", maxlength: 120 },
+    note: { type: String, trim: true, default: "", maxlength: 300 },
+    /** True for the payment taken as the bill was raised. */
+    atTill: { type: Boolean, default: false },
   },
   { _id: false },
 );
@@ -145,6 +200,34 @@ const saleSchema = new Schema(
       required: true,
       default: "cash",
     },
+    /**
+     * What the customer actually handed over.
+     *
+     * Recorded rather than assumed, because the two facts it separates are
+     * different: change given back (received above the total, cash) and a
+     * balance still owed (received below it, a credit sale). Bills written
+     * before this field existed read as 0, which no query treats as unpaid -
+     * only `paymentMode: "credit"` means that.
+     */
+    amountReceived: { type: Number, required: true, min: 0, default: 0 },
+    /** Every receipt against this bill. `amountReceived` is their sum. */
+    payments: { type: [salePaymentSchema], default: [] },
+    /**
+     * Paid, partially paid, or credit/unpaid.
+     *
+     * Derived from the money - `settleSale` in lib/sale-payment.ts is the only
+     * thing that decides it - but stored so the sales list and the customer
+     * dues report can filter on it without reading every bill. Kept in sync on
+     * every write that moves money: the sale itself, a later receipt, a return
+     * and a void.
+     */
+    paymentStatus: {
+      type: String,
+      enum: PAYMENT_STATUSES,
+      required: true,
+      default: "paid",
+      index: true,
+    },
     soldBy: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     soldByName: { type: String, default: "" },
     branchId: {
@@ -191,6 +274,8 @@ const saleSchema = new Schema(
 
 // Bill numbers are unique per pharmacy, not globally: two shops both start at INV-000001.
 saleSchema.index({ pharmacyId: 1, billNo: 1 }, { unique: true });
+// The customer-dues read: what one customer still owes, newest bill first.
+saleSchema.index({ pharmacyId: 1, customerId: 1, paymentStatus: 1, createdAt: -1 });
 // The sales-history screen and the dashboard both read by date, newest first.
 saleSchema.index({ createdAt: -1 });
 saleSchema.index({ pharmacyId: 1, createdAt: -1 });

@@ -1,5 +1,6 @@
-import { created, ok, parseJson, parseQuery, withRoute } from "@/lib/api";
+import { ApiError, created, ok, parseJson, parseQuery, withRoute } from "@/lib/api";
 import { requirePermission } from "@/lib/auth";
+import { can } from "@/lib/roles";
 import { branchFilter, resolveRequestScope } from "@/lib/branch-scope";
 import { connectDB } from "@/lib/db";
 import { dateRangeFromStrings } from "@/lib/dates";
@@ -129,12 +130,29 @@ export const GET = withRoute(async (req) => {
 /**
  * POST /api/sales - complete a sale.
  *
- * Accepts only { medicineId, quantity } per line: batch choice is the
- * system's job, not the cashier's, which is the whole point of FEFO.
+ * A line is { medicineId, quantity } plus an optional batchId. Batch choice
+ * stays the system's job by default - that is the point of FEFO - but the
+ * counter may name a lot when it has a reason to, and the allocator still
+ * refuses an expired or empty one.
+ *
+ * Two things the client can show but must not decide are re-checked here:
+ * a discount and a bill that leaves unpaid are both money decisions, and a
+ * hidden button is not an authorisation.
  */
 export const POST = withRoute(async (req) => {
   const user = await requirePermission("sale:create");
   const input = await parseJson(req, createSaleSchema);
+
+  if ((input.discount > 0 || input.discountPercent > 0) && !can(user.role, "sale:discount")) {
+    throw ApiError.forbidden("You are not allowed to discount a bill.");
+  }
+
+  if (input.paymentMode === "credit" && !can(user.role, "sale:credit")) {
+    throw ApiError.forbidden(
+      "You are not allowed to let a bill leave the counter unpaid.",
+    );
+  }
+
   await connectDB();
 
   const sale = await createSale(input, user);

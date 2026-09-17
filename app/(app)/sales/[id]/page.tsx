@@ -11,9 +11,10 @@ import { Sale, PAYMENT_MODE_LABELS, type PaymentMode } from "@/models/Sale";
 import { pharmacyFilter } from "@/lib/tenant";
 import { objectIdSchema } from "@/lib/validation";
 import { remainingQuantity } from "@/lib/sale-return";
+import { saleStatusFor } from "@/lib/sale-status";
 import { formatUnitCount, resolveUnitsPerStrip } from "@/lib/pack";
 import { Medicine } from "@/models/Medicine";
-import { ReturnSaleForm } from "@/components/sales/ReturnSaleForm";
+import { RecordPaymentDialog } from "@/components/sales/RecordPaymentDialog";
 import { VoidSaleAction } from "@/components/sales/VoidSaleAction";
 import { Badge, Card, PageHeader, TableWrap } from "@/components/ui";
 
@@ -72,14 +73,6 @@ export default async function SaleDetailPage({
       remaining: remainingQuantity({
         quantity: item.quantity,
         returnedQuantity: item.returnedQuantity ?? 0,
-        unitPrice: item.unitPrice,
-        subtotal: item.subtotal,
-        unitCost: item.unitCost ?? 0,
-        lineCost: item.lineCost ?? 0,
-        medicineId: String(item.medicineId),
-        medicineName: item.medicineName,
-        batchId: String(item.batchId),
-        batchNumber: item.batchNumber,
       }),
       unitPrice: item.unitPrice,
       unit,
@@ -97,6 +90,23 @@ export default async function SaleDetailPage({
   const canVoid = !voided && returnedUnits === 0 && can(session.role, "sale:void");
   const returns = sale.returns ?? [];
 
+  /*
+    Settlement.
+
+    The badge, the balance and the receipts all come off `saleStatusFor`, which
+    is the same rule the sales and invoices lists draw their badges from - so a
+    bill that reads "Part paid" in a list cannot read "Paid" when it is opened.
+    A bill written before the payment ledger existed carries no `paymentStatus`
+    and a meaningless `amountReceived` of 0; that one was settled at the till,
+    and showing its full total as received is the honest reading.
+  */
+  const state = saleStatusFor(sale);
+  const legacyPayment = sale.paymentStatus == null;
+  const received = legacyPayment ? sale.totalAmount : (sale.amountReceived ?? 0);
+  const payments = sale.payments ?? [];
+  const canCollect =
+    !voided && state.remaining > 0 && can(session.role, "payment:write");
+
   return (
     <>
       <PageHeader
@@ -107,6 +117,18 @@ export default async function SaleDetailPage({
             <Link href="/sales" className="btn-secondary">
               Back
             </Link>
+            {/*
+              A plain anchor, not a Link: this is a file download from the API,
+              and routing it through the client router would only navigate away
+              from the page. Read-only, so fetching it does not consume a copy
+              number the way sending the bill to the printer does.
+            */}
+            <a
+              href={`/api/sales/${String(sale._id)}/invoice`}
+              className="btn-secondary"
+            >
+              Download PDF
+            </a>
             <Link href={`/bills/${String(sale._id)}`} className="btn-primary">
               Open printable bill
             </Link>
@@ -147,6 +169,41 @@ export default async function SaleDetailPage({
             Stock went back onto the original batches. The bill stays on the
             register with the return recorded on it.
           </p>
+        </div>
+      ) : null}
+
+      {/*
+        Money still owed gets the same weight as a void or a return, because it
+        is the same kind of fact: something about this bill is unfinished, and
+        whoever opened it needs to know before they read anything else.
+      */}
+      {state.remaining > 0 ? (
+        <div
+          role="status"
+          className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3"
+        >
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-amber-900">
+              {money(state.remaining)} outstanding on this bill
+            </p>
+            <p className="mt-1 text-xs text-amber-800">
+              {money(received)} of {money(sale.totalAmount)} has been received
+              {sale.customerName ? ` from ${sale.customerName}` : ""}.
+            </p>
+          </div>
+          {canCollect ? (
+            <div className="shrink-0">
+              <RecordPaymentDialog
+                saleId={String(sale._id)}
+                billNo={sale.billNo}
+                customerName={sale.customerName || undefined}
+                outstanding={state.remaining}
+                total={sale.totalAmount}
+                received={received}
+                label="Record payment"
+              />
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -220,18 +277,42 @@ export default async function SaleDetailPage({
                   {money(sale.totalAmount)}
                 </dd>
               </div>
+
+              {/*
+                Settlement, below the total rather than beside it: the total is
+                what the bill says, and these two are what actually happened to
+                it. Hidden on a voided bill, where nothing is owed whatever was
+                taken at the till.
+              */}
+              {!voided ? (
+                <div className="space-y-2 border-t border-slate-100 pt-2">
+                  <Row label="Received" value={money(received)} />
+                  {state.remaining > 0 ? (
+                    <div className="flex justify-between gap-3">
+                      <dt className="text-amber-800">Outstanding</dt>
+                      <dd className="tnum text-right font-semibold text-amber-800">
+                        {money(state.remaining)}
+                      </dd>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </dl>
 
             <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
-              <Badge tone={voided ? "slate" : "brand"}>
-                Paid by{" "}
+              <Badge tone={state.tone}>{state.label}</Badge>
+              <Badge tone="slate">
                 {PAYMENT_MODE_LABELS[sale.paymentMode as PaymentMode] ??
                   sale.paymentMode}
               </Badge>
-              {voided ? <Badge tone="rose">Voided</Badge> : null}
-              {returnedUnits > 0 ? (
+              {/*
+                `state.label` already says Cancelled or Refunded, so a second
+                badge repeating it would only be noise. The one it cannot say
+                is how much came back, which is what this adds.
+              */}
+              {returnedUnits > 0 && !voided ? (
                 <Badge tone="amber">
-                  {returnedUnits >= units ? "Fully returned" : "Partial return"}
+                  {returnedUnits} of {units} returned
                 </Badge>
               ) : null}
             </div>
@@ -243,18 +324,96 @@ export default async function SaleDetailPage({
             ) : null}
           </Card>
 
+          {/*
+            The receipt ledger.
+
+            Append-only, like the returns below it: money taken at the till is
+            the first entry and settling a due adds another, so "how was this
+            cleared" stays answerable months later. Shown whenever there is
+            either something to list or something still to collect - a bill
+            paid in one go at the counter has nothing to add here.
+          */}
+          {payments.length > 0 || canCollect ? (
+            <Card className="p-4">
+              <h2 className="text-sm font-semibold text-slate-900">Receipts</h2>
+
+              {payments.length > 0 ? (
+                <ul className="mt-3 space-y-3">
+                  {payments.map((entry, index) => (
+                    <li
+                      key={`${String(entry.receivedAt)}-${index}`}
+                      className="border-t border-slate-100 pt-3 first:border-0 first:pt-0"
+                    >
+                      <div className="flex items-baseline justify-between gap-3">
+                        <p className="tnum text-sm font-semibold text-slate-900">
+                          {money(entry.amount)}
+                        </p>
+                        <Badge tone={entry.atTill ? "slate" : "green"}>
+                          {entry.atTill ? "At the till" : "Later receipt"}
+                        </Badge>
+                      </div>
+                      <p className="mt-0.5 text-[11px] text-slate-500">
+                        {PAYMENT_MODE_LABELS[entry.method as PaymentMode] ??
+                          entry.method}
+                        {" · "}
+                        {formatDateTime(entry.receivedAt as unknown as Date)}
+                        {entry.receivedByName ? ` · ${entry.receivedByName}` : ""}
+                      </p>
+                      {entry.reference ? (
+                        <p className="mt-1 font-mono text-[11px] text-slate-600">
+                          Ref {entry.reference}
+                        </p>
+                      ) : null}
+                      {entry.note ? (
+                        <p className="mt-1 text-xs text-slate-600">{entry.note}</p>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-1 text-xs text-slate-600">
+                  Nothing has been received against this bill yet.
+                </p>
+              )}
+
+              {canCollect ? (
+                <div className="mt-3 border-t border-slate-100 pt-3">
+                  <RecordPaymentDialog
+                    saleId={String(sale._id)}
+                    billNo={sale.billNo}
+                    customerName={sale.customerName || undefined}
+                    outstanding={state.remaining}
+                    total={sale.totalAmount}
+                    received={received}
+                    label={`Receive ${money(state.remaining)}`}
+                  />
+                </div>
+              ) : null}
+            </Card>
+          ) : null}
+
+          {/*
+            Returns are recorded on the Returns screen, not here.
+
+            Taking medicine back needs an eligibility check, a reason and the
+            counter's confirmation that the goods are still sellable. Keeping a
+            second, simpler form on this page would mean two paths to the same
+            transaction, and the shorter one would be the one that skipped the
+            checks.
+          */}
           {canReturn ? (
             <Card className="p-4">
               <h2 className="text-sm font-semibold text-slate-900">Customer return</h2>
               <p className="mt-1 mb-3 text-xs text-slate-600">
-                Put sold medicine back on the shelf — even part of a strip.
-                The bill stays; the return shows on this sale.
+                Put sealed, undamaged medicine from this bill back on the shelf.
+                The bill stays as it printed; the return is recorded on it.
               </p>
-              <ReturnSaleForm
-                saleId={String(sale._id)}
-                billNo={sale.billNo}
-                lines={returnLines}
-              />
+              <Link
+                href={`/sales/returns?q=${encodeURIComponent(sale.billNo)}`}
+                className="btn-secondary w-full"
+              >
+                Record a return
+              </Link>
             </Card>
           ) : null}
 

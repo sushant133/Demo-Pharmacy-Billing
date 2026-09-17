@@ -36,6 +36,13 @@ export interface ThermalReceipt {
   vatLabel: string;
   vatAmount: string;
   total: string;
+  /**
+   * Only set when the till was actually told what was handed over. A roll
+   * printing "Received 0.00" on a card payment would be worse than silence.
+   */
+  received?: string;
+  change?: string;
+  balance?: string;
   words: string;
   cashier?: string;
   terms?: string;
@@ -102,6 +109,9 @@ export function formatThermalReceipt(receipt: ThermalReceipt): string[] {
   lines.push(padLine("Taxable", receipt.taxable));
   lines.push(padLine(receipt.vatLabel, receipt.vatAmount));
   lines.push(padLine("TOTAL", receipt.total));
+  if (receipt.received) lines.push(padLine("Received", receipt.received));
+  if (receipt.change) lines.push(padLine("Change", receipt.change));
+  if (receipt.balance) lines.push(padLine("BALANCE DUE", receipt.balance));
   lines.push(dash);
   lines.push(...wrapWords(receipt.words));
   if (receipt.cashier) lines.push(`Cashier: ${receipt.cashier}`);

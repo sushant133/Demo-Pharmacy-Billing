@@ -54,6 +54,35 @@ describe("formatThermalReceipt", () => {
     expect(lines.some((line) => line.includes("TOTAL"))).toBe(true);
     expect(lines.at(-2)).toBe("Thank you");
   });
+
+  it("stays silent about tendering when the till was never told", () => {
+    const lines = formatThermalReceipt(sample);
+    expect(lines.some((line) => line.includes("Received"))).toBe(false);
+    expect(lines.some((line) => line.includes("Change"))).toBe(false);
+    expect(lines.some((line) => line.includes("BALANCE DUE"))).toBe(false);
+  });
+
+  it("prints what was handed over and the change back", () => {
+    const lines = formatThermalReceipt({
+      ...sample,
+      received: "Rs 50.00",
+      change: "Rs 4.80",
+    });
+    expect(lines.some((line) => line.startsWith("Received"))).toBe(true);
+    expect(lines.some((line) => line.includes("Rs 4.80"))).toBe(true);
+    expect(lines.some((line) => line.includes("BALANCE DUE"))).toBe(false);
+  });
+
+  it("prints the balance when a bill leaves part-paid", () => {
+    const lines = formatThermalReceipt({
+      ...sample,
+      received: "Rs 20.00",
+      balance: "Rs 25.20",
+    });
+    const balance = lines.find((line) => line.includes("BALANCE DUE"));
+    expect(balance).toBeDefined();
+    expect(balance).toContain("Rs 25.20");
+  });
 });
 
 describe("encodeEscPos", () => {

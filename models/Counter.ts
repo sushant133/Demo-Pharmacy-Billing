@@ -27,19 +27,83 @@ export const Counter: Model<CounterDoc> =
   (models.Counter as Model<CounterDoc>) ??
   model<CounterDoc>("Counter", counterSchema);
 
-/** Next value in a named sequence. */
+/**
+ * Next value in a named sequence.
+ *
+ * `seed` is consulted only when the counter did not exist yet, and answers
+ * "what is the highest number already issued under this sequence?".
+ *
+ * That case is not hypothetical. A counter can be absent while records that
+ * used it are still on file: a pharmacy whose counters predate the move to
+ * per-pharmacy keys, a database restored from a backup, an imported dataset.
+ * Starting such a sequence at 1 hands out a number that already exists, and
+ * the unique index on {pharmacyId, billNo} then rejects the write - which
+ * surfaces at the counter as a bare "already in use" conflict on a sale that
+ * has nothing wrong with it. Seeding from the records themselves means the
+ * sequence cannot disagree with the documents it numbers.
+ */
 export async function nextSequence(
   key: string,
   session: ClientSession | null = null,
+  seed?: () => Promise<number>,
 ): Promise<number> {
-  const doc = await Counter.findByIdAndUpdate(
-    key,
-    { $inc: { seq: 1 } },
-    { new: true, upsert: true, ...sessionOption(session) },
-  ).lean();
+  return allocateSequence({
+    // `new: false` returns the document as it stood *before* the increment,
+    // and null when the upsert created it. That null is the signal that this
+    // sequence has never issued a number in this database.
+    bump: async () => {
+      const before = await Counter.findByIdAndUpdate(
+        key,
+        { $inc: { seq: 1 } },
+        { new: false, upsert: true, ...sessionOption(session) },
+      ).lean();
+      return before ? before.seq : null;
+    },
+    set: async (value) => {
+      await Counter.findByIdAndUpdate(
+        key,
+        { $set: { seq: value } },
+        sessionOption(session),
+      );
+    },
+    seed,
+  });
+}
 
-  if (!doc) throw new Error(`Could not allocate a number from sequence "${key}".`);
-  return doc.seq;
+/**
+ * The allocation rule on its own, with the database swapped for two callbacks.
+ *
+ * Bill numbering is as business-critical as FEFO and fails the same way - by
+ * being quietly wrong rather than loudly broken - so like `lib/fefo.ts` it is
+ * kept pure and pinned by tests.
+ */
+export async function allocateSequence({
+  bump,
+  set,
+  seed,
+}: {
+  /** Increment, returning the value before it, or null if it was just created. */
+  bump: () => Promise<number | null>;
+  /** Force the counter to a value. */
+  set: (value: number) => Promise<void>;
+  /** Highest number already issued under this sequence. */
+  seed?: () => Promise<number>;
+}): Promise<number> {
+  const before = await bump();
+  if (before !== null) return before + 1;
+
+  // Freshly created, so it currently reads 1. With no records behind it, 1 is
+  // correct and costs nothing to confirm.
+  if (!seed) return 1;
+
+  const issued = await seed();
+  if (issued < 1) return 1;
+
+  // Records already exist. Lift the counter past them in one write, so the
+  // next caller continues from here rather than replaying this.
+  const next = issued + 1;
+  await set(next);
+  return next;
 }
 
 /**

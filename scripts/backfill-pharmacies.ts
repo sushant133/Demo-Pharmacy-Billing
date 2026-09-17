@@ -16,6 +16,7 @@ import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import { connectDB } from "../lib/db";
 import { syncTenantIndexes } from "../lib/indexes";
+import { ROLE_SCHEME_VERSION } from "../lib/roles";
 import { DEFAULT_SETTINGS } from "../lib/settings";
 import { Batch } from "../models/Batch";
 import { Branch } from "../models/Branch";
@@ -137,6 +138,7 @@ async function main() {
           12,
         ),
         role: "superadmin",
+        roleVersion: ROLE_SCHEME_VERSION,
       });
       console.log(`    created ${superEmail}  /  Super@123  (change this)`);
     }

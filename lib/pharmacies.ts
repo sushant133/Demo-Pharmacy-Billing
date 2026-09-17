@@ -1,6 +1,7 @@
 import { Types } from "mongoose";
 import { ApiError } from "@/lib/api";
 import { hashPassword } from "@/lib/auth";
+import { ROLE_SCHEME_VERSION } from "@/lib/roles";
 import { connectDB } from "@/lib/db";
 import { DEFAULT_SETTINGS } from "@/lib/settings";
 import { slugifyPharmacyName } from "@/lib/tenant";
@@ -239,6 +240,7 @@ export async function createPharmacy(
           email,
           passwordHash: await hashPassword(input.ownerPassword),
           role: "admin",
+          roleVersion: ROLE_SCHEME_VERSION,
           pharmacyId: pharmacy._id,
           branchId: branch._id,
           isActive: true,

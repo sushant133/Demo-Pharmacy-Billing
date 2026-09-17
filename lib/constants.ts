@@ -75,7 +75,14 @@ export function mergeMedicineCategories(extra: readonly string[] = []): string[]
  */
 export const IRD_BUYER_DETAIL_THRESHOLD = 5000;
 
-export const PAYMENT_MODES = ["cash", "card", "esewa", "khalti", "credit"] as const;
+export const PAYMENT_MODES = [
+  "cash",
+  "card",
+  "esewa",
+  "khalti",
+  "bank",
+  "credit",
+] as const;
 export type PaymentMode = (typeof PAYMENT_MODES)[number];
 
 export const PAYMENT_MODE_LABELS: Record<PaymentMode, string> = {
@@ -83,6 +90,7 @@ export const PAYMENT_MODE_LABELS: Record<PaymentMode, string> = {
   card: "Card",
   esewa: "eSewa",
   khalti: "Khalti",
+  bank: "Bank transfer",
   credit: "Credit",
 };
 

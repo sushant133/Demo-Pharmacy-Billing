@@ -9,7 +9,17 @@ const compat = new FlatCompat({
 const config = [
   ...compat.extends("next/core-web-vitals", "next/typescript"),
   {
-    ignores: [".next/**", "node_modules/**", "next-env.d.ts"],
+    ignores: [
+      ".next/**",
+      "node_modules/**",
+      "next-env.d.ts",
+      // Gradle's output, and the bridge Capacitor copies in beside it. Neither
+      // is ours to fix, and linting them was failing `npm run lint` on three
+      // errors in generated code - which is how a quality gate stops being
+      // read. Source under android/ (the app manifest, any Java we add) is
+      // still linted; only the build directory is skipped.
+      "android/**/build/**",
+    ],
   },
   {
     rules: {

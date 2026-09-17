@@ -39,6 +39,15 @@ export interface AllocatableBatch {
 export interface AllocationRequest {
   medicineId: string;
   quantity: number;
+  /**
+   * A lot the counter chose by hand, in place of the FEFO pick.
+   *
+   * It is a preference, never a licence: a pinned lot is drawn from first, and
+   * anything it cannot cover still falls to FEFO. Rule 1 is not negotiable -
+   * an expired pin is ignored outright, so choosing a batch can never dispense
+   * something the automatic path would have refused.
+   */
+  batchId?: string | null;
 }
 
 /** A single batch draw that makes up (part of) a requested line. */
@@ -59,6 +68,8 @@ export interface AllocationPick {
 /** The full allocation for one requested medicine line. */
 export interface AllocatedLine {
   medicineId: string;
+  /** The lot this line was pinned to, echoed back so the caller can match up. */
+  requestedBatchId: string | null;
   requestedQuantity: number;
   picks: AllocationPick[];
   /** Sum of pick subtotals for this line, rounded to 2 decimals. */
@@ -176,7 +187,19 @@ export function allocateFefo(
   const lines: AllocatedLine[] = [];
   const shortfalls: AllocationShortfall[] = [];
 
-  for (const request of merged) {
+  // Pinned lines are served before automatic ones. Both draw from the same
+  // pool, so a FEFO line running first could otherwise empty the very lot the
+  // counter had chosen and leave the pin silently unhonoured. Results are
+  // still emitted in the order the cashier entered them.
+  const order = merged
+    .map((request, index) => ({ request, index }))
+    .sort((a, b) => {
+      const pinned = Number(Boolean(b.request.batchId)) - Number(Boolean(a.request.batchId));
+      return pinned !== 0 ? pinned : a.index - b.index;
+    });
+  const allocated = new Array<AllocatedLine | null>(merged.length).fill(null);
+
+  for (const { request, index } of order) {
     const candidates = pool.get(request.medicineId) ?? [];
     const available = candidates.reduce((sum, b) => sum + b.quantity, 0);
 
@@ -201,7 +224,18 @@ export function allocateFefo(
     const picks: AllocationPick[] = [];
     let remaining = request.quantity;
 
-    for (const batch of candidates) {
+    // A pinned lot goes first; the rest of the group stays in FEFO order
+    // behind it. `candidates` is already sorted, so this is the only place
+    // ordering is ever departed from, and only for a lot that passed the
+    // sellable filter above - an expired or empty pin simply is not here.
+    const draw = request.batchId
+      ? [
+          ...candidates.filter((batch) => batch.batchId === request.batchId),
+          ...candidates.filter((batch) => batch.batchId !== request.batchId),
+        ]
+      : candidates;
+
+    for (const batch of draw) {
       if (remaining <= 0) break;
       const take = Math.min(batch.quantity, remaining);
       if (take <= 0) continue;
@@ -224,23 +258,32 @@ export function allocateFefo(
       remaining -= take;
     }
 
-    lines.push({
+    allocated[index] = {
       medicineId: request.medicineId,
+      requestedBatchId: request.batchId ?? null,
       requestedQuantity: request.quantity,
       picks,
       lineTotal: round2(picks.reduce((sum, p) => sum + p.subtotal, 0)),
       lineCost: round2(picks.reduce((sum, p) => sum + p.lineCost, 0)),
-    });
+    };
   }
 
   if (shortfalls.length > 0) return { ok: false, shortfalls };
+
+  for (const line of allocated) {
+    if (line) lines.push(line);
+  }
   return { ok: true, lines };
 }
 
 /**
- * Collapse duplicate medicine lines and validate quantities.
+ * Collapse duplicate lines and validate quantities.
  * Order of first appearance is preserved so bills read the way the cashier
  * entered them.
+ *
+ * Two lines merge only when they ask for the same medicine *from the same
+ * lot*. One medicine taken from two chosen batches is two genuinely different
+ * requests - merging them would throw away the choice the counter made.
  */
 export function mergeRequests(
   requests: readonly AllocationRequest[],
@@ -249,7 +292,7 @@ export function mergeRequests(
     throw new FefoError("A sale must contain at least one item.");
   }
 
-  const merged = new Map<string, number>();
+  const merged = new Map<string, { medicineId: string; batchId: string | null; quantity: number }>();
   for (const request of requests) {
     if (!Number.isInteger(request.quantity) || request.quantity <= 0) {
       throw new FefoError(
@@ -258,13 +301,19 @@ export function mergeRequests(
           " must be a positive whole number.",
       );
     }
-    merged.set(
-      request.medicineId,
-      (merged.get(request.medicineId) ?? 0) + request.quantity,
-    );
+    const batchId = request.batchId ?? null;
+    const key = `${request.medicineId}|${batchId ?? ""}`;
+    const existing = merged.get(key);
+    if (existing) existing.quantity += request.quantity;
+    else
+      merged.set(key, {
+        medicineId: request.medicineId,
+        batchId,
+        quantity: request.quantity,
+      });
   }
 
-  return [...merged].map(([medicineId, quantity]) => ({ medicineId, quantity }));
+  return [...merged.values()];
 }
 
 /** Flatten allocated lines into the per-batch draws a sale must persist. */

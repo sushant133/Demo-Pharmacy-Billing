@@ -127,8 +127,23 @@ describe("mergeRequests", () => {
         { medicineId: "A", quantity: 3 },
       ]),
     ).toEqual([
-      { medicineId: "A", quantity: 5 },
-      { medicineId: "B", quantity: 1 },
+      { medicineId: "A", batchId: null, quantity: 5 },
+      { medicineId: "B", batchId: null, quantity: 1 },
+    ]);
+  });
+
+  it("keeps one medicine's lines apart when they name different lots", () => {
+    expect(
+      mergeRequests([
+        { medicineId: "A", quantity: 2, batchId: "b1" },
+        { medicineId: "A", quantity: 3, batchId: "b2" },
+        { medicineId: "A", quantity: 1, batchId: "b1" },
+        { medicineId: "A", quantity: 4 },
+      ]),
+    ).toEqual([
+      { medicineId: "A", batchId: "b1", quantity: 3 },
+      { medicineId: "A", batchId: "b2", quantity: 3 },
+      { medicineId: "A", batchId: null, quantity: 4 },
     ]);
   });
 
@@ -363,6 +378,126 @@ describe("allocateFefo - shortfalls", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.shortfalls[0]).toMatchObject({ requested: 12, available: 10 });
+  });
+});
+
+describe("allocateFefo - chosen batch", () => {
+  it("draws from the chosen lot ahead of the earlier-expiring one", () => {
+    const soon = batch({ batchNumber: "SOON", quantity: 50, expiryDate: days(20) });
+    const later = batch({ batchNumber: "LATER", quantity: 50, expiryDate: days(300) });
+
+    const result = allocateFefo(
+      [{ medicineId: "med-A", quantity: 10, batchId: later.batchId }],
+      [soon, later],
+      NOW,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.lines[0]?.picks).toHaveLength(1);
+    expect(result.lines[0]?.picks[0]?.batchNumber).toBe("LATER");
+    expect(result.lines[0]?.requestedBatchId).toBe(later.batchId);
+  });
+
+  it("falls back to FEFO for whatever the chosen lot cannot cover", () => {
+    const soon = batch({ batchNumber: "SOON", quantity: 50, expiryDate: days(20) });
+    const later = batch({ batchNumber: "LATER", quantity: 4, expiryDate: days(300) });
+
+    const result = allocateFefo(
+      [{ medicineId: "med-A", quantity: 10, batchId: later.batchId }],
+      [soon, later],
+      NOW,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Chosen lot first, then the shelf's own order for the remainder.
+    expect(
+      result.lines[0]?.picks.map((pick) => [pick.batchNumber, pick.quantity]),
+    ).toEqual([
+      ["LATER", 4],
+      ["SOON", 6],
+    ]);
+  });
+
+  it("never dispenses an expired lot, even when it is the one chosen", () => {
+    const expired = batch({
+      batchNumber: "EXPIRED",
+      quantity: 50,
+      expiryDate: days(-1),
+    });
+    const good = batch({ batchNumber: "GOOD", quantity: 50, expiryDate: days(90) });
+
+    const result = allocateFefo(
+      [{ medicineId: "med-A", quantity: 10, batchId: expired.batchId }],
+      [expired, good],
+      NOW,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.lines[0]?.picks[0]?.batchNumber).toBe("GOOD");
+  });
+
+  it("serves a chosen lot before an automatic line that would drain it", () => {
+    const only = batch({ batchNumber: "ONLY", quantity: 6, expiryDate: days(10) });
+    const spare = batch({ batchNumber: "SPARE", quantity: 20, expiryDate: days(200) });
+
+    // The automatic line is entered first and, on expiry order alone, would
+    // take every unit of ONLY before the pinned line ever ran.
+    const result = allocateFefo(
+      [
+        { medicineId: "med-A", quantity: 6 },
+        { medicineId: "med-A", quantity: 6, batchId: only.batchId },
+      ],
+      [only, spare],
+      NOW,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Lines still come back in cart order...
+    expect(result.lines.map((line) => line.requestedBatchId)).toEqual([
+      null,
+      only.batchId,
+    ]);
+    // ...but the chosen lot went to the line that asked for it.
+    expect(result.lines[1]?.picks.map((p) => p.batchNumber)).toEqual(["ONLY"]);
+    expect(result.lines[0]?.picks.map((p) => p.batchNumber)).toEqual(["SPARE"]);
+  });
+
+  it("keeps one medicine's two chosen lots as separate lines", () => {
+    const a = batch({ batchNumber: "A1", quantity: 20, expiryDate: days(30) });
+    const b = batch({ batchNumber: "B1", quantity: 20, expiryDate: days(60) });
+
+    const result = allocateFefo(
+      [
+        { medicineId: "med-A", quantity: 5, batchId: a.batchId },
+        { medicineId: "med-A", quantity: 7, batchId: b.batchId },
+      ],
+      [a, b],
+      NOW,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.lines).toHaveLength(2);
+    expect(result.lines[0]?.picks[0]?.batchNumber).toBe("A1");
+    expect(result.lines[1]?.picks[0]?.batchNumber).toBe("B1");
+  });
+
+  it("still reports a shortfall when the whole shelf is short", () => {
+    const only = batch({ batchNumber: "ONLY", quantity: 3, expiryDate: days(30) });
+
+    const result = allocateFefo(
+      [{ medicineId: "med-A", quantity: 10, batchId: only.batchId }],
+      [only],
+      NOW,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.shortfalls[0]?.shortBy).toBe(7);
   });
 });
 

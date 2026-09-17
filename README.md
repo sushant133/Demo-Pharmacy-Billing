@@ -81,23 +81,52 @@ pharmacy with its owner login.
 | Role        | Email                            | Password    | Can do                                      |
 | ----------- | -------------------------------- | ----------- | ------------------------------------------- |
 | Superadmin  | `superadmin@mantrapharma.local`  | `Super@123` | Create, suspend and reset pharmacy accounts |
-| Admin       | `admin@mantrapharma.local`       | `Admin@123` | Run that one pharmacy — billing, stock, the lot |
+| Pharmacy owner | `admin@mantrapharma.local`    | `Admin@123` | Run that one pharmacy — billing, stock, staff, the lot |
 
 Each pharmacy is a sealed tenant. Superadmin creates the owner account; the
 owner signs in on the same screen and only ever sees their own catalogue,
 stock, bills, suppliers and settings. Two pharmacies sharing the database
 cannot read each other.
 
-A shop this size is run from one counter by one person: the same hands bill,
-dispense, receive the delivery and read the month's figures. Splitting that
-person into a "pharmacist" who could not open the branch screen and a "cashier"
-who could not see a margin only ever got in the way, so both were folded into
-the pharmacy owner (admin).
+### Roles inside a pharmacy
 
-A database seeded before that change is migrated with `npm run migrate:roles`
-(a dry run; add `-- --apply` to write). It promotes every remaining account to
-admin without deleting anyone, and sessions signed under an old role keep
-working rather than dumping whoever is at the counter back at the login screen.
+A one-person shop is run by the owner, who bills, dispenses, receives the
+delivery and reads the month's figures with the same hands. A shop that hires
+is a different problem: a part-time counter assistant should be able to take
+money without also being able to void the morning's bills or read what the
+shop makes on them.
+
+So there are five shop roles, defined in one table in
+[`lib/roles.ts`](lib/roles.ts):
+
+| Role            | Holds                                                        |
+| --------------- | ------------------------------------------------------------ |
+| Pharmacy owner  | Everything in their own shop, including staff and settings    |
+| Pharmacy manager| Runs the shop and reads its figures; no staff, branches or settings |
+| Pharmacist      | Dispenses, bills, keeps the catalogue, decides returns; no margins, no buying |
+| Cashier         | Bills and takes payment; cannot void, discount or sell on credit |
+| Inventory staff | Receives and counts stock; no till, no customers, no money figures |
+
+Owners assign these from **Staff & users**, and
+[`/staff/roles`](app/(app)/staff/roles/page.tsx) renders the matrix straight
+from `lib/roles.ts`, so the screen cannot drift from what the server enforces.
+`superadmin` is not assignable from inside a pharmacy — it is absent from the
+schema's enum, so a posted `"role": "superadmin"` is refused at parse time.
+
+**Two role schemes, and why rows carry a version.** Scheme 1 folded
+`pharmacist` and `cashier` into admin — they were other words for the owner.
+Scheme 2 makes them genuinely narrower. The words are identical, so a stored
+`"cashier"` is ambiguous, and guessing would silently strip a working owner of
+the screens they use all day. Accounts therefore carry `roleVersion` and
+sessions carry an `rv` claim: anything without one is read under the old
+meaning. Nobody is demoted by a deploy.
+
+`npm run migrate:roles` writes that meaning down (a dry run; add `-- --apply`
+to write). It resolves every unversioned `pharmacist`/`cashier` row to an
+explicit `admin` at scheme 2 without deleting anyone — after which an owner can
+narrow those accounts from the staff screen. Rows written since are left alone.
+Sessions signed under the old scheme keep working rather than dumping whoever
+is at the counter back at the login screen.
 Pass `-- --apply --drop-demo-logins` to also delete the two demo accounts the
 old seed created, whose passwords are printed above: promoting those would
 otherwise leave two well-known logins holding every permission in the shop.
@@ -311,10 +340,19 @@ Two layers, deliberately:
    `requirePermission("sale:create")`. Middleware is a fast filter, never the
    only line of defence.
 
-Permissions are per-capability, not per-role-string. There is one role today
-and it holds all of them, but every route still asks for the capability it
-needs — which is what would make a narrower role a single table entry in
-`lib/roles.ts` rather than an audit of every handler.
+Permissions are per-capability, not per-role-string: every route asks for the
+capability it needs rather than for a role name. That is what made adding the
+four narrower roles a single table entry in `lib/roles.ts` instead of an audit
+of every handler — the checks were already written and simply never bit while
+one role held everything.
+
+Some of them are finer than a screen. `sale:discount` and `sale:credit` are
+enforced on the sale itself, not on the till: a cashier's POS hides both
+controls, and [`app/api/sales/route.ts`](app/api/sales/route.ts) refuses a
+discounted or credit bill regardless, because a hidden button is not an
+authorisation. Letting a bill leave *short* is the same act as choosing the
+credit button, so [`lib/sales.ts`](lib/sales.ts) re-checks `sale:credit`
+against the planned total, where both figures are finally known.
 
 ---
 

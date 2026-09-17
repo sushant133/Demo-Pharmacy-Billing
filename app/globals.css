@@ -63,6 +63,17 @@
     @apply outline-2 outline-offset-2 outline-brand-600;
   }
 
+  /*
+    The sidebar is dark, and brand-600 against it is both hard to see and easy
+    to misread: a teal box around a menu row looks like the row is *selected*,
+    which is a lie when the row is merely focused. A lighter ring, held tight
+    to the row, reads as focus and cannot be confused with the filled
+    highlight that marks the current page.
+  */
+  .app-sidebar :focus-visible {
+    @apply outline-brand-300 outline-offset-1;
+  }
+
   /* Chrome/Safari strip number spinners; they slow down quantity entry. */
   input[type="number"]::-webkit-outer-spin-button,
   input[type="number"]::-webkit-inner-spin-button {
@@ -75,6 +86,31 @@
 }
 
 @layer components {
+  /*
+    The sidebar ground.
+    -------------------
+    A flat slate-900 column next to a slate-100 page reads as a cut-out. A very
+    slight vertical lift, plus one low-opacity brand wash at the top, gives the
+    column a light source and ties it to the same teal the rest of the product
+    uses - at an opacity that is felt rather than seen. Kept here rather than in
+    utility classes because both the desktop aside and the mobile drawer need
+    it, and they must not drift apart.
+  */
+  .app-sidebar {
+    background-color: var(--color-slate-900);
+    background-image:
+      radial-gradient(
+        120% 42% at 50% 0%,
+        color-mix(in oklab, var(--color-brand-500) 13%, transparent),
+        transparent 70%
+      ),
+      linear-gradient(
+        to bottom,
+        rgb(255 255 255 / 0.028),
+        rgb(0 0 0 / 0.14)
+      );
+  }
+
   .card {
     @apply rounded-xl border border-slate-200 bg-white shadow-sm;
   }

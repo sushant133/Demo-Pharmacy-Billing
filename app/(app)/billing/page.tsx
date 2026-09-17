@@ -4,6 +4,7 @@ import { ApiError } from "@/lib/api";
 import { requirePagePermission } from "@/lib/auth";
 import { withDbRead } from "@/lib/db";
 import { branchForWrite } from "@/lib/branches";
+import { can } from "@/lib/roles";
 import { BillingScreen } from "@/components/billing/BillingScreen";
 
 export const metadata: Metadata = { title: "New sale" };
@@ -31,7 +32,17 @@ export default async function BillingPage() {
     throw error;
   }
 
-  return <BillingScreen cashierName={user.name} outletName={outlet.name} />;
+  // What the counter may decide for itself. Both are re-checked when the sale
+  // is posted; these only decide whether the control is worth showing.
+  return (
+    <BillingScreen
+      cashierName={user.name}
+      outletName={outlet.name}
+      canDiscount={can(user.role, "sale:discount")}
+      canSellOnCredit={can(user.role, "sale:credit")}
+      canAddCustomer={can(user.role, "customer:write")}
+    />
+  );
 }
 
 /**

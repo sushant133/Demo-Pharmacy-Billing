@@ -15,6 +15,18 @@ const userSchema = new Schema(
     passwordHash: { type: String, required: true, select: false },
     role: { type: String, required: true, enum: ROLES, default: "admin" },
     /**
+     * Which role scheme `role` was written under.
+     *
+     * Deliberately has no schema default: a default is applied on create, so
+     * every row written from here on records 2, while rows that predate
+     * narrower roles keep reading back as undefined. That absence is the
+     * signal - it is what tells `normalizeRole` that a stored "pharmacist"
+     * meant the owner rather than a pharmacist. Backfilling it would erase
+     * the distinction, so `scripts/migrate-roles.ts` resolves those rows to
+     * an explicit role instead.
+     */
+    roleVersion: { type: Number, default: undefined },
+    /**
      * The pharmacy this account belongs to. Null only for the platform
      * superadmin, who creates pharmacies rather than working inside one.
      */

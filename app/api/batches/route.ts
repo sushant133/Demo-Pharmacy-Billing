@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 import { ApiError, ok, parseQuery, withRoute } from "@/lib/api";
 import { requirePermission } from "@/lib/auth";
 import { branchFilter, resolveRequestScope } from "@/lib/branch-scope";
+import { branchForWrite } from "@/lib/branches";
 import { config } from "@/lib/config";
 import { connectDB } from "@/lib/db";
 import { addDays } from "@/lib/dates";
@@ -19,15 +20,29 @@ export const dynamic = "force-dynamic";
  */
 export const GET = withRoute(async (req) => {
   const user = await requirePermission("batch:read");
-  const { medicineId, q, status, page, pageSize } = parseQuery(req, batchQuerySchema);
+  const { medicineId, q, status, till, page, pageSize } = parseQuery(
+    req,
+    batchQuerySchema,
+  );
   await connectDB();
 
   const now = new Date();
-  const scope = await resolveRequestScope(user, req);
-  const filter: Record<string, unknown> = {
-    ...pharmacyFilter(user),
-    ...branchFilter(scope),
-  };
+
+  // The POS asks a narrower question than the stock register does: not "what
+  // lots exist?" but "what could this till dispense right now?". Answering it
+  // from the viewing scope would offer lots held at another outlet, which FEFO
+  // will never reach, so the selling branch is resolved instead.
+  const filter: Record<string, unknown> = { ...pharmacyFilter(user) };
+  if (till === "1") {
+    const selling = await branchForWrite(user);
+    filter.branchId = selling.id;
+    // Sold-out lots are noise at the counter; expired ones are kept and
+    // flagged, so the picker can show why a lot cannot be chosen.
+    filter.quantity = { $gt: 0 };
+  } else {
+    const scope = await resolveRequestScope(user, req);
+    Object.assign(filter, branchFilter(scope));
+  }
 
   if (medicineId) filter.medicineId = new Types.ObjectId(medicineId);
 
@@ -81,6 +96,9 @@ export const GET = withRoute(async (req) => {
 
     return {
       id: String(batch._id),
+      // Which outlet physically holds these units. A lot belongs to one
+      // branch, so a transfer has to know where it is starting from.
+      branchId: String(batch.branchId),
       medicineId: medicine ? String(medicine._id) : "",
       medicineName: medicine?.name ?? "Unknown medicine",
       genericName: medicine?.genericName ?? "",

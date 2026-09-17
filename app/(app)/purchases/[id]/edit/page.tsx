@@ -108,6 +108,7 @@ export default async function EditPurchasePage({
           };
         })}
         defaultVatRate={config.vatRate}
+        expiryAlertDays={config.expiryAlertDays}
         today={toDateInputValue()}
         canPost={can(user.role, "purchase:post")}
         purchase={{

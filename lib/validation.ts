@@ -5,6 +5,11 @@ import {
   PAYMENT_MODES,
   SUPPLIER_PAYMENT_METHODS,
 } from "@/lib/constants";
+import { REFUND_METHODS, RETURN_REASONS } from "@/lib/return-eligibility";
+import { PURCHASE_RETURN_REASONS } from "@/lib/purchase-return";
+import { ADJUSTMENT_REASONS, WRITE_OFF_REASONS } from "@/lib/movement-kinds";
+import { EXPENSE_CATEGORIES, EXPENSE_METHODS } from "@/lib/expense-categories";
+import { ASSIGNABLE_ROLES } from "@/lib/roles";
 
 /**
  * Zod schemas shared between client forms and API route handlers.
@@ -34,6 +39,32 @@ const optionalDateSchema = z
 const numberFromInput = (message: string) =>
   z.coerce.number({ invalid_type_error: message });
 
+/**
+ * An optional money field: a non-negative number, or null when left blank.
+ *
+ * Blank has to survive as null rather than collapsing to 0, because 0 is a
+ * price somebody could genuinely mean and "not filled in" is not the same
+ * answer as "free".
+ */
+const optionalMoneySchema = (message: string) =>
+  z
+    .union([
+      /*
+        The blank branches come first, and the order is load-bearing.
+
+        `z.coerce.number("")` is 0, not NaN, so a number branch placed above
+        these would happily match an empty cell and record a price of zero -
+        turning "not filled in" into "free" on every import row that left the
+        MRP blank. Zod tries a union's options in order, so the literal has to
+        win first. Same shape as `reorderLevel` below, for the same reason.
+      */
+      z.literal("").transform(() => null),
+      z.null(),
+      numberFromInput(message).min(0, "That cannot be negative."),
+    ])
+    .optional()
+    .transform((value) => (value === undefined ? null : value));
+
 // ---------------------------------------------------------------------------
 // Auth
 // ---------------------------------------------------------------------------
@@ -50,12 +81,31 @@ export type LoginInput = z.infer<typeof loginSchema>;
 
 export const medicineSchema = z.object({
   name: z.string().trim().min(2, "Medicine name is required.").max(200),
+  /**
+   * The shop's own code for this line. Blank when it does not use codes.
+   *
+   * Upper-cased here rather than only in the model, so the form, the API and
+   * the database all agree on what was saved - a field normalised in one place
+   * only is a field that reads back differently from what was typed.
+   */
+  sku: z
+    .string()
+    .trim()
+    .max(40, "A medicine code can be at most 40 characters.")
+    .default("")
+    .transform((value) => value.toUpperCase())
+    .refine(
+      (value) => value === "" || /^[A-Z0-9][A-Z0-9._/-]*$/.test(value),
+      "Use letters, numbers, dot, dash, slash or underscore - no spaces.",
+    ),
   genericName: z.string().trim().max(200).default(""),
   saltComposition: z.string().trim().max(300).default(""),
   manufacturer: z.string().trim().max(200).default(""),
   category: z.string().trim().max(80).default("Other"),
   unit: z.enum(MEDICINE_UNITS).default("tablet"),
   packSize: z.string().trim().max(60).default(""),
+  /** The code on the pack, as a scanner reads it. Blank when there is none. */
+  barcode: z.string().trim().max(60).default(""),
   unitsPerStrip: z
     .union([
       numberFromInput("Tablets in one strip must be a whole number.")
@@ -67,6 +117,13 @@ export const medicineSchema = z.object({
     ])
     .optional()
     .transform((value) => (value === undefined ? null : value)),
+  /**
+   * Indicative purchase price and MRP. Blank is a real answer - a shop often
+   * files a medicine before it knows what it will cost - so an empty field
+   * becomes null rather than 0, which would read as "free".
+   */
+  defaultCostPrice: optionalMoneySchema("Purchase price must be a number."),
+  defaultSalePrice: optionalMoneySchema("MRP must be a number."),
   requiresPrescription: z.coerce.boolean().default(false),
   reorderLevel: z
     .union([
@@ -81,6 +138,24 @@ export const medicineSchema = z.object({
 export type MedicineInput = z.infer<typeof medicineSchema>;
 
 export const medicineUpdateSchema = medicineSchema.partial();
+
+/**
+ * A pasted or uploaded catalogue.
+ *
+ * The CSV is taken as one string and parsed on the server rather than
+ * row-by-row in the browser: the rules that decide whether a row is a valid
+ * medicine are the same ones the form uses, and running them in two places is
+ * how an import starts accepting rows the API would refuse.
+ */
+export const medicineImportSchema = z.object({
+  csv: z
+    .string()
+    .min(1, "Paste the rows, or choose a file.")
+    .max(1_000_000, "That file is too large to import in one go."),
+  /** True asks what would happen; false performs it. */
+  dryRun: z.coerce.boolean().default(true),
+});
+export type MedicineImportInput = z.infer<typeof medicineImportSchema>;
 
 export const medicineQuerySchema = z.object({
   q: z.string().trim().max(120).optional(),
@@ -152,6 +227,12 @@ export const batchQuerySchema = z.object({
   q: z.string().trim().max(120).optional(),
   /** "in-stock" hides sold-out lots; "expired" shows only dead stock. */
   status: z.enum(["all", "in-stock", "expired", "expiring"]).default("all"),
+  /**
+   * "1" reads the lots the till would actually dispense: the selling branch
+   * only, and nothing already sold out. The POS batch picker must not offer a
+   * lot sitting at another outlet, because FEFO will never reach it.
+   */
+  till: z.enum(["0", "1"]).default("0"),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
 });
@@ -166,6 +247,17 @@ export const saleItemInputSchema = z.object({
     .number()
     .int("Quantity must be a whole number.")
     .positive("Quantity must be at least 1."),
+  /**
+   * A lot the counter picked instead of letting FEFO choose.
+   *
+   * Optional, and never trusted: the allocator draws from it first but still
+   * refuses it if it has expired or emptied, so a hand-picked batch cannot
+   * dispense anything the automatic path would have blocked.
+   */
+  batchId: z
+    .union([objectIdSchema, z.literal(""), z.null()])
+    .transform((value) => (value ? value : null))
+    .optional(),
 });
 
 export const createSaleSchema = z.object({
@@ -196,6 +288,15 @@ export const createSaleSchema = z.object({
     .max(100, "A discount cannot exceed 100% of the bill.")
     .default(0),
   paymentMode: z.enum(PAYMENT_MODES).default("cash"),
+  /**
+   * What the customer handed over. Above the total it is change owed back;
+   * below it, a balance the shop is carrying. Zero means "not recorded",
+   * which is how every bill written before the till asked reads.
+   */
+  amountReceived: z.coerce
+    .number()
+    .min(0, "Amount received cannot be negative.")
+    .default(0),
   note: z.string().trim().max(300).default(""),
 });
 export type CreateSaleInput = z.infer<typeof createSaleSchema>;
@@ -206,6 +307,24 @@ export const quoteSaleSchema = z.object({
   discount: z.coerce.number().min(0).default(0),
   discountPercent: z.coerce.number().min(0).max(100).default(0),
 });
+
+/**
+ * Money taken against a bill after it left the counter - settling a credit or
+ * part-paid sale. `credit` is not a method here: receiving payment is the act
+ * of clearing credit, not of extending more of it.
+ */
+export const receiveSalePaymentSchema = z.object({
+  amount: z.coerce
+    .number()
+    .positive("Enter an amount greater than zero.")
+    .max(10_000_000, "That amount looks wrong."),
+  method: z.enum(PAYMENT_MODES).refine((mode) => mode !== "credit", {
+    message: "Choose how the money was received.",
+  }),
+  reference: z.string().trim().max(120).optional(),
+  note: z.string().trim().max(300).optional(),
+});
+export type ReceiveSalePaymentInput = z.infer<typeof receiveSalePaymentSchema>;
 
 /**
  * A void returns stock and removes a bill from every financial figure, so it
@@ -231,13 +350,91 @@ export const returnSaleSchema = z.object({
   items: z
     .array(returnSaleItemSchema)
     .min(1, "Choose at least one medicine to return."),
+  /**
+   * Why it came back, from a fixed list. Free text alone made every return
+   * read differently, which is no use when someone later asks how much is
+   * being handed back for wrong dispensing versus changed minds.
+   */
+  reasonCode: z.enum(
+    RETURN_REASONS.map((reason) => reason.code) as [string, ...string[]],
+    { message: "Choose why the medicine is coming back." },
+  ),
   reason: z
     .string()
     .trim()
     .min(3, "Give a short reason so the return is auditable.")
     .max(300),
+  /**
+   * The counter's attestation that the goods passed the physical check.
+   *
+   * Refused rather than defaulted: no record can tell whether a seal is
+   * intact, so the only honest source is a person confirming they looked,
+   * and the confirmation is stored with the return.
+   */
+  conditionConfirmed: z.literal(true, {
+    message:
+      "Confirm the medicine is sealed, undamaged and in its original packaging.",
+  }),
+  /**
+   * How the money went back.
+   *
+   * Defaulted rather than required, so a client written before this field
+   * existed still records a return rather than failing validation - the
+   * refund itself is what matters, and cash is what a counter does by
+   * default. Whether `adjust` is *allowed* depends on the bill, so that is
+   * checked in the service where the balance is known.
+   */
+  refundMethod: z
+    .enum(
+      REFUND_METHODS.map((method) => method.code) as [string, ...string[]],
+      { message: "Choose how the refund is being given." },
+    )
+    .default("cash"),
 });
 export type ReturnSaleInput = z.infer<typeof returnSaleSchema>;
+
+// ---------------------------------------------------------------------------
+// Purchase returns (debit notes)
+// ---------------------------------------------------------------------------
+
+const purchaseReturnItemSchema = z.object({
+  lineIndex: z.coerce.number().int().min(0),
+  quantity: z.coerce
+    .number()
+    .int("Return quantities must be whole units.")
+    .min(0),
+});
+
+/**
+ * Goods going back to the supplier.
+ *
+ * Deliberately *not* the shape of `returnSaleSchema`, in one respect: there is
+ * no `conditionConfirmed`. A customer return needs somebody to attest the box
+ * is still sealed, because the units are about to go back on a shelf and be
+ * dispensed to the next patient. These units are leaving the building, so
+ * there is nothing to attest to and asking would be a tick-box that means
+ * nothing.
+ */
+export const purchaseReturnSchema = z.object({
+  items: z
+    .array(purchaseReturnItemSchema)
+    .min(1, "Choose at least one line to send back."),
+  reasonCode: z.enum(
+    PURCHASE_RETURN_REASONS.map((reason) => reason.code) as [
+      string,
+      ...string[],
+    ],
+    { message: "Choose why the goods are going back." },
+  ),
+  reason: z
+    .string()
+    .trim()
+    .min(3, "Give a short reason so the debit note is auditable.")
+    .max(300),
+  /** Blank until the supplier issues their own credit note against it. */
+  creditNoteNo: z.string().trim().max(60).default(""),
+});
+export type PurchaseReturnInput = z.infer<typeof purchaseReturnSchema>;
 
 export const salesQuerySchema = z.object({
   from: z.string().trim().optional(),
@@ -432,8 +629,78 @@ export const purchaseSchema = z
       .max(1, "VAT rate is a fraction, e.g. 0.13 for 13%.")
       .default(0),
     notes: z.string().trim().max(500).default(""),
+    /**
+     * Credit period for this delivery, overriding the supplier's default.
+     *
+     * Blank means "use the supplier's terms", which is what almost every
+     * delivery wants. A one-off 60-day arrangement on a single invoice should
+     * not require editing the supplier record and then remembering to put it
+     * back.
+     */
+    creditDays: z
+      .union([
+        z.literal("").transform(() => null),
+        z.null(),
+        numberFromInput("Credit days must be a number.")
+          .int("Credit days must be a whole number.")
+          .min(0)
+          .max(365, "That is longer than any supplier term."),
+      ])
+      .optional()
+      .transform((value) => (value === undefined ? null : value)),
+    /**
+     * Money handed over as the goods were received.
+     *
+     * Only meaningful when the purchase is posted: a draft is not yet a
+     * liability, so paying against one would record money leaving the shop
+     * for a delivery the system does not believe happened. Carried on the
+     * input rather than stored on the draft for the same reason - it is an act
+     * performed at posting, not a property of the document.
+     */
+    payment: z
+      .object({
+        amount: numberFromInput("Paid amount must be a number.").min(
+          0,
+          "Paid amount cannot be negative.",
+        ),
+        method: z.enum(SUPPLIER_PAYMENT_METHODS).default("cash"),
+        reference: z.string().trim().max(120).default(""),
+      })
+      .optional(),
   })
   .superRefine((data, ctx) => {
+    if (data.payment && data.payment.amount < 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Paid amount cannot be negative.",
+        path: ["payment", "amount"],
+      });
+    }
+
+    /*
+      Two lines of the same medicine sharing a lot number would post as one
+      blended batch, silently averaging two different costs and expiry dates
+      into a lot that matches neither delivery line. Caught here so it is
+      refused by the API as well as flagged in the form.
+
+      The same lot number under a *different* medicine is fine - lot numbers
+      are the manufacturer's, not the shop's, and two makers reuse them freely.
+    */
+    const seen = new Map<string, number>();
+    data.items.forEach((item, index) => {
+      const key = `${item.medicineId}|${item.batchNumber.trim().toLowerCase()}`;
+      const first = seen.get(key);
+      if (first !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Lot ${item.batchNumber} is already on line ${first + 1} for this medicine. Combine them into one line, or use the lot number actually printed on each pack.`,
+          path: ["items", index, "batchNumber"],
+        });
+      } else {
+        seen.set(key, index);
+      }
+    });
+
     data.items.forEach((item, index) => {
       if (item.quantity + item.freeQuantity <= 0) {
         ctx.addIssue({
@@ -452,6 +719,26 @@ export const purchaseSchema = z
     });
   });
 export type PurchaseInput = z.infer<typeof purchaseSchema>;
+
+/**
+ * The optional body on `POST /api/purchases/:id/post`.
+ *
+ * Posting with nothing at all is the common case - the delivery arrives, the
+ * stock goes on the shelf, the invoice is settled later - so every field here
+ * is optional and an empty body is valid.
+ */
+export const purchasePostSchema = z.object({
+  payment: z
+    .object({
+      amount: numberFromInput("Paid amount must be a number.").min(
+        0,
+        "Paid amount cannot be negative.",
+      ),
+      method: z.enum(SUPPLIER_PAYMENT_METHODS).default("cash"),
+      reference: z.string().trim().max(120).default(""),
+    })
+    .optional(),
+});
 
 export const purchaseQuerySchema = z.object({
   supplierId: objectIdSchema.optional(),
@@ -505,6 +792,11 @@ export const exportQuerySchema = z.object({
   format: z.enum(EXPORT_FORMATS).default("xlsx"),
   from: z.string().trim().optional(),
   to: z.string().trim().optional(),
+  /**
+   * Which way stock moved. Only the stock-movements report reads it; every
+   * other report ignores it rather than failing on an irrelevant parameter.
+   */
+  direction: z.enum(["in", "out", "both"]).optional(),
 });
 
 export const analyticsQuerySchema = z.object({
@@ -623,3 +915,273 @@ export const pharmacyQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
 });
 
+
+// ---------------------------------------------------------------------------
+// Stock movements
+// ---------------------------------------------------------------------------
+
+/**
+ * Correcting a lot's count after a stock-take.
+ *
+ * The counted figure is asked for, not a delta - that is what the person
+ * holding the shelf actually knows, and making them subtract is how a
+ * correction becomes a second error. `expectedQuantity` is what the screen
+ * showed them; the service guards on it so a sale that went through mid-count
+ * cannot be silently undone.
+ */
+export const adjustStockSchema = z.object({
+  batchId: objectIdSchema,
+  countedQuantity: numberFromInput("The counted quantity must be a number.")
+    .int("Count in whole units.")
+    .min(0, "A count cannot be negative.")
+    .max(1_000_000, "That count looks wrong."),
+  reasonCode: z.enum(ADJUSTMENT_REASONS),
+  reason: z.string().trim().max(300).optional(),
+  note: z.string().trim().max(300).optional(),
+});
+export type AdjustStockInput = z.infer<typeof adjustStockSchema>;
+
+/**
+ * Taking units off the shelf for good.
+ *
+ * Kept apart from an adjustment because the two say different things: an
+ * adjustment says the count was wrong, a write-off says the count was right
+ * and the stock is gone. A reason is mandatory - the whole point of the record
+ * is being able to answer "where did it go?" a year later.
+ */
+export const writeOffStockSchema = z.object({
+  batchId: objectIdSchema,
+  quantity: numberFromInput("The quantity must be a number.")
+    .int("Write off whole units.")
+    .positive("Write off at least one unit.")
+    .max(1_000_000, "That quantity looks wrong."),
+  reasonCode: z.enum(WRITE_OFF_REASONS),
+  reason: z.string().trim().max(300).optional(),
+  note: z.string().trim().max(300).optional(),
+});
+export type WriteOffStockInput = z.infer<typeof writeOffStockSchema>;
+
+/** Moving units of one lot to another branch of the same pharmacy. */
+export const transferStockSchema = z.object({
+  batchId: objectIdSchema,
+  toBranchId: objectIdSchema,
+  quantity: numberFromInput("The quantity must be a number.")
+    .int("Transfer whole units.")
+    .positive("Transfer at least one unit.")
+    .max(1_000_000, "That quantity looks wrong."),
+  reason: z.string().trim().max(300).optional(),
+  note: z.string().trim().max(300).optional(),
+});
+export type TransferStockInput = z.infer<typeof transferStockSchema>;
+
+// ---------------------------------------------------------------------------
+// Prescriptions
+// ---------------------------------------------------------------------------
+
+export const prescriptionItemSchema = z.object({
+  medicineId: objectIdSchema,
+  /** What the prescriber wrote, verbatim. */
+  dosage: z.string().trim().max(200).default(""),
+  quantityPrescribed: numberFromInput("The quantity must be a number.")
+    .int("Prescribe whole units.")
+    .positive("Prescribe at least one unit.")
+    .max(100_000, "That quantity looks wrong."),
+  notes: z.string().trim().max(300).default(""),
+});
+
+/**
+ * Filing a prescription.
+ *
+ * The patient may be a saved customer or a typed name - a script is often
+ * written for somebody the shop has never billed, and refusing to file it
+ * until they are on the customer register would mean it does not get filed.
+ *
+ * `validUntil` is optional because not every script carries one, and inventing
+ * an expiry for one that does not is how a valid script gets refused at the
+ * counter. When it is given it must not precede the date on the script.
+ */
+export const prescriptionSchema = z
+  .object({
+    customerId: z
+      .union([objectIdSchema, z.literal(""), z.null()])
+      .optional()
+      .transform((value) => (value ? value : null)),
+    patientName: z.string().trim().min(2, "The patient's name is required.").max(160),
+    patientPhone: z.string().trim().max(30).default(""),
+    patientAge: z.string().trim().max(30).default(""),
+    patientGender: z.enum(["", "male", "female", "other"]).default(""),
+
+    doctorName: z.string().trim().min(2, "The prescriber's name is required.").max(160),
+    doctorRegNo: z.string().trim().max(60).default(""),
+    hospital: z.string().trim().max(160).default(""),
+
+    issuedOn: dateSchema,
+    validUntil: optionalDateSchema,
+
+    items: z
+      .array(prescriptionItemSchema)
+      .min(1, "List at least one medicine on the prescription."),
+
+    copyHeld: z.coerce.boolean().default(false),
+    notes: z.string().trim().max(1000).default(""),
+  })
+  .refine(
+    (data) =>
+      !data.validUntil || data.validUntil.getTime() >= data.issuedOn.getTime(),
+    {
+      message: "A prescription cannot expire before the day it was written.",
+      path: ["validUntil"],
+    },
+  );
+export type PrescriptionInput = z.infer<typeof prescriptionSchema>;
+
+/**
+ * Handing part or all of a script over.
+ *
+ * Quantities are per line rather than one total: two lines of the same script
+ * are dispensed in different amounts all the time, and a single figure could
+ * not say which medicine it referred to.
+ */
+export const dispensePrescriptionSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        lineIndex: numberFromInput("That item is not on this prescription.")
+          .int()
+          .min(0, "That item is not on this prescription."),
+        quantity: numberFromInput("The quantity must be a number.")
+          .int("Dispense whole units.")
+          .positive("Dispense at least one unit."),
+      }),
+    )
+    .min(1, "Choose at least one medicine to dispense."),
+  /** The bill it went out on, where it was rung up at the till. */
+  billNo: z.string().trim().max(60).optional(),
+  note: z.string().trim().max(300).optional(),
+});
+export type DispensePrescriptionInput = z.infer<typeof dispensePrescriptionSchema>;
+
+/** Withdrawing a script, with a written reason for the same audit reason a void carries one. */
+export const cancelPrescriptionSchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .min(3, "Give a short reason so the cancellation is auditable.")
+    .max(300),
+});
+
+// ---------------------------------------------------------------------------
+// Staff accounts
+// ---------------------------------------------------------------------------
+
+/**
+ * A password a shop sets for a colleague.
+ *
+ * The same floor the platform uses when it resets an owner's password, so a
+ * staff login cannot be weaker than the owner login above it. No complexity
+ * rule: they demonstrably push people towards "Pharmacy@1", and length is what
+ * actually costs an attacker something.
+ */
+const staffPasswordSchema = z
+  .string()
+  .min(8, "Password must be at least 8 characters.")
+  .max(72, "Password is too long.");
+
+/**
+ * The branch a staff member works at. Blank means "not attached to one",
+ * which is legitimate for an owner who works across every outlet.
+ */
+const staffBranchSchema = z
+  .union([objectIdSchema, z.literal(""), z.null()])
+  .optional()
+  .transform((value) => (value ? value : null));
+
+/**
+ * The role on a staff account.
+ *
+ * An enum of the assignable roles, never a free string - `superadmin` is not
+ * in the list, so "make me a superadmin" fails at the schema rather than
+ * relying on a check further in.
+ */
+const staffRoleSchema = z.enum(ASSIGNABLE_ROLES, {
+  errorMap: () => ({ message: "Choose a role for this account." }),
+});
+
+export const staffSchema = z.object({
+  name: z.string().trim().min(2, "Their name is required.").max(120),
+  email: z.string().trim().toLowerCase().email("Enter a valid email address."),
+  password: staffPasswordSchema,
+  role: staffRoleSchema,
+  branchId: staffBranchSchema,
+});
+export type StaffInput = z.infer<typeof staffSchema>;
+
+/**
+ * Editing a colleague. Deliberately not `staffSchema.partial()`: a password is
+ * changed through its own route, so that a careless PATCH cannot reset one.
+ */
+export const staffUpdateSchema = z.object({
+  name: z.string().trim().min(2, "Their name is required.").max(120).optional(),
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .email("Enter a valid email address.")
+    .optional(),
+  role: staffRoleSchema.optional(),
+  /*
+    Three states, not two, which is why this cannot reuse `staffBranchSchema`.
+
+    Absent means "leave the branch alone"; an empty string means "detach them
+    from it". Collapsing both to null - which the create schema does, correctly,
+    because there is nothing to leave alone - would make renaming somebody
+    silently unassign the outlet they work at.
+  */
+  branchId: z
+    .union([objectIdSchema, z.literal(""), z.null()])
+    .optional()
+    .transform((value) =>
+      value === undefined ? undefined : value === "" || value === null ? null : value,
+    ),
+});
+export type StaffUpdateInput = z.infer<typeof staffUpdateSchema>;
+
+export const staffPasswordResetSchema = z.object({
+  password: staffPasswordSchema,
+});
+
+export const staffActiveSchema = z.object({
+  isActive: z.coerce.boolean(),
+});
+
+// ---------------------------------------------------------------------------
+// Expenses
+// ---------------------------------------------------------------------------
+
+/**
+ * A running cost that is not stock.
+ *
+ * `paidOn` is asked for rather than assumed to be today: expenses are
+ * routinely entered a week later off a pile of receipts, and stamping them all
+ * with the day they were typed would put January's rent in February's books.
+ */
+export const expenseSchema = z.object({
+  category: z.enum(EXPENSE_CATEGORIES),
+  description: z
+    .string()
+    .trim()
+    .min(2, "Say what the money was for.")
+    .max(200),
+  payee: z.string().trim().max(160).default(""),
+  amount: numberFromInput("Amount must be a number.")
+    .positive("Amount must be greater than zero.")
+    .max(100_000_000, "That amount looks wrong."),
+  method: z.enum(EXPENSE_METHODS).default("cash"),
+  paidOn: dateSchema,
+  reference: z.string().trim().max(120).default(""),
+  note: z.string().trim().max(300).default(""),
+});
+export type ExpenseInput = z.infer<typeof expenseSchema>;
+
+export const expenseUpdateSchema = expenseSchema.partial();
+export type ExpenseUpdateInput = z.infer<typeof expenseUpdateSchema>;

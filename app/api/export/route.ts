@@ -31,6 +31,8 @@ const FINANCIAL_REPORTS = new Set([
   "sales-detail",
   "profit-by-medicine",
   "stock-valuation",
+  // Carries unit cost and value per movement.
+  "stock-movements",
   "purchase-register",
   "payables",
 ]);
@@ -38,7 +40,7 @@ const FINANCIAL_REPORTS = new Set([
 export const GET = withRoute(async (req) => {
   const user = await requirePermission("report:export");
 
-  const { report, format, from, to } = parseQuery(req, exportQuerySchema);
+  const { report, format, from, to, direction } = parseQuery(req, exportQuerySchema);
 
   if (!isReportKey(report)) {
     throw ApiError.badRequest(`Unknown report "${report}".`);
@@ -64,7 +66,13 @@ export const GET = withRoute(async (req) => {
     : `As at ${formatDate(new Date())}`;
 
   const scope = await resolveRequestScope(user, req);
-  const dataset = await buildReport(report, { from: start, to: end, rangeLabel, scope });
+  const dataset = await buildReport(report, {
+    from: start,
+    to: end,
+    rangeLabel,
+    scope,
+    direction,
+  });
   const settings = await getSettings(user.pharmacyId, user.pharmacyName);
   const shopName = settings.businessName.trim() || user.pharmacyName.trim();
 

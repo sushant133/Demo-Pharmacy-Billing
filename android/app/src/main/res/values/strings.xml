@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Pharmacy Counter</string>
+    <string name="title_activity_main">Pharmacy Counter</string>
+    <string name="package_name">np.com.mantrasphere.pharmacy</string>
+    <string name="custom_url_scheme">np.com.mantrasphere.pharmacy</string>
+</resources>

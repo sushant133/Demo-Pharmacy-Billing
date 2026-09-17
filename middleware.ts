@@ -17,6 +17,8 @@ const PUBLIC_PATHS = [
   "/api/auth/logout",
   "/manifest.webmanifest",
   "/icon",
+  // Polled by the Android app before anyone has signed in.
+  "/android-app-version.json",
 ];
 
 function isPublic(pathname: string): boolean {
@@ -42,15 +44,26 @@ function isShopAppPath(pathname: string): boolean {
     pathname.startsWith("/dashboard") ||
     pathname.startsWith("/billing") ||
     pathname.startsWith("/sales") ||
+    pathname.startsWith("/invoices") ||
+    pathname.startsWith("/prescriptions") ||
     pathname.startsWith("/medicines") ||
     pathname.startsWith("/batches") ||
+    pathname.startsWith("/inventory") ||
+    pathname.startsWith("/customers") ||
     pathname.startsWith("/suppliers") ||
     pathname.startsWith("/purchases") ||
     pathname.startsWith("/reports") ||
+    pathname.startsWith("/expenses") ||
+    pathname.startsWith("/payments") ||
+    pathname.startsWith("/payables") ||
     pathname.startsWith("/alerts") ||
+    pathname.startsWith("/staff") ||
     pathname.startsWith("/branches") ||
     pathname.startsWith("/settings") ||
-    pathname.startsWith("/bills/")
+    pathname.startsWith("/bills/") ||
+    // Credit notes sit beside bills rather than inside the app shell: both are
+    // documents to print, not screens to work in.
+    pathname.startsWith("/returns/")
   );
 }
 

@@ -1,11 +1,14 @@
 import { Batch } from "@/models/Batch";
 import { Branch } from "@/models/Branch";
 import { Customer } from "@/models/Customer";
+import { Expense } from "@/models/Expense";
 import { Medicine } from "@/models/Medicine";
 import { Pharmacy } from "@/models/Pharmacy";
+import { Prescription } from "@/models/Prescription";
 import { Purchase } from "@/models/Purchase";
 import { Sale } from "@/models/Sale";
 import { Setting } from "@/models/Setting";
+import { StockMovement } from "@/models/StockMovement";
 import { Supplier } from "@/models/Supplier";
 import { SupplierPayment } from "@/models/SupplierPayment";
 import { User } from "@/models/User";
@@ -30,5 +33,8 @@ export async function syncTenantIndexes(): Promise<void> {
     Customer.syncIndexes(),
     Setting.syncIndexes(),
     SupplierPayment.syncIndexes(),
+    StockMovement.syncIndexes(),
+    Prescription.syncIndexes(),
+    Expense.syncIndexes(),
   ]);
 }

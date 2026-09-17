@@ -1,3 +1,4 @@
+import Link from "next/link";
 import {
   Children,
   isValidElement,
@@ -88,10 +89,18 @@ export function StatCard({
     </div>
   );
 
+  /*
+    `next/link`, not a bare anchor.
+
+    These tiles were plain `<a href>`, which makes every click a full document
+    reload: the whole app shell, the sidebar and the session lookup all rebuilt
+    to move between two views of the same data. Half the screens in this app
+    now have a clickable tile, so it was the most-hit slow path in the UI.
+  */
   return href ? (
-    <a href={href} className="block focus-visible:rounded-xl">
+    <Link href={href} className="block rounded-xl focus-visible:outline-2">
       {body}
-    </a>
+    </Link>
   ) : (
     body
   );
@@ -207,6 +216,30 @@ export function Pagination({
   const join = (target: number) =>
     baseHref + (baseHref.includes("?") ? "&" : "?") + "page=" + target;
 
+  /*
+    A disabled step is a `<button disabled>`, not a dead link.
+
+    These were anchors with `pointer-events-none`, which hides them from the
+    mouse but leaves them in the tab order and announced as links - so keyboard
+    and screen-reader users could still reach and follow "Previous" on page 1.
+    A disabled button is unreachable and announced as disabled, which is what
+    the greying-out has always meant.
+  */
+  const step = (label: string, target: number, disabled: boolean) =>
+    disabled ? (
+      <button
+        type="button"
+        disabled
+        className="btn-secondary px-3 py-1.5 text-xs opacity-40"
+      >
+        {label}
+      </button>
+    ) : (
+      <Link href={join(target)} className="btn-secondary px-3 py-1.5 text-xs">
+        {label}
+      </Link>
+    );
+
   return (
     <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3">
       <p className="text-xs text-slate-500">
@@ -214,26 +247,8 @@ export function Pagination({
         {total === 1 ? "" : "s"}
       </p>
       <div className="flex gap-2">
-        <a
-          href={join(Math.max(1, page - 1))}
-          aria-disabled={page <= 1}
-          className={cx(
-            "btn-secondary px-3 py-1.5 text-xs",
-            page <= 1 && "pointer-events-none opacity-40",
-          )}
-        >
-          Previous
-        </a>
-        <a
-          href={join(Math.min(totalPages, page + 1))}
-          aria-disabled={page >= totalPages}
-          className={cx(
-            "btn-secondary px-3 py-1.5 text-xs",
-            page >= totalPages && "pointer-events-none opacity-40",
-          )}
-        >
-          Next
-        </a>
+        {step("Previous", page - 1, page <= 1)}
+        {step("Next", page + 1, page >= totalPages)}
       </div>
     </div>
   );

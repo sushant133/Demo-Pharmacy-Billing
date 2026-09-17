@@ -1,11 +1,12 @@
 "use client";
 
 import Link, { useLinkStatus } from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { cx } from "@/components/ui";
+import { NAV_SECTIONS, type NavChild, type NavItem } from "@/components/nav-items";
 import { brandLetter, initials } from "@/lib/format";
-import { ROLE_LABELS, can, type Permission, type Role } from "@/lib/roles";
+import { ROLE_LABELS, can, type Role } from "@/lib/roles";
 
 /**
  * Application chrome: sidebar, mobile drawer and user menu.
@@ -13,110 +14,11 @@ import { ROLE_LABELS, can, type Permission, type Role } from "@/lib/roles";
  * Client component because the nav needs the current path and a drawer toggle.
  * It receives the session as a prop rather than fetching it, so the server
  * stays the single source of truth for identity.
+ *
+ * The menu itself lives in components/nav-items.tsx. This file owns only the
+ * behaviour around it: which rows the role may see, which sub-menu is open,
+ * which row is highlighted, and how a click is made to feel instant.
  */
-
-interface NavItem {
-  href: string;
-  label: string;
-  permission: Permission;
-  icon: ReactNode;
-  hint?: string;
-}
-
-const icon = (path: string) => (
-  <svg
-    className="h-5 w-5 shrink-0"
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-    strokeWidth={1.7}
-    aria-hidden="true"
-  >
-    <path strokeLinecap="round" strokeLinejoin="round" d={path} />
-  </svg>
-);
-
-const NAV: NavItem[] = [
-  {
-    href: "/dashboard",
-    label: "Dashboard",
-    permission: "report:read",
-    icon: icon("M3 12l9-9 9 9M5 10v10h14V10"),
-  },
-  {
-    href: "/billing",
-    label: "New Sale",
-    permission: "sale:create",
-    hint: "F2",
-    icon: icon(
-      "M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2 5h14M9 21a1 1 0 100-2 1 1 0 000 2zm8 0a1 1 0 100-2 1 1 0 000 2z",
-    ),
-  },
-  {
-    href: "/sales",
-    label: "Sales",
-    permission: "sale:read",
-    icon: icon("M9 17V9m4 8V5m4 12v-6M4 20h16"),
-  },
-  {
-    href: "/sales/returns",
-    label: "Returns",
-    permission: "sale:void",
-    icon: icon("M3 10h10a4 4 0 010 8H9m-6-4l3-3m-3 3l3 3"),
-  },
-  {
-    href: "/alerts",
-    label: "Alerts",
-    permission: "report:read",
-    icon: icon("M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"),
-  },
-  {
-    href: "/reports",
-    label: "Reports",
-    permission: "report:financial",
-    icon: icon("M9 17V9m4 8V5m4 12v-6M4 4v16h16"),
-  },
-  {
-    href: "/purchases",
-    label: "Purchases",
-    permission: "purchase:read",
-    icon: icon("M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.6L19 8.4V19a2 2 0 01-2 2z"),
-  },
-  {
-    href: "/suppliers",
-    label: "Suppliers",
-    permission: "supplier:read",
-    icon: icon("M3 21h18M5 21V7l7-4 7 4v14M9 21v-5h6v5"),
-  },
-  {
-    href: "/medicines",
-    label: "Medicines",
-    permission: "medicine:read",
-    icon: icon(
-      "M10.5 20.5a4.95 4.95 0 01-7-7l6-6a4.95 4.95 0 017 7l-6 6zM7 11l6 6",
-    ),
-  },
-  {
-    href: "/batches",
-    label: "Stock & Batches",
-    permission: "batch:read",
-    icon: icon("M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"),
-  },
-  {
-    href: "/branches",
-    label: "Branches",
-    permission: "branch:manage",
-    icon: icon("M8 21V9l4-4 4 4v12M3 21h18M10 13h4"),
-  },
-  {
-    href: "/settings",
-    label: "Settings",
-    permission: "settings:manage",
-    icon: icon(
-      "M10.3 4.3a1.9 1.9 0 013.4 0l.4.8a1.9 1.9 0 002.2.9l.9-.2a1.9 1.9 0 012.3 2.3l-.2.9a1.9 1.9 0 00.9 2.2l.8.4a1.9 1.9 0 010 3.4l-.8.4a1.9 1.9 0 00-.9 2.2l.2.9a1.9 1.9 0 01-2.3 2.3l-.9-.2a1.9 1.9 0 00-2.2.9l-.4.8a1.9 1.9 0 01-3.4 0l-.4-.8a1.9 1.9 0 00-2.2-.9l-.9.2a1.9 1.9 0 01-2.3-2.3l.2-.9a1.9 1.9 0 00-.9-2.2l-.8-.4a1.9 1.9 0 010-3.4l.8-.4a1.9 1.9 0 00.9-2.2l-.2-.9a1.9 1.9 0 012.3-2.3l.9.2a1.9 1.9 0 002.2-.9l.4-.8zM12 15a3 3 0 100-6 3 3 0 000 6z",
-    ),
-  },
-];
 
 export interface ShellUser {
   name: string;
@@ -139,18 +41,76 @@ export interface ShellBranch {
   name: string;
 }
 
+/** Remembers which sub-menus the user left open, per browser. */
+const OPEN_KEY = "pharma.nav.open";
+
+/** The path part of an href, with any query string dropped. */
+function pathOf(href: string): string {
+  const index = href.indexOf("?");
+  return index === -1 ? href : href.slice(0, index);
+}
+
+/**
+ * Every menu href that carries a query, such as `/alerts?tab=expiry`.
+ *
+ * These are filtered views of a screen another row already owns, and the two
+ * rows must not light up together. Collected once from the menu rather than
+ * hard-coded, so adding a filtered entry needs no change to `matches`.
+ */
+const FILTERED_HREFS = new Set(
+  NAV_SECTIONS.flatMap((section) =>
+    section.items.flatMap((item) => [
+      ...(item.href.includes("?") ? [item.href] : []),
+      ...(item.children ?? [])
+        .map((child) => child.href)
+        .filter((href) => href.includes("?")),
+    ]),
+  ),
+);
+
+/**
+ * Which sub-menus start open, before anything is read back from localStorage.
+ *
+ * Only *items* collapse now - Inventory and Staff, which own real sub-routes.
+ * The five group headings do not, and that is the point: with them collapsible
+ * it was possible to arrive at a sidebar showing nothing but five accordion
+ * stubs over an empty column, which is what a returning user got as soon as
+ * their last session had them closed. Sixteen rows fit in the column without
+ * scrolling, so hiding them bought nothing and cost the whole menu.
+ *
+ * Computed from the path alone so the server and the first client render
+ * agree: the sub-menu holding the current route starts open.
+ */
+function defaultOpenState(path: string): Record<string, boolean> {
+  const state: Record<string, boolean> = {};
+  for (const section of NAV_SECTIONS) {
+    for (const item of section.items) {
+      if (item.children) {
+        state[`item:${item.href}`] = item.children.some((child) =>
+          matches(path, child.href),
+        );
+      }
+    }
+  }
+  return state;
+}
+
 export function AppShell({
   user,
   scope,
   branches,
+  alertCount = 0,
   children,
 }: {
   user: ShellUser;
   scope: ShellScope;
   branches: ShellBranch[];
+  /** Pending alerts - low stock, expired and near-expiry lots. */
+  alertCount?: number;
   children: ReactNode;
 }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -162,12 +122,99 @@ export function AppShell({
   // link to a full prefetch, so the click after it is served from cache.
   const [warm, setWarm] = useState<Record<string, true>>({});
 
-  const items = NAV.filter((item) => can(user.role, item.permission));
+  // Which sub-menus are open. Seeded from the path so the first paint is
+  // already right, then merged with what the user left open last time - a
+  // pharmacist who lives in Inventory should not reopen it daily.
+  const [open, setOpen] = useState<Record<string, boolean>>(() =>
+    defaultOpenState(pathname),
+  );
+
+  // Current URL including its query, so `/alerts?tab=expiry` can highlight
+  // separately from plain `/alerts`.
+  const currentUrl = useMemo(() => {
+    const query = searchParams.toString();
+    return query ? `${pathname}?${query}` : pathname;
+  }, [pathname, searchParams]);
+
+  // Role filter, applied once to the whole tree. A group with nothing left in
+  // it disappears rather than showing an empty heading.
+  const sections = useMemo(
+    () =>
+      NAV_SECTIONS.map((section) => ({
+        ...section,
+        items: section.items
+          .filter((item) => can(user.role, item.permission))
+          .map((item) => ({
+            ...item,
+            children: item.children?.filter((child) =>
+              can(user.role, child.permission),
+            ),
+          })),
+      })).filter((section) => section.items.length > 0),
+    [user.role],
+  );
+
+  // Arriving at a sub-route opens the menu that holds it, so the sidebar never
+  // hides where you are. Done on the move rather than as a render-time
+  // override: otherwise a menu you then close by hand would spring back open
+  // and the chevron would look broken.
+  useEffect(() => {
+    setOpen((current) => {
+      let next = current;
+
+      for (const section of NAV_SECTIONS) {
+        for (const item of section.items) {
+          const key = `item:${item.href}`;
+          if (next[key]) continue;
+          if (item.children?.some((child) => matches(pathname, child.href))) {
+            if (next === current) next = { ...current };
+            next[key] = true;
+          }
+        }
+      }
+      return next;
+    });
+  }, [pathname]);
+
+  // localStorage cannot be read while rendering without breaking hydration, so
+  // the remembered state is merged in once, after the first paint.
+  useEffect(() => {
+    let saved: Record<string, boolean>;
+    try {
+      const raw = window.localStorage.getItem(OPEN_KEY);
+      if (!raw) return;
+      saved = JSON.parse(raw) as Record<string, boolean>;
+    } catch {
+      // Private mode, or a corrupt value: the path-based defaults stand.
+      return;
+    }
+
+    setOpen((current) => {
+      const merged = { ...current };
+      for (const [key, value] of Object.entries(saved)) {
+        // Only keys the menu still has. A renamed section must not linger.
+        if (key in merged && typeof value === "boolean") merged[key] = value;
+      }
+      return merged;
+    });
+  }, []);
+
+  const toggle = useCallback((key: string) => {
+    setOpen((current) => {
+      const next = { ...current, [key]: !current[key] };
+      try {
+        window.localStorage.setItem(OPEN_KEY, JSON.stringify(next));
+      } catch {
+        // Not being able to remember the menu is not worth an error.
+      }
+      return next;
+    });
+  }, []);
 
   // The route committed, so the optimistic highlight has caught up with reality.
   useEffect(() => {
     setPendingHref(null);
-  }, [pathname]);
+  }, [currentUrl]);
 
   const warmUp = useCallback((href: string) => {
     setWarm((current) => (current[href] ? current : { ...current, [href]: true }));
@@ -190,36 +237,71 @@ export function AppShell({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [router, user.role]);
 
-  const matches = (path: string, href: string) => {
-    if (href === "/sales") {
-      return (
-        path === "/sales" ||
-        (path.startsWith("/sales/") && !path.startsWith("/sales/returns"))
-      );
-    }
-    return path === href || path.startsWith(href + "/");
-  };
-
   // `isActive` is the route the browser is actually on and drives aria-current,
   // which must not lie. `isHighlighted` is allowed to run one click ahead of it.
-  const isActive = (href: string) => matches(pathname, href);
-  const isHighlighted = (href: string) => matches(pendingHref ?? pathname, href);
+  const isActive = (href: string) => matches(currentUrl, href);
+  const isHighlighted = (href: string) => matches(pendingHref ?? currentUrl, href);
+
+  const onNavigate = (href: string) => {
+    setPendingHref(href);
+    setDrawerOpen(false);
+  };
 
   const navLinks = (
-    <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3">
-      {items.map((item) => (
-        <NavLink
-          key={item.href}
-          item={item}
-          current={isActive(item.href)}
-          highlighted={isHighlighted(item.href)}
-          prefetchFull={Boolean(warm[item.href])}
-          onWarm={() => warmUp(item.href)}
-          onNavigate={() => {
-            setPendingHref(item.href);
-            setDrawerOpen(false);
-          }}
-        />
+    <nav
+      aria-label="Pharmacy"
+      className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 pb-3"
+    >
+      {sections.map((section) => (
+        <div key={section.title ?? "top"} className={section.title ? "pt-4" : ""}>
+          {section.title ? (
+            <p className="px-3 pb-1.5 text-[11px] font-semibold tracking-[0.08em] text-slate-400 uppercase">
+              {section.title}
+            </p>
+          ) : null}
+
+          <div className="space-y-0.5">
+            {section.items.map((item) => {
+              const itemKey = `item:${item.href}`;
+              const subOpen =
+                Boolean(item.children?.length) && Boolean(open[itemKey]);
+
+              return (
+                <div key={item.href}>
+                  <NavLink
+                    item={item}
+                    current={isActive(item.href)}
+                    highlighted={isHighlighted(item.href)}
+                    badgeCount={item.badge === "alerts" ? alertCount : 0}
+                    prefetchFull={Boolean(warm[item.href])}
+                    subOpen={subOpen}
+                    onToggleSub={
+                      item.children?.length ? () => toggle(itemKey) : undefined
+                    }
+                    onWarm={() => warmUp(item.href)}
+                    onNavigate={() => onNavigate(item.href)}
+                  />
+
+                  {item.children?.length && subOpen ? (
+                    <div className="mt-0.5 mb-1 ml-[1.55rem] space-y-0.5 border-l border-slate-700/70 pl-2.5">
+                      {item.children.map((child) => (
+                        <SubNavLink
+                          key={child.href}
+                          child={child}
+                          current={isActive(child.href)}
+                          highlighted={isHighlighted(child.href)}
+                          prefetchFull={Boolean(warm[child.href])}
+                          onWarm={() => warmUp(child.href)}
+                          onNavigate={() => onNavigate(child.href)}
+                        />
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </div>
       ))}
     </nav>
   );
@@ -228,11 +310,11 @@ export function AppShell({
   const shopMark = brandLetter(shopName);
 
   const brand = (
-    <div className="flex items-center gap-2.5 px-6 py-5">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-500 text-base font-bold text-white">
+    <div className="flex items-center gap-2.5 border-b border-slate-700/60 px-5 py-4">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand-400 to-brand-600 text-base font-bold text-white shadow-sm">
         {shopMark}
       </span>
-      <span className="min-w-0 text-[15px] leading-tight font-semibold text-white">
+      <span className="min-w-0 truncate text-[15px] leading-tight font-semibold text-white">
         {shopName}
       </span>
     </div>
@@ -241,7 +323,12 @@ export function AppShell({
   return (
     <div className="min-h-dvh lg:flex">
       {/* Desktop sidebar */}
-      <aside className="hidden w-60 shrink-0 flex-col bg-slate-900 lg:sticky lg:top-0 lg:flex lg:h-dvh">
+      {/*
+        `app-sidebar` carries the dark ground and the focus ring that reads
+        correctly on it - see app/globals.css. The hairline on the right
+        separates the column from the light content area without a shadow.
+      */}
+      <aside className="app-sidebar hidden w-64 shrink-0 flex-col border-r border-slate-950/60 lg:sticky lg:top-0 lg:flex lg:h-dvh">
         {brand}
         {navLinks}
         <UserCard user={user} scope={scope} branches={branches} />
@@ -254,9 +341,9 @@ export function AppShell({
             type="button"
             aria-label="Close navigation"
             onClick={() => setDrawerOpen(false)}
-            className="absolute inset-0 bg-slate-900/60"
+            className="absolute inset-0 bg-slate-950/70 backdrop-blur-[2px]"
           />
-          <div className="relative flex h-full w-64 flex-col bg-slate-900">
+          <div className="app-sidebar relative flex h-full w-[17rem] max-w-[85vw] flex-col shadow-2xl">
             {brand}
             {navLinks}
             <UserCard user={user} scope={scope} branches={branches} />
@@ -270,8 +357,12 @@ export function AppShell({
           <button
             type="button"
             onClick={() => setDrawerOpen(true)}
-            className="btn-ghost -ml-2 px-2 py-2"
-            aria-label="Open navigation"
+            className="btn-ghost relative -ml-2 px-2 py-2"
+            aria-label={
+              alertCount > 0
+                ? `Open navigation, ${alertCount} pending alerts`
+                : "Open navigation"
+            }
           >
             <svg
               className="h-6 w-6"
@@ -282,6 +373,12 @@ export function AppShell({
             >
               <path strokeLinecap="round" d="M4 6h16M4 12h16M4 18h16" />
             </svg>
+            {alertCount > 0 ? (
+              <span
+                aria-hidden="true"
+                className="absolute top-1 right-1 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-white"
+              />
+            ) : null}
           </button>
           <span className="min-w-0 truncate text-[15px] leading-tight font-semibold text-slate-900">
             {shopName}
@@ -306,6 +403,62 @@ export function AppShell({
 }
 
 /**
+ * Does `url` (a live path, possibly with a query) belong to `href`?
+ *
+ * Two wrinkles the plain prefix test gets wrong:
+ *
+ *   - `/sales` must not swallow `/sales/returns`, which is its own menu row.
+ *   - A menu row carrying a query, such as `/alerts?tab=expiry`, is a filtered
+ *     view. It matches only that exact view, and the plain row for the same
+ *     screen stands down for it - but only for that one view. On
+ *     `/alerts?tab=stock`, which no row claims, plain `/alerts` is still the
+ *     right answer.
+ */
+function matches(url: string, href: string): boolean {
+  const path = pathOf(url);
+  const target = pathOf(href);
+
+  if (href.includes("?")) return url === href;
+  if (FILTERED_HREFS.has(url) && path === target) return false;
+
+  if (target === "/sales") {
+    return (
+      path === "/sales" ||
+      (path.startsWith("/sales/") && !path.startsWith("/sales/returns"))
+    );
+  }
+  if (target === "/purchases") {
+    // Same shape as /sales above: the register owns its own detail pages, but
+    // Purchase Returns is a row in its own right and must not light both.
+    return (
+      path === "/purchases" ||
+      (path.startsWith("/purchases/") && !path.startsWith("/purchases/returns"))
+    );
+  }
+  if (target === "/inventory") {
+    // The parent row owns the hub only; its sub-routes light their own rows.
+    return path === "/inventory";
+  }
+
+  return path === target || path.startsWith(target + "/");
+}
+
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      className={cx("h-3.5 w-3.5 shrink-0 transition-transform", open && "rotate-90")}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2.2}
+      aria-hidden="true"
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+    </svg>
+  );
+}
+
+/**
  * One sidebar entry.
  *
  * Three things decide whether a menu click feels instant, and only one of them
@@ -322,16 +475,122 @@ export function AppShell({
  *     than on sight keeps ten screens from being rendered on every page view.
  *     Next disables prefetching in development, so this only shows up in a
  *     production build.
+ *
+ * A row with children carries its own expander button, kept outside the link
+ * so opening the sub-menu never navigates.
  */
 function NavLink({
   item,
+  current,
+  highlighted,
+  badgeCount,
+  prefetchFull,
+  subOpen,
+  onToggleSub,
+  onWarm,
+  onNavigate,
+}: {
+  item: NavItem;
+  current: boolean;
+  highlighted: boolean;
+  badgeCount: number;
+  prefetchFull: boolean;
+  subOpen: boolean;
+  onToggleSub?: () => void;
+  onWarm: () => void;
+  onNavigate: () => void;
+}) {
+  // The brand fill means one thing only: this is the screen you are on. It
+  // follows the selection and nothing else claims it, so the eye can use it to
+  // answer "where am I" without first learning which row is merely advertising
+  // itself. The current row also gets a left accent bar - on a dark column a
+  // fill alone has to be strong to register, and a 3px rule carries the same
+  // message while letting the fill stay quiet enough to read the label against.
+  const tone = highlighted
+    ? "bg-brand-600 text-white shadow-sm"
+    : "text-slate-300 hover:bg-white/5 hover:text-white";
+
+  const filled = highlighted;
+
+  return (
+    <div
+      className={cx(
+        "relative flex items-center gap-1 rounded-lg transition-colors",
+        tone,
+      )}
+    >
+      {highlighted ? (
+        <span
+          aria-hidden="true"
+          className="absolute top-1.5 bottom-1.5 -left-3 w-[3px] rounded-r-full bg-brand-300"
+        />
+      ) : null}
+      <Link
+        href={item.href}
+        prefetch={prefetchFull ? true : undefined}
+        onMouseEnter={onWarm}
+        onFocus={onWarm}
+        onTouchStart={onWarm}
+        onClick={onNavigate}
+        aria-current={current ? "page" : undefined}
+        className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium"
+      >
+        <NavIcon icon={item.icon} />
+        <span className="min-w-0 flex-1 truncate">{item.label}</span>
+
+        {badgeCount > 0 ? (
+          <span
+            title={`${badgeCount} pending alerts`}
+            className={cx(
+              "tnum min-w-[1.25rem] rounded-full px-1.5 py-0.5 text-center text-[10px] leading-none font-bold",
+              filled ? "bg-white text-brand-700" : "bg-rose-500 text-white",
+            )}
+          >
+            {badgeCount > 99 ? "99+" : badgeCount}
+            <span className="sr-only"> pending alerts</span>
+          </span>
+        ) : null}
+
+        {item.hint ? (
+          <kbd
+            className={cx(
+              "rounded px-1.5 py-0.5 text-[10px] font-semibold",
+              filled ? "bg-white/20 text-white" : "bg-white/10 text-slate-300",
+            )}
+          >
+            {item.hint}
+          </kbd>
+        ) : null}
+      </Link>
+
+      {onToggleSub ? (
+        <button
+          type="button"
+          onClick={onToggleSub}
+          aria-expanded={subOpen}
+          aria-label={`${subOpen ? "Hide" : "Show"} ${item.label} sections`}
+          className={cx(
+            "mr-1 rounded p-1.5 transition-colors",
+            filled ? "hover:bg-white/15" : "text-slate-400 hover:bg-white/5 hover:text-white",
+          )}
+        >
+          <Chevron open={subOpen} />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/** A row inside an expanded parent. No icon, so the indent carries the nesting. */
+function SubNavLink({
+  child,
   current,
   highlighted,
   prefetchFull,
   onWarm,
   onNavigate,
 }: {
-  item: NavItem;
+  child: NavChild;
   current: boolean;
   highlighted: boolean;
   prefetchFull: boolean;
@@ -340,7 +599,7 @@ function NavLink({
 }) {
   return (
     <Link
-      href={item.href}
+      href={child.href}
       prefetch={prefetchFull ? true : undefined}
       onMouseEnter={onWarm}
       onFocus={onWarm}
@@ -348,24 +607,13 @@ function NavLink({
       onClick={onNavigate}
       aria-current={current ? "page" : undefined}
       className={cx(
-        "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+        "block truncate rounded-md px-3 py-1.5 text-[13px] transition-colors",
         highlighted
-          ? "bg-brand-600 text-white shadow-sm"
-          : "text-slate-300 hover:bg-slate-800 hover:text-white",
+          ? "bg-white/10 font-medium text-white"
+          : "text-slate-400 hover:bg-white/5 hover:text-white",
       )}
     >
-      <NavIcon icon={item.icon} />
-      <span className="flex-1">{item.label}</span>
-      {item.hint ? (
-        <kbd
-          className={cx(
-            "rounded px-1.5 py-0.5 text-[10px] font-semibold",
-            highlighted ? "bg-white/20 text-white" : "bg-slate-800 text-slate-400",
-          )}
-        >
-          {item.hint}
-        </kbd>
-      ) : null}
+      {child.label}
     </Link>
   );
 }
@@ -400,21 +648,33 @@ function UserCard({
   branches: ShellBranch[];
 }) {
   return (
-    <div className="border-t border-slate-800 p-3">
-      <div className="flex items-center gap-3 rounded-lg px-2 py-2">
+    <div className="border-t border-slate-700/60 p-3">
+      {/*
+        Two lines, not three. The pharmacy's name is already the largest thing
+        in the column, at the top - repeating it here only pushed the branch
+        out of its own line and truncated both ("Mantra Pharmacy · Mantra Ph…").
+        Who you are and what you may do is what this card is for; where you are
+        is the switcher directly below it.
+      */}
+      <div className="flex items-center gap-3 rounded-lg bg-white/5 px-2.5 py-2">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-500 text-xs font-semibold text-white">
           {initials(user.name)}
         </span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-white">{user.name}</p>
-          <p className="truncate text-xs text-slate-400">
-            {ROLE_LABELS[user.role]} &middot; {user.branchName}
-          </p>
+          <p className="truncate text-xs text-slate-400">{ROLE_LABELS[user.role]}</p>
         </div>
       </div>
+
       {scope.switchable && branches.length > 0 ? (
         <BranchSwitcher current={scope.code ?? "all"} branches={branches} />
+      ) : user.branchName ? (
+        // No switcher to show where they are, so the card says it instead.
+        <p className="mt-2 truncate px-2.5 text-[11px] text-slate-500">
+          {user.branchName}
+        </p>
       ) : null}
+
       <div className="mt-1">
         <SignOutButton />
       </div>
@@ -447,23 +707,44 @@ function BranchSwitcher({
   }
 
   return (
-    <label className="mt-2 block px-2">
-      <span className="mb-1 block text-[10px] font-medium tracking-wide text-slate-500 uppercase">
+    <label className="mt-2 block px-0.5">
+      <span className="mb-1 block px-2 text-[10px] font-medium tracking-wide text-slate-500 uppercase">
         Working at
       </span>
-      <select
-        value={current}
-        disabled={pending}
-        onChange={(event) => onChange(event.target.value)}
-        className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-200"
-      >
-        <option value="all">All branches</option>
-        {branches.map((branch) => (
-          <option key={branch.code} value={branch.code}>
-            {branch.name}
-          </option>
-        ))}
-      </select>
+
+      {/*
+        The native control is kept - it is the right thing on a touch screen at
+        a counter, and on Android it opens the platform picker. Only its skin
+        is replaced: the default arrow is dropped for one drawn to match the
+        sidebar's chevrons, and the box is lifted off the column rather than
+        painted the same colour as it, which is what made it look unfinished.
+      */}
+      <div className="relative">
+        <select
+          value={current}
+          disabled={pending}
+          onChange={(event) => onChange(event.target.value)}
+          className="w-full appearance-none rounded-lg border border-slate-700/80 bg-slate-800 py-2 pr-8 pl-2.5 text-xs font-medium text-slate-200 transition-colors hover:border-slate-600 hover:bg-slate-700 focus:border-brand-500 focus:outline-none disabled:opacity-60"
+        >
+          <option value="all">All branches</option>
+          {branches.map((branch) => (
+            <option key={branch.code} value={branch.code}>
+              {branch.name}
+            </option>
+          ))}
+        </select>
+
+        <svg
+          className="pointer-events-none absolute top-1/2 right-2.5 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2.2}
+          aria-hidden="true"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" />
+        </svg>
+      </div>
     </label>
   );
 }
@@ -480,7 +761,7 @@ function SignOutButton() {
         await fetch("/api/auth/logout", { method: "POST" });
         window.location.href = "/login";
       }}
-      className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
+      className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-400 transition-colors hover:bg-white/5 hover:text-white"
     >
       <svg
         className="h-5 w-5"

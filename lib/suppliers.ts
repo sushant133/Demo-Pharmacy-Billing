@@ -15,7 +15,7 @@ import type { SessionUser } from "@/lib/session";
  *
  * Balances are always derived, never stored:
  *
- *   owed = opening balance + posted purchases - payments made
+ *   owed = opening balance + posted purchases - goods returned - payments made
  *
  * A stored running total drifts the first time a write half-succeeds, and a
  * payables figure nobody trusts is worse than none. Draft and cancelled
@@ -28,6 +28,8 @@ export interface SupplierBalance {
   openingBalance: number;
   /** Total of posted purchases. */
   purchased: number;
+  /** Value of goods sent back on debit notes. Reduces what is owed. */
+  returned: number;
   paid: number;
   /** What the shop still owes. Negative means the supplier is in credit. */
   outstanding: number;
@@ -56,6 +58,9 @@ export async function getSupplierBalance(
         $group: {
           _id: null,
           purchased: { $sum: "$totalAmount" },
+          // Goods sent back. Netted off rather than tracked separately: a
+          // debit note reduces the debt, it is not a second kind of money.
+          returned: { $sum: { $ifNull: ["$returnedTotal", 0] } },
           count: { $sum: 1 },
           unpaid: {
             $sum: { $cond: [{ $ne: ["$paymentStatus", "paid"] }, 1, 0] },
@@ -79,7 +84,14 @@ export async function getSupplierBalance(
       {
         $group: {
           _id: null,
-          overdue: { $sum: { $subtract: ["$totalAmount", "$amountPaid"] } },
+          overdue: {
+            $sum: {
+              $subtract: [
+                { $subtract: ["$totalAmount", { $ifNull: ["$returnedTotal", 0] }] },
+                "$amountPaid",
+              ],
+            },
+          },
         },
       },
     ]),
@@ -89,19 +101,22 @@ export async function getSupplierBalance(
 
   const stats = (purchaseAgg[0] ?? {}) as {
     purchased?: number;
+    returned?: number;
     count?: number;
     unpaid?: number;
   };
   const openingBalance = round2(supplier.openingBalance ?? 0);
   const purchased = round2(stats.purchased ?? 0);
+  const returned = round2(stats.returned ?? 0);
   const paid = round2((paymentAgg[0] as { paid?: number } | undefined)?.paid ?? 0);
 
   return {
     supplierId,
     openingBalance,
     purchased,
+    returned,
     paid,
-    outstanding: round2(openingBalance + purchased - paid),
+    outstanding: round2(openingBalance + purchased - returned - paid),
     postedPurchaseCount: stats.count ?? 0,
     unpaidInvoiceCount: stats.unpaid ?? 0,
     overdueAmount: round2(
@@ -114,7 +129,7 @@ export async function getSupplierBalance(
 export async function getBalancesFor(
   supplierIds: readonly Types.ObjectId[],
   pharmacyId?: Types.ObjectId | null,
-): Promise<Map<string, { purchased: number; paid: number }>> {
+): Promise<Map<string, { purchased: number; returned: number; paid: number }>> {
   if (supplierIds.length === 0) return new Map();
   await connectDB();
 
@@ -125,7 +140,13 @@ export async function getBalancesFor(
   const [purchases, payments] = await Promise.all([
     Purchase.aggregate([
       { $match: { ...tenant, supplierId: { $in: supplierIds }, status: "posted" } },
-      { $group: { _id: "$supplierId", purchased: { $sum: "$totalAmount" } } },
+      {
+        $group: {
+          _id: "$supplierId",
+          purchased: { $sum: "$totalAmount" },
+          returned: { $sum: { $ifNull: ["$returnedTotal", 0] } },
+        },
+      },
     ]),
     SupplierPayment.aggregate([
       { $match: { ...tenant, supplierId: { $in: supplierIds } } },
@@ -133,13 +154,23 @@ export async function getBalancesFor(
     ]),
   ]);
 
-  const result = new Map<string, { purchased: number; paid: number }>();
+  const result = new Map<
+    string,
+    { purchased: number; returned: number; paid: number }
+  >();
   for (const id of supplierIds) {
-    result.set(String(id), { purchased: 0, paid: 0 });
+    result.set(String(id), { purchased: 0, returned: 0, paid: 0 });
   }
-  for (const row of purchases as Array<{ _id: Types.ObjectId; purchased: number }>) {
+  for (const row of purchases as Array<{
+    _id: Types.ObjectId;
+    purchased: number;
+    returned: number;
+  }>) {
     const entry = result.get(String(row._id));
-    if (entry) entry.purchased = round2(row.purchased);
+    if (entry) {
+      entry.purchased = round2(row.purchased);
+      entry.returned = round2(row.returned ?? 0);
+    }
   }
   for (const row of payments as Array<{ _id: Types.ObjectId; paid: number }>) {
     const entry = result.get(String(row._id));
@@ -250,7 +281,13 @@ export async function getTotalPayables(user: SessionUser): Promise<{
       ]),
       Purchase.aggregate([
         { $match: { ...scoped, status: "posted" } },
-        { $group: { _id: null, purchased: { $sum: "$totalAmount" } } },
+        {
+          $group: {
+            _id: null,
+            purchased: { $sum: "$totalAmount" },
+            returned: { $sum: { $ifNull: ["$returnedTotal", 0] } },
+          },
+        },
       ]),
       SupplierPayment.aggregate([
         { $match: scoped },
@@ -268,7 +305,19 @@ export async function getTotalPayables(user: SessionUser): Promise<{
         {
           $group: {
             _id: null,
-            overdue: { $sum: { $subtract: ["$totalAmount", "$amountPaid"] } },
+            overdue: {
+              $sum: {
+                $subtract: [
+                  {
+                    $subtract: [
+                      "$totalAmount",
+                      { $ifNull: ["$returnedTotal", 0] },
+                    ],
+                  },
+                  "$amountPaid",
+                ],
+              },
+            },
           },
         },
       ]),
@@ -276,12 +325,15 @@ export async function getTotalPayables(user: SessionUser): Promise<{
     ]);
 
   const opening = (openingAgg[0] as { opening?: number } | undefined)?.opening ?? 0;
-  const purchased =
-    (purchaseAgg[0] as { purchased?: number } | undefined)?.purchased ?? 0;
+  const purchaseTotals = purchaseAgg[0] as
+    | { purchased?: number; returned?: number }
+    | undefined;
+  const purchased = purchaseTotals?.purchased ?? 0;
+  const returned = purchaseTotals?.returned ?? 0;
   const paid = (paymentAgg[0] as { paid?: number } | undefined)?.paid ?? 0;
 
   return {
-    outstanding: round2(opening + purchased - paid),
+    outstanding: round2(opening + purchased - returned - paid),
     overdue: round2((overdueAgg[0] as { overdue?: number } | undefined)?.overdue ?? 0),
     supplierCount,
   };

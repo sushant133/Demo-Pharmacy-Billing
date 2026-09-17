@@ -6,13 +6,7 @@
  * with an AirPrint or Wi-Fi printer.
  */
 
-const PRINTER_SERVICES = [
-  "000018f0-0000-1000-8000-00805f9b34fb",
-  "0000ff00-0000-1000-8000-00805f9b34fb",
-  "0000ae30-0000-1000-8000-00805f9b34fb",
-  "e7810a71-73ae-499d-8c15-faa9aef0c3f2",
-  "49535343-fe7d-4ae5-8fa9-9fafd205e455",
-];
+import { PRINTER_SERVICES } from "@/components/bills/printer-uuids";
 
 type GattChar = {
   properties: { write?: boolean; writeWithoutResponse?: boolean };

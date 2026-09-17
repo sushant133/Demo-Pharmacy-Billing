@@ -4,6 +4,7 @@ import { requirePageSession } from "@/lib/auth";
 import { resolveViewScope, switchableBranches } from "@/lib/branch-scope";
 import { withDbRead } from "@/lib/db";
 import { getSettings } from "@/lib/settings";
+import { getAlertOverview } from "@/lib/alerts";
 
 /**
  * Layout for every authenticated screen.
@@ -34,6 +35,13 @@ export default async function AppLayout({
     ]),
   );
 
+  // The count on the Alerts badge. Its own read, behind the 15s cache in
+  // getAlertOverview and a catch: a counter that cannot be computed must not
+  // take the whole shell - and with it every screen - down with it.
+  const alertCount = await withDbRead(() => getAlertOverview(scope))
+    .then((overview) => overview.actionableCount)
+    .catch(() => 0);
+
   const pharmacyName =
     settings.businessName.trim() || user.pharmacyName.trim() || "Pharmacy";
 
@@ -52,6 +60,7 @@ export default async function AppLayout({
         switchable: scope.switchable,
       }}
       branches={branches}
+      alertCount={alertCount}
     >
       {children}
     </AppShell>

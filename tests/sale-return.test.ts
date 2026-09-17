@@ -13,6 +13,9 @@ const line = {
   medicineName: "Cetzine 10mg",
   batchId: "b1",
   batchNumber: "CTZ-2201",
+  // Well in the future: these cases are about the money, not about expiry,
+  // which has its own suite in return-eligibility.test.ts.
+  expiryDate: new Date("2030-01-31T00:00:00.000Z"),
 };
 
 const sale = {
@@ -63,5 +66,55 @@ describe("planSaleReturn", () => {
 
   it("refuses an empty return", () => {
     expect(() => planSaleReturn(sale, [])).toThrow(FefoError);
+  });
+});
+
+/**
+ * The eligibility rules are enforced here, not only on the screen that picks
+ * the lines. A hand-made request to the API must not be able to credit a
+ * customer and put expired stock back in front of the next one.
+ */
+describe("planSaleReturn - eligibility is enforced server-side", () => {
+  const NOW = new Date("2026-09-15T10:00:00.000Z");
+
+  it("refuses an expired lot however the request was made", () => {
+    const expired = {
+      ...sale,
+      items: [{ ...line, expiryDate: new Date("2026-09-14T00:00:00.000Z") }],
+    };
+
+    expect(() =>
+      planSaleReturn(expired, [{ lineIndex: 0, quantity: 1 }], NOW),
+    ).toThrow(/expired/i);
+  });
+
+  it("names the medicine and lot it refused", () => {
+    const expired = {
+      ...sale,
+      items: [{ ...line, expiryDate: new Date("2020-01-01T00:00:00.000Z") }],
+    };
+
+    expect(() =>
+      planSaleReturn(expired, [{ lineIndex: 0, quantity: 1 }], NOW),
+    ).toThrow(/Cetzine 10mg \(CTZ-2201\)/);
+  });
+
+  it("still allows a lot that expires later today", () => {
+    const today = {
+      ...sale,
+      items: [{ ...line, expiryDate: new Date("2026-09-15T23:59:00.000Z") }],
+    };
+
+    expect(
+      planSaleReturn(today, [{ lineIndex: 0, quantity: 2 }], NOW).units,
+    ).toBe(2);
+  });
+
+  it("refuses a line already returned in full, with a clear message", () => {
+    const spent = { ...sale, items: [{ ...line, returnedQuantity: 10 }] };
+
+    expect(() =>
+      planSaleReturn(spent, [{ lineIndex: 0, quantity: 1 }], NOW),
+    ).toThrow(/already returned in full/i);
   });
 });

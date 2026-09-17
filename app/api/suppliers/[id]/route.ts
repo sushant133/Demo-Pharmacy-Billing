@@ -29,7 +29,37 @@ export const GET = withRoute<Ctx>(async (_req, ctx) => {
 
   const balance = await getSupplierBalance(id, pharmacyObjectId(user));
 
-  return ok({ id: String(supplier._id), ...supplier, balance });
+  /*
+    The posted invoices still owing something, oldest first.
+
+    Returned alongside the balance so a payment form can attach the money to
+    the bill it settles rather than dropping everything on account - which is
+    what keeps the payables ledger able to answer "which invoice is overdue?"
+    instead of only "how much do we owe them in total?".
+  */
+  const openInvoices = await Purchase.find({
+    supplierId: id,
+    ...pharmacyFilter(user),
+    status: "posted",
+    $expr: { $gt: ["$totalAmount", { $ifNull: ["$amountPaid", 0] }] },
+  })
+    .sort({ invoiceDate: 1, createdAt: 1 })
+    .select("grnNo totalAmount amountPaid dueDate")
+    .limit(100)
+    .lean();
+
+  return ok({
+    id: String(supplier._id),
+    ...supplier,
+    balance,
+    openInvoices: openInvoices.map((purchase) => ({
+      id: String(purchase._id),
+      grnNo: purchase.grnNo,
+      outstanding:
+        Math.round((purchase.totalAmount - (purchase.amountPaid ?? 0)) * 100) / 100,
+      dueDate: purchase.dueDate ?? null,
+    })),
+  });
 });
 
 /** PATCH /api/suppliers/:id */

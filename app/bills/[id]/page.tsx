@@ -77,6 +77,9 @@ export default async function BillPage({
   }
 
   const vatPct = Math.round((sale.vatRate ?? 0.13) * 100);
+  // 0 means the till was never told, which is how every bill written before
+  // the counter asked for it reads. It is not the same as "paid nothing".
+  const received = sale.amountReceived ?? 0;
   const shownBillNo = displayBillNo(sale.billNo);
   const voided = Boolean(sale.voidedAt);
   const alreadyPrinted = Boolean(sale.printedAt);
@@ -168,6 +171,15 @@ export default async function BillPage({
               vatLabel: `VAT ${vatPct}%`,
               vatAmount: money(sale.vatAmount),
               total: money(sale.totalAmount),
+              received: received > 0 ? money(received) : undefined,
+              change:
+                received - sale.totalAmount > 0.004
+                  ? money(received - sale.totalAmount)
+                  : undefined,
+              balance:
+                received > 0 && sale.totalAmount - received > 0.004
+                  ? money(sale.totalAmount - received)
+                  : undefined,
               words: amountInWords(sale.totalAmount),
               cashier: [sale.soldByName, sale.branchName].filter(Boolean).join(" · ") || undefined,
               terms: settings.billTerms || undefined,
@@ -281,6 +293,32 @@ export default async function BillPage({
             <dt>Grand total</dt>
             <dd>{money(sale.totalAmount)}</dd>
           </div>
+
+          {/*
+            Only printed when the till was actually told what was handed over.
+            A receipt claiming "Received 0.00" on a card payment would be
+            worse than saying nothing.
+          */}
+          {received > 0 ? (
+            <>
+              <div>
+                <dt>Received</dt>
+                <dd>{money(received)}</dd>
+              </div>
+              {received - sale.totalAmount > 0.004 ? (
+                <div>
+                  <dt>Change</dt>
+                  <dd>{money(received - sale.totalAmount)}</dd>
+                </div>
+              ) : null}
+              {sale.totalAmount - received > 0.004 ? (
+                <div>
+                  <dt>Balance due</dt>
+                  <dd>{money(sale.totalAmount - received)}</dd>
+                </div>
+              ) : null}
+            </>
+          ) : null}
         </dl>
 
         <p className="receipt-words">{amountInWords(sale.totalAmount)}</p>
