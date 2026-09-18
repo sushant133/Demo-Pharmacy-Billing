@@ -225,15 +225,15 @@ export default async function PurchaseReturnsPage({
                   Already sent back
                 </p>
               </div>
-              <TableWrap>
+              <TableWrap minWidth="36rem" pinFirst>
                 <thead>
                   <tr>
                     <th className="th">When</th>
                     <th className="th">Reason</th>
-                    <th className="th hidden sm:table-cell">Credit note</th>
+                    <th className="th">Credit note</th>
                     <th className="th text-right">Units</th>
                     <th className="th text-right">Credit</th>
-                    <th className="th hidden text-right lg:table-cell">By</th>
+                    <th className="th text-right">By</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -243,7 +243,7 @@ export default async function PurchaseReturnsPage({
                         {formatDate(entry.returnedAt as unknown as Date)}
                       </td>
                       <td className="td text-slate-700">{entry.reason}</td>
-                      <td className="td hidden font-mono text-xs text-slate-500 sm:table-cell">
+                      <td className="td font-mono text-xs text-slate-500">
                         {entry.creditNoteNo || "—"}
                       </td>
                       <td className="td tnum text-right text-slate-700">
@@ -252,7 +252,7 @@ export default async function PurchaseReturnsPage({
                       <td className="td tnum text-right font-medium text-slate-900">
                         {money(entry.totalAmount)}
                       </td>
-                      <td className="td hidden text-right text-slate-500 lg:table-cell">
+                      <td className="td text-right text-slate-500">
                         {entry.returnedByName}
                       </td>
                     </tr>

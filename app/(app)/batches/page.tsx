@@ -12,6 +12,7 @@ import { can } from "@/lib/roles";
 import { Batch } from "@/models/Batch";
 import { Medicine } from "@/models/Medicine";
 import { Card, EmptyState, PageHeader, Pagination, StatCard, TableWrap, cx } from "@/components/ui";
+import { ActionBar, ActionIcon } from "@/components/action-icons";
 import { BatchFormPanel } from "@/components/batches/BatchFormPanel";
 
 export const metadata: Metadata = { title: "Stock & batches" };
@@ -240,8 +241,16 @@ export default async function BatchesPage({
           />
         ) : (
           <>
-            <TableWrap>
+            <TableWrap minWidth="54rem" pinFirst pinLast>
               <thead className="border-b border-slate-200 bg-slate-50">
+              {/*
+                The lot register is nine columns wide. On a phone it keeps the
+                four that identify a lot and say whether to worry about it -
+                medicine, expiry, quantity, and what to do - and folds the lot
+                number and its GRN under the medicine name. Cost, sale price
+                and stock value are a stocktaking question, not a counter one,
+                so they return with the width to hold them.
+              */}
                 <tr>
                   <th className="th">Medicine</th>
                   <th className="th">Batch no</th>
@@ -251,7 +260,9 @@ export default async function BatchesPage({
                   <th className="th text-right">Cost</th>
                   <th className="th text-right">Sale</th>
                   <th className="th text-right">Value</th>
-                  {editable ? <th className="th"></th> : null}
+                  {editable ? (
+                    <th className="th text-right col-actions">Actions</th>
+                  ) : null}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -291,11 +302,18 @@ export default async function BatchesPage({
                           <span className="text-slate-300">—</span>
                         )}
                       </td>
+                      {/*
+                        The date and its verdict stack on a phone: side by
+                        side they force the column to the width of both, which
+                        is what pushed this table off a 360px screen.
+                      */}
                       <td className="td">
-                        <span className="text-slate-700">{formatDate(expiry)}</span>
+                        <span className="block whitespace-nowrap text-slate-700">
+                          {formatDate(expiry)}
+                        </span>
                         <span
                           className={cx(
-                            "badge ml-2",
+                            "badge mt-0.5 sm:mt-0 sm:ml-2 sm:inline-flex",
                             expiryTone(days),
                           )}
                         >
@@ -328,21 +346,22 @@ export default async function BatchesPage({
                         {money(batch.quantity * batch.costPrice)}
                       </td>
                       {editable ? (
-                        <td className="td text-right whitespace-nowrap">
-                          <Link
-                            href={`/batches?edit=${String(batch._id)}${baseQuery.toString() ? "&" + baseQuery.toString() : ""}`}
-                            className="text-xs font-medium text-brand-700 hover:underline"
-                          >
-                            Edit
-                          </Link>
-                          {medicine?._id && can(user.role, "purchase:write") ? (
-                            <Link
-                              href={`/purchases/new?medicineId=${String(medicine._id)}`}
-                              className="ml-3 text-xs font-medium text-slate-500 hover:text-brand-700"
-                            >
-                              Add stock
-                            </Link>
-                          ) : null}
+                        <td className="td col-actions">
+                          <ActionBar>
+                            <ActionIcon
+                              label="Edit"
+                              icon="edit"
+                              tone="primary"
+                              href={`/batches?edit=${String(batch._id)}${baseQuery.toString() ? "&" + baseQuery.toString() : ""}`}
+                            />
+                            {medicine?._id && can(user.role, "purchase:write") ? (
+                              <ActionIcon
+                                label="Add stock"
+                                icon="add"
+                                href={`/purchases/new?medicineId=${String(medicine._id)}`}
+                              />
+                            ) : null}
+                          </ActionBar>
                         </td>
                       ) : null}
                     </tr>

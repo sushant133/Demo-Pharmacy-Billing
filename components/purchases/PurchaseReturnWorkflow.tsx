@@ -176,7 +176,7 @@ export function PurchaseReturnWorkflow({
           </p>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="table-scroll table-scroll-shadow table-pin-first">
           <table className="w-full min-w-[46rem] border-collapse">
             <thead>
               <tr>

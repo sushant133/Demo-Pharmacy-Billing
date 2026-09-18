@@ -98,7 +98,7 @@ export default async function BillPage({
       </div>
 
       {!issuer.pan ? (
-        <p className="no-print mx-auto mb-3 max-w-[80mm] rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        <p className="no-print mx-auto mb-3 max-w-[min(80mm,100%)] rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
           No seller PAN is set, and a tax invoice without one is not valid. Add
           it under{" "}
           <Link href="/settings" className="font-medium underline">

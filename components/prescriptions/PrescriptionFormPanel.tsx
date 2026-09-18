@@ -209,7 +209,7 @@ export function PrescriptionFormPanel({ returnHref = "/prescriptions" }: { retur
             />
           </Field>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Field label="Phone" htmlFor="patientPhone">
               <input
                 id="patientPhone"
@@ -260,7 +260,7 @@ export function PrescriptionFormPanel({ returnHref = "/prescriptions" }: { retur
             />
           </Field>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field
               label="NMC reg. no"
               htmlFor="doctorRegNo"
@@ -284,7 +284,7 @@ export function PrescriptionFormPanel({ returnHref = "/prescriptions" }: { retur
             </Field>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <p className="label">Written on</p>
               <DualDateField
@@ -356,7 +356,7 @@ export function PrescriptionFormPanel({ returnHref = "/prescriptions" }: { retur
               )}
 
               {line.medicineId ? (
-                <div className="mt-3 grid grid-cols-3 gap-2">
+                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
                   <Field label="Dosage" htmlFor={`dosage-${index}`} className="col-span-2">
                     <input
                       id={`dosage-${index}`}

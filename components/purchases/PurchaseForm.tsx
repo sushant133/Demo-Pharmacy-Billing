@@ -525,7 +525,12 @@ export function PurchaseForm({
           </button>
         </div>
 
-        <div className="overflow-x-auto">
+        {/*
+          A data-entry grid, not a report: eleven live inputs per line. It
+          keeps its width and scrolls, with the medicine column pinned so the
+          line being typed into never loses its name.
+        */}
+        <div className="table-scroll table-scroll-shadow table-pin-first">
           <table className="w-full min-w-[1180px] border-collapse">
             <thead className="border-b border-slate-200 bg-slate-50">
               <tr>

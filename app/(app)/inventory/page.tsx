@@ -27,6 +27,7 @@ import {
   TableWrap,
   cx,
 } from "@/components/ui";
+import { ActionBar, ActionIcon } from "@/components/action-icons";
 import { ModuleTabs } from "@/components/ModuleScaffold";
 import { INVENTORY_TABS } from "./tabs";
 
@@ -406,21 +407,30 @@ export default async function InventoryPage({
           />
         ) : (
           <>
-            <TableWrap>
+            <TableWrap minWidth="48rem" pinFirst pinLast>
               <thead>
+                {/*
+                  Four columns on a phone: what it is, how much is left,
+                  whether that is a problem, and what to do. Price and expiry
+                  are folded into the first two cells rather than dropped -
+                  both are things a counter asks for - and return to columns
+                  of their own from `sm` and `md`.
+                */}
                 <tr>
                   <th className="th">Medicine</th>
                   <th className="th text-right">On hand</th>
                   {canSeeMoney ? (
-                    <th className="th hidden text-right lg:table-cell">
+                    <th className="th text-right">
                       Purchase price
                     </th>
                   ) : null}
-                  <th className="th text-right">Selling price</th>
-                  <th className="th hidden text-right lg:table-cell">Reorder at</th>
+                  <th className="th text-right">
+                    Selling price
+                  </th>
+                  <th className="th text-right">Reorder at</th>
                   <th className="th">Expiry</th>
                   <th className="th">Status</th>
-                  <th className="th text-right">Actions</th>
+                  <th className="th text-right col-actions">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -496,7 +506,7 @@ export default async function InventoryPage({
                       </td>
 
                       {canSeeMoney ? (
-                        <td className="td tnum hidden text-right lg:table-cell">
+                        <td className="td tnum text-right">
                           <span className="text-slate-700">{money(avgCost)}</span>
                           {mixedCost ? (
                             <span
@@ -533,7 +543,7 @@ export default async function InventoryPage({
                         ) : null}
                       </td>
 
-                      <td className="td tnum hidden text-right text-slate-500 lg:table-cell">
+                      <td className="td tnum text-right text-slate-500">
                         {row.reorderLevel == null ? "—" : integer(row.reorderLevel)}
                       </td>
 
@@ -567,26 +577,27 @@ export default async function InventoryPage({
                         <Badge tone={state.tone}>{state.label}</Badge>
                       </td>
 
-                      <td className="td text-right whitespace-nowrap">
-                        <Link
-                          href={`/batches?medicineId=${row.medicineId}`}
-                          className="text-xs font-medium text-brand-700 hover:underline"
-                        >
-                          View lots
-                        </Link>
-                        {/*
-                          Carries the medicine name as the lot search, so the
-                          adjustment screen opens with it already typed rather
-                          than asking the user to retype what they just clicked.
-                        */}
-                        {canAdjust ? (
-                          <Link
-                            href={`/inventory/adjustments?q=${encodeURIComponent(row.name)}`}
-                            className="ml-3 text-xs font-medium text-slate-500 hover:text-brand-700"
-                          >
-                            Adjust stock
-                          </Link>
-                        ) : null}
+                      <td className="td col-actions">
+                        <ActionBar>
+                          <ActionIcon
+                            label="View lots"
+                            icon="lots"
+                            tone="primary"
+                            href={`/batches?medicineId=${row.medicineId}`}
+                          />
+                          {/*
+                            Carries the medicine name as the lot search, so the
+                            adjustment screen opens with it already typed rather
+                            than asking the user to retype what they just clicked.
+                          */}
+                          {canAdjust ? (
+                            <ActionIcon
+                              label="Adjust stock"
+                              icon="adjust"
+                              href={`/inventory/adjustments?q=${encodeURIComponent(row.name)}`}
+                            />
+                          ) : null}
+                        </ActionBar>
                       </td>
                     </tr>
                   );

@@ -23,6 +23,7 @@ import {
   TableWrap,
   cx,
 } from "@/components/ui";
+import { ActionBar, ActionIcon } from "@/components/action-icons";
 
 export const metadata: Metadata = { title: "Alerts" };
 export const dynamic = "force-dynamic";
@@ -237,8 +238,15 @@ function ExpiryTable({
         />
       ) : (
         <>
-          <TableWrap>
+          <TableWrap minWidth="48rem" pinFirst>
             <thead className="border-b border-slate-200 bg-slate-50">
+              {/*
+                Eight columns do not fit a phone. The lot number, the shelf
+                life and the GRN fold under the medicine name; the sales rate
+                and the value at risk are analysis rather than alert, so they
+                wait for a wider screen. What is left - what, how many, how
+                bad - is the whole point of an alerts screen.
+              */}
               <tr>
                 <th className="th">Medicine</th>
                 <th className="th">Batch</th>
@@ -246,14 +254,18 @@ function ExpiryTable({
                 <th className="th">Status</th>
                 <th className="th text-right">Qty</th>
                 <th className="th text-right">Sells/day</th>
-                {showMoney ? <th className="th text-right">At risk</th> : null}
+                {showMoney ? (
+                  <th className="th text-right">At risk</th>
+                ) : null}
                 <th className="th">From</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {result.rows.map((row) => (
                 <tr key={row.batchId} className="hover:bg-slate-50">
-                  <td className="td font-medium text-slate-900">{row.medicineName}</td>
+                  <td className="td font-medium text-slate-900">
+                    {row.medicineName}
+                  </td>
                   <td className="td font-mono text-xs text-slate-600">
                     {row.batchNumber}
                   </td>
@@ -381,8 +393,15 @@ function StockTable({
         />
       ) : (
         <>
-          <TableWrap>
+          <TableWrap minWidth="58rem" pinFirst pinLast>
             <thead className="border-b border-slate-200 bg-slate-50">
+              {/*
+                Nine columns, of which a phone keeps four: what it is, how
+                much is left, how bad that is, and how many to buy. The
+                category, the sales rate, the days of cover and the tied-up
+                value are all reasoning about that decision and reappear as
+                the screen widens.
+              */}
               <tr>
                 <th className="th">Medicine</th>
                 <th className="th">Category</th>
@@ -395,8 +414,12 @@ function StockTable({
                 ) : (
                   <th className="th text-right">Order</th>
                 )}
-                {showMoney ? <th className="th text-right">Value</th> : null}
-                {canBuy && !isDead ? <th className="th"></th> : null}
+                {showMoney ? (
+                  <th className="th text-right">Value</th>
+                ) : null}
+                {canBuy && !isDead ? (
+                  <th className="th text-right col-actions">Actions</th>
+                ) : null}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -408,7 +431,9 @@ function StockTable({
                       <p className="text-xs text-slate-500">{row.genericName}</p>
                     ) : null}
                   </td>
-                  <td className="td text-slate-600">{row.category}</td>
+                  <td className="td text-slate-600">
+                    {row.category}
+                  </td>
                   <td className="td tnum text-right font-medium">
                     {integer(row.stockQuantity)}
                     <span className="ml-1 text-xs font-normal text-slate-400 capitalize">
@@ -468,13 +493,15 @@ function StockTable({
                     </td>
                   ) : null}
                   {canBuy && !isDead ? (
-                    <td className="td text-right">
-                      <Link
-                        href={`/purchases/new?medicineId=${row.medicineId}`}
-                        className="text-xs font-medium text-brand-700 hover:underline"
-                      >
-                        Add stock
-                      </Link>
+                    <td className="td col-actions">
+                      <ActionBar>
+                        <ActionIcon
+                          label="Add stock"
+                          icon="add"
+                          tone="primary"
+                          href={`/purchases/new?medicineId=${row.medicineId}`}
+                        />
+                      </ActionBar>
                     </td>
                   ) : null}
                 </tr>

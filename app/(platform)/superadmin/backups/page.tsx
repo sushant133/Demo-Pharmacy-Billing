@@ -31,14 +31,20 @@ export default async function BackupsPage() {
             }
           />
         ) : (
-          <TableWrap>
+          <TableWrap minWidth="32rem" pinFirst pinLast>
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs tracking-wide text-slate-500 uppercase">
-                <th className="px-5 py-3 font-medium">Pharmacy</th>
-                <th className="px-5 py-3 font-medium">Owner</th>
-                <th className="px-5 py-3 font-medium">Status</th>
-                <th className="px-5 py-3 font-medium">Created</th>
+                <th className="px-4 py-3 font-medium sm:px-5">Pharmacy</th>
                 <th className="px-5 py-3 font-medium">
+                  Owner
+                </th>
+                <th className="px-5 py-3 font-medium">
+                  Status
+                </th>
+                <th className="px-5 py-3 font-medium">
+                  Created
+                </th>
+                <th className="px-4 py-3 font-medium sm:px-5 col-actions">
                   <span className="sr-only">Download</span>
                 </th>
               </tr>
@@ -46,7 +52,7 @@ export default async function BackupsPage() {
             <tbody>
               {rows.map((row) => (
                 <tr key={row.id} className="border-b border-slate-50 last:border-0">
-                  <td className="px-5 py-3">
+                  <td className="px-4 py-3 sm:px-5">
                     <Link
                       href={`/superadmin/pharmacies/${row.id}`}
                       className="font-medium text-slate-900 hover:text-brand-700"
@@ -57,7 +63,9 @@ export default async function BackupsPage() {
                   </td>
                   <td className="px-5 py-3">
                     <p>{row.ownerName}</p>
-                    <p className="text-xs text-slate-500">{row.ownerEmail}</p>
+                    <p className="text-xs break-all text-slate-500">
+                      {row.ownerEmail}
+                    </p>
                   </td>
                   <td className="px-5 py-3">
                     <Badge tone={row.status === "active" ? "green" : "amber"}>
@@ -67,12 +75,16 @@ export default async function BackupsPage() {
                   <td className="px-5 py-3 text-slate-600">
                     {row.createdAt ? formatDateTime(row.createdAt) : "—"}
                   </td>
-                  <td className="px-5 py-3 text-right">
+                  <td className="px-4 py-3 text-right sm:px-5 col-actions">
+                    {/*
+                      The label shortens rather than the button wrapping to two
+                      lines inside a 90px column.
+                    */}
                     <a
                       href={`/api/pharmacies/${row.id}/backup`}
-                      className="btn-secondary px-3 py-1.5 text-xs"
+                      className="btn-secondary px-3 py-1.5 text-xs whitespace-nowrap"
                     >
-                      Download backup
+                      Download<span className="hidden sm:inline"> backup</span>
                     </a>
                   </td>
                 </tr>

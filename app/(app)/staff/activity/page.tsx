@@ -313,14 +313,14 @@ export default async function ActivityPage({
           />
         ) : (
           <>
-            <TableWrap>
+            <TableWrap minWidth="32rem" pinFirst>
               <thead>
                 <tr>
                   <th className="th">When</th>
                   <th className="th">Who</th>
                   <th className="th">Did what</th>
-                  <th className="th hidden lg:table-cell">To</th>
-                  <th className="th hidden xl:table-cell">Detail</th>
+                  <th className="th">To</th>
+                  <th className="th">Detail</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -343,13 +343,9 @@ export default async function ActivityPage({
 
                     <td className="td">
                       <Badge tone={ACTIVITY_TONE[entry.kind]}>{entry.action}</Badge>
-                      {/* The columns hidden on a phone, folded in underneath. */}
-                      <span className="mt-0.5 block text-[11px] text-slate-400 lg:hidden">
-                        {entry.subject}
-                      </span>
                     </td>
 
-                    <td className="td hidden lg:table-cell">
+                    <td className="td">
                       {entry.href ? (
                         <Link
                           href={entry.href}
@@ -364,7 +360,7 @@ export default async function ActivityPage({
                       )}
                     </td>
 
-                    <td className="td hidden max-w-[18rem] truncate text-slate-600 xl:table-cell">
+                    <td className="td max-w-[18rem] truncate text-slate-600">
                       {entry.detail || "—"}
                     </td>
                   </tr>

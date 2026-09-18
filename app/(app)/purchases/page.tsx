@@ -16,6 +16,7 @@ import {
 import { pharmacyFilter } from "@/lib/tenant";
 import { Purchase } from "@/models/Purchase";
 import { Supplier } from "@/models/Supplier";
+import { ActionBar, ActionIcon } from "@/components/action-icons";
 import { DualDateField } from "@/components/DualDateField";
 import {
   Badge,
@@ -354,8 +355,19 @@ export default async function PurchasesPage({
           />
         ) : (
           <>
-            <TableWrap>
+            <TableWrap minWidth="58rem" pinFirst pinLast>
               <thead className="border-b border-slate-200 bg-slate-50">
+                {/*
+                  Ten columns. A phone keeps the GRN number, the total, where
+                  the delivery stands and what can be done with it; the
+                  supplier and the received date fold under the number, and
+                  the rest - invoice number, units, amount due, payment badge -
+                  come back as the screen earns them.
+
+                  Hiding a sortable heading also removes its sort control at
+                  that width, which is correct: a column you cannot see is not
+                  one you want to order by.
+                */}
                 <tr>
                   <SortableTh label="GRN no" href={sortHref("grn")} active={sort === "grn"} dir={dir} />
                   <SortableTh label="Supplier" href={sortHref("supplier")} active={sort === "supplier"} dir={dir} />
@@ -363,10 +375,10 @@ export default async function PurchasesPage({
                   <SortableTh label="Received" href={sortHref("received")} active={sort === "received"} dir={dir} />
                   <th className="th text-right">Units</th>
                   <SortableTh label="Total" href={sortHref("total")} active={sort === "total"} dir={dir} align="right" />
-                  <SortableTh label="Due" href={sortHref("due")} active={sort === "due"} dir={dir} align="right" className="hidden lg:table-cell" />
+                  <SortableTh label="Due" href={sortHref("due")} active={sort === "due"} dir={dir} align="right" />
                   <th className="th">Status</th>
                   <th className="th">Payment</th>
-                  <th className="th text-right">Actions</th>
+                  <th className="th text-right col-actions">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -408,11 +420,15 @@ export default async function PurchasesPage({
                       <td className="td font-medium text-slate-900">
                         {purchase.supplierName}
                       </td>
-                      <td className="td text-slate-600">{purchase.invoiceNo || "—"}</td>
+                      <td className="td text-slate-600">
+                        {purchase.invoiceNo || "—"}
+                      </td>
                       <td className="td whitespace-nowrap text-slate-600">
                         {formatDate(purchase.receivedDate)}
                       </td>
-                      <td className="td tnum text-right">{integer(units)}</td>
+                      <td className="td tnum text-right">
+                        {integer(units)}
+                      </td>
                       <td className="td tnum text-right font-semibold text-slate-900">
                         {money(purchase.totalAmount)}
                       </td>
@@ -422,7 +438,7 @@ export default async function PurchasesPage({
                         sent back. Only a posted GRN owes anything: a draft is
                         not yet a liability and a cancelled one never was.
                       */}
-                      <td className="td tnum hidden text-right lg:table-cell">
+                      <td className="td tnum text-right">
                         {purchase.status === "posted" ? (
                           outstanding > 0 ? (
                             <span
@@ -489,31 +505,31 @@ export default async function PurchasesPage({
                         controls on every row, each is simply absent when it
                         would not work.
                       */}
-                      <td className="td text-right whitespace-nowrap">
-                        <Link
-                          href={`/purchases/${id}`}
-                          className="text-xs font-medium text-brand-700 hover:underline"
-                        >
-                          View
-                        </Link>
+                      <td className="td col-actions">
+                        <ActionBar>
+                          <ActionIcon
+                            label="View details"
+                            icon="view"
+                            tone="primary"
+                            href={`/purchases/${id}`}
+                          />
 
-                        {canWrite && purchase.status === "draft" ? (
-                          <Link
-                            href={`/purchases/${id}/edit`}
-                            className="ml-3 text-xs font-medium text-slate-500 hover:text-brand-700"
-                          >
-                            Edit
-                          </Link>
-                        ) : null}
+                          {canWrite && purchase.status === "draft" ? (
+                            <ActionIcon
+                              label="Edit"
+                              icon="edit"
+                              href={`/purchases/${id}/edit`}
+                            />
+                          ) : null}
 
-                        {canPay && purchase.status === "posted" && outstanding > 0 ? (
-                          <Link
-                            href={`/payments?supplierId=${String(purchase.supplierId)}&purchaseId=${id}`}
-                            className="ml-3 text-xs font-medium text-slate-500 hover:text-brand-700"
-                          >
-                            Pay
-                          </Link>
-                        ) : null}
+                          {canPay && purchase.status === "posted" && outstanding > 0 ? (
+                            <ActionIcon
+                              label="Record payment"
+                              icon="money"
+                              href={`/payments?supplierId=${String(purchase.supplierId)}&purchaseId=${id}`}
+                            />
+                          ) : null}
+                        </ActionBar>
                       </td>
                     </tr>
                   );

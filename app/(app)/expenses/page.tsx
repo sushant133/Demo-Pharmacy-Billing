@@ -20,6 +20,7 @@ import {
 import { expenseTotals } from "@/lib/expenses";
 import { formatDate, integer, money } from "@/lib/format";
 import { Expense } from "@/models/Expense";
+import { ActionBar, ActionIcon } from "@/components/action-icons";
 import { ExpenseFormPanel } from "@/components/finance/ExpenseFormPanel";
 import {
   Badge,
@@ -345,16 +346,16 @@ export default async function ExpensesPage({
           />
         ) : (
           <>
-            <TableWrap>
+            <TableWrap minWidth="42rem" pinFirst pinLast>
               <thead>
                 <tr>
                   <th className="th">Paid on</th>
                   <th className="th">What for</th>
-                  <th className="th hidden sm:table-cell">Category</th>
-                  <th className="th hidden lg:table-cell">Paid to</th>
-                  <th className="th hidden xl:table-cell">Method</th>
+                  <th className="th">Category</th>
+                  <th className="th">Paid to</th>
+                  <th className="th">Method</th>
                   <th className="th text-right">Amount</th>
-                  <th className="th text-right">Actions</th>
+                  <th className="th text-right col-actions">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -369,37 +370,36 @@ export default async function ExpensesPage({
                         <span className="block max-w-[16rem] truncate font-medium text-slate-900">
                           {row.description}
                         </span>
-                        <span className="block text-[11px] text-slate-400 sm:hidden">
-                          {EXPENSE_CATEGORY_LABELS[row.category as ExpenseCategory]}
-                        </span>
                         {row.reference ? (
                           <span className="block font-mono text-[11px] text-slate-400">
                             {row.reference}
                           </span>
                         ) : null}
                       </td>
-                      <td className="td hidden sm:table-cell">
+                      <td className="td">
                         <Badge tone="slate">
                           {EXPENSE_CATEGORY_LABELS[row.category as ExpenseCategory]}
                         </Badge>
                       </td>
-                      <td className="td hidden max-w-[12rem] truncate text-slate-600 lg:table-cell">
+                      <td className="td max-w-[12rem] truncate text-slate-600">
                         {row.payee || "—"}
                       </td>
-                      <td className="td hidden text-slate-600 xl:table-cell">
+                      <td className="td text-slate-600">
                         {EXPENSE_METHOD_LABELS[row.method as ExpenseMethod] ??
                           row.method}
                       </td>
                       <td className="td tnum text-right font-semibold text-slate-900">
                         {money(row.amount)}
                       </td>
-                      <td className="td text-right">
-                        <Link
-                          href={`/expenses?edit=${id}${baseQuery.toString() ? "&" + baseQuery.toString() : ""}`}
-                          className="text-xs font-medium text-brand-700 hover:underline"
-                        >
-                          Edit
-                        </Link>
+                      <td className="td col-actions">
+                        <ActionBar>
+                          <ActionIcon
+                            label="Edit"
+                            icon="edit"
+                            tone="primary"
+                            href={`/expenses?edit=${id}${baseQuery.toString() ? "&" + baseQuery.toString() : ""}`}
+                          />
+                        </ActionBar>
                       </td>
                     </tr>
                   );

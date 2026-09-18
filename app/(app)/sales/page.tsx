@@ -24,6 +24,7 @@ import {
 } from "@/lib/sale-status";
 import { adIsoToBsIso } from "@/lib/bs-date";
 import { DualDateField } from "@/components/DualDateField";
+import { ActionBar, ActionIcon } from "@/components/action-icons";
 import { SaleRow } from "@/components/sales/SaleRow";
 import {
   Badge,
@@ -359,7 +360,7 @@ export default async function SalesPage({
         workplace, and putting it in the shared component would have redrawn
         the top of all sixty-odd screens to solve a problem on one of them.
       */}
-      <header className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <header className="mb-4 flex flex-col gap-3 sm:gap-4 md:flex-row md:items-start md:justify-between">
         <div className="flex min-w-0 items-center gap-3.5">
           <span
             aria-hidden="true"
@@ -381,7 +382,7 @@ export default async function SalesPage({
           </span>
 
           <div className="min-w-0">
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+            <h1 className="text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl lg:text-3xl">
               Sales
             </h1>
             {/*
@@ -391,7 +392,7 @@ export default async function SalesPage({
               half of what the user had just set - and the Nepali date is the
               one most of this shop's paperwork is filed under.
             */}
-            <p className="mt-0.5 truncate text-sm text-slate-500">
+            <p className="mt-0.5 text-xs text-pretty text-slate-500 sm:text-sm">
               {from === to ? "Bills for " : "Bills from "}
               <span className="font-medium text-slate-700">{dualDate(from)}</span>
               {from === to ? null : (
@@ -404,7 +405,7 @@ export default async function SalesPage({
           </div>
         </div>
 
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <div className="flex w-full flex-wrap items-center gap-2 md:w-auto md:shrink-0">
           {/*
             A <details> menu rather than a React dropdown: it opens, closes on
             Escape, and is keyboard-reachable with no JavaScript and no state
@@ -731,7 +732,7 @@ export default async function SalesPage({
           />
         ) : (
           <>
-            <TableWrap>
+            <TableWrap minWidth="58rem" pinFirst pinLast>
               <thead className="border-b border-slate-200 bg-slate-50">
                 <tr>
                   <SortableTh
@@ -760,11 +761,11 @@ export default async function SalesPage({
                     among the first to go: it is the column you look up on
                     purpose, not one you scan.
                   */}
-                  <th className="th hidden xl:table-cell">Phone</th>
-                  <th className="th hidden text-right lg:table-cell">Items</th>
-                  <th className="th hidden sm:table-cell">Payment</th>
+                  <th className="th">Phone</th>
+                  <th className="th text-right">Items</th>
+                  <th className="th">Payment</th>
                   <th className="th">Status</th>
-                  <th className="th hidden lg:table-cell">Cashier</th>
+                  <th className="th">Cashier</th>
                   <SortableTh
                     label="Total"
                     href={sortHref("total")}
@@ -772,7 +773,7 @@ export default async function SalesPage({
                     dir={dir}
                     align="right"
                   />
-                  <th className="th text-right">Actions</th>
+                  <th className="th text-right col-actions">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -810,13 +811,6 @@ export default async function SalesPage({
                         >
                           {sale.billNo}
                         </Link>
-                        {/* The columns hidden on a phone, folded in under the bill no. */}
-                        <span className="mt-0.5 block text-[11px] text-slate-400 sm:hidden">
-                          {units} item{units === 1 ? "" : "s"}
-                          <span className="mx-1 text-slate-300">·</span>
-                          {PAYMENT_MODE_LABELS[sale.paymentMode as PaymentMode] ??
-                            sale.paymentMode}
-                        </span>
                       </td>
                       <td className="td tnum whitespace-nowrap text-slate-600">
                         {formatDateTime(sale.createdAt as unknown as Date)}
@@ -829,15 +823,8 @@ export default async function SalesPage({
                             </span>
                           )}
                         </span>
-                        {/* Phone has its own column from xl up; below that it
-                            folds in here rather than disappearing. */}
-                        {sale.customerPhone ? (
-                          <span className="tnum block text-[11px] text-slate-400 xl:hidden">
-                            {sale.customerPhone}
-                          </span>
-                        ) : null}
                       </td>
-                      <td className="td tnum hidden whitespace-nowrap text-slate-600 xl:table-cell">
+                      <td className="td tnum whitespace-nowrap text-slate-600">
                         {sale.customerPhone ? (
                           // tel: so a tablet at the counter can call a customer
                           // about an unpaid bill straight from the register.
@@ -852,14 +839,14 @@ export default async function SalesPage({
                         )}
                       </td>
                       <td
-                        className="td tnum hidden text-right lg:table-cell"
+                        className="td tnum text-right"
                         title={itemTooltip}
                       >
                         <span className="cursor-help border-b border-dotted border-slate-300">
                           {units}
                         </span>
                       </td>
-                      <td className="td hidden sm:table-cell">
+                      <td className="td">
                         <Badge tone="slate">
                           {PAYMENT_MODE_LABELS[sale.paymentMode as PaymentMode] ??
                             sale.paymentMode}
@@ -878,27 +865,26 @@ export default async function SalesPage({
                           </span>
                         ) : null}
                       </td>
-                      <td className="td hidden text-slate-600 lg:table-cell">
+                      <td className="td text-slate-600">
                         {sale.soldByName || "—"}
                       </td>
                       <td className="td tnum text-right font-semibold text-slate-900">
                         {money(sale.totalAmount)}
                       </td>
-                      <td className="td">
-                        <div className="flex items-center justify-end gap-3 whitespace-nowrap">
-                          <Link
+                      <td className="td col-actions">
+                        <ActionBar>
+                          <ActionIcon
+                            label="View details"
+                            icon="view"
+                            tone="primary"
                             href={`/sales/${String(sale._id)}`}
-                            className="text-xs font-medium text-brand-700 hover:underline"
-                          >
-                            View details
-                          </Link>
-                          <Link
+                          />
+                          <ActionIcon
+                            label="Print"
+                            icon="print"
                             href={`/bills/${String(sale._id)}`}
-                            className="hidden text-xs font-medium text-slate-500 hover:text-brand-700 sm:inline"
-                          >
-                            Print
-                          </Link>
-                        </div>
+                          />
+                        </ActionBar>
                       </td>
                     </SaleRow>
                   );

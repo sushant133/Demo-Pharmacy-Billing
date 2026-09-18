@@ -116,10 +116,14 @@ export default async function PharmaciesPage({
           <TableWrap>
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs tracking-wide text-slate-500 uppercase">
-                <th className="px-5 py-3 font-medium">Pharmacy</th>
-                <th className="px-5 py-3 font-medium">Owner login</th>
-                <th className="px-5 py-3 font-medium">Status</th>
-                <th className="px-5 py-3 font-medium">Last sign-in</th>
+                <th className="px-4 py-3 font-medium sm:px-5">Pharmacy</th>
+                <th className="px-5 py-3 font-medium">
+                  Owner login
+                </th>
+                <th className="px-4 py-3 font-medium sm:px-5">Status</th>
+                <th className="px-5 py-3 font-medium">
+                  Last sign-in
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -136,7 +140,9 @@ export default async function PharmaciesPage({
                   </td>
                   <td className="px-5 py-3">
                     <p>{row.ownerName}</p>
-                    <p className="text-xs text-slate-500">{row.ownerEmail}</p>
+                    <p className="text-xs break-all text-slate-500">
+                      {row.ownerEmail}
+                    </p>
                   </td>
                   <td className="px-5 py-3">
                     <Badge tone={row.status === "active" ? "green" : "amber"}>

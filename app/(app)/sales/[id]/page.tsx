@@ -213,7 +213,9 @@ export default async function SaleDetailPage({
             Dispensed items
           </h2>
 
-          <TableWrap>
+          {/* What was dispensed, from which lot, at what price - the record a
+              pharmacist is answerable for, so none of it is dropped. */}
+          <TableWrap minWidth="40rem" pinFirst>
             <thead className="border-b border-slate-200 bg-slate-50">
               <tr>
                 <th className="th">Medicine</th>

@@ -55,22 +55,32 @@ export function SlideOver({
         className="absolute inset-0 bg-slate-900/40"
       />
 
+      {/*
+        `h-dvh`, not `h-full`: on a phone browser the URL bar is part of the
+        layout viewport, so a 100%-height panel put its footer - the Save
+        button - under the chrome, and the only way to reach it was to scroll
+        a panel that reported itself as fully scrolled.
+      */}
       <div
         ref={panelRef}
-        className="relative flex h-full w-full max-w-md flex-col bg-white shadow-xl"
+        className="relative flex h-dvh w-full max-w-md flex-col bg-white shadow-xl"
       >
-        <header className="flex items-start justify-between border-b border-slate-200 px-5 py-4">
-          <div>
-            <h2 className="text-base font-semibold text-slate-900">{title}</h2>
+        <header className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-3.5 sm:px-5 sm:py-4">
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold text-balance text-slate-900">
+              {title}
+            </h2>
             {description ? (
-              <p className="mt-0.5 text-xs text-slate-500">{description}</p>
+              <p className="mt-0.5 text-xs break-words text-slate-500">
+                {description}
+              </p>
             ) : null}
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="-mt-1 -mr-1 rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            className="-mt-1 -mr-1 shrink-0 rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
           >
             <svg
               className="h-5 w-5"
@@ -84,10 +94,18 @@ export function SlideOver({
           </button>
         </header>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
+        <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
+          {children}
+        </div>
 
+        {/*
+          The footer clears the home indicator on a gesture-navigation phone,
+          where the bottom 34px of the viewport is not reliably tappable.
+        */}
         {footer ? (
-          <footer className="border-t border-slate-200 px-5 py-4">{footer}</footer>
+          <footer className="border-t border-slate-200 px-4 py-3.5 pb-[calc(0.875rem+env(safe-area-inset-bottom))] sm:px-5 sm:py-4 sm:pb-4">
+            {footer}
+          </footer>
         ) : null}
       </div>
     </div>

@@ -59,10 +59,12 @@ export default async function SuperAdminHomePage() {
           <TableWrap>
             <thead className="text-left">
               <tr className="border-b border-slate-100 text-left text-xs tracking-wide text-slate-500 uppercase">
-                <th className="px-5 py-3 font-medium">Pharmacy</th>
+                <th className="px-4 py-3 font-medium sm:px-5">Pharmacy</th>
                 <th className="px-5 py-3 font-medium">Owner</th>
-                <th className="px-5 py-3 font-medium">Status</th>
-                <th className="px-5 py-3 font-medium">Created</th>
+                <th className="px-4 py-3 font-medium sm:px-5">Status</th>
+                <th className="px-5 py-3 font-medium">
+                  Created
+                </th>
               </tr>
             </thead>
             <tbody>

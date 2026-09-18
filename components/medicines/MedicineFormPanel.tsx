@@ -414,7 +414,7 @@ export function MedicineFormPanel({
               />
             </Field>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label="Category" htmlFor="category" error={errors.category}>
                 <select
                   id="category"
@@ -474,7 +474,7 @@ export function MedicineFormPanel({
           </Section>
 
           <Section title="Pack">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field
                 label="Pack size"
                 htmlFor="packSize"

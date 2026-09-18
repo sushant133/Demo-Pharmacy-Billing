@@ -219,8 +219,14 @@ export default async function SuppliersPage({
           />
         ) : (
           <>
-            <TableWrap>
+            <TableWrap minWidth="36rem" pinFirst>
               <thead className="border-b border-slate-200 bg-slate-50">
+                {/*
+                  A phone keeps the name and what is owed - the two things
+                  this list is opened to find. The contact, the PAN and the
+                  credit terms fold under the name; lifetime purchases are a
+                  reporting figure and wait for a wide screen.
+                */}
                 <tr>
                   <th className="th">Supplier</th>
                   <th className="th">Contact</th>
