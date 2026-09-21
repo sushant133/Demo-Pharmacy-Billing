@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -5,29 +6,41 @@ import { requirePageSession } from "@/lib/auth";
 import { assertVisibleInScope, resolveViewScope } from "@/lib/branch-scope";
 import { adToBs, formatBs, formatBsIso, nepaliFiscalYear } from "@/lib/bs-date";
 import { withDbRead } from "@/lib/db";
-import { getSettings, printedIssuer } from "@/lib/settings";
+import { getPrintTemplate, getSettings, printedIssuer } from "@/lib/settings";
 import { localParts } from "@/lib/dates";
 import { formatDateTime, formatExpiry, money } from "@/lib/format";
 import { formatUnitCount } from "@/lib/pack";
 import { amountInWords } from "@/lib/money-words";
+import { pageRule, receiptVars } from "@/lib/print-templates";
 import { displayBillNo } from "@/models/Counter";
 import { Sale, PAYMENT_MODE_LABELS, type PaymentMode } from "@/models/Sale";
 import { pharmacyFilter } from "@/lib/tenant";
 import { objectIdSchema } from "@/lib/validation";
 import { PrintController } from "@/components/bills/PrintController";
+import type {
+  BillDocumentProps,
+  BillDocumentRow,
+  BillDocumentTotal,
+} from "@/components/bills/BillDocument";
 import type { ThermalReceipt } from "@/lib/receipt-text";
 
 export const metadata: Metadata = { title: "Tax Invoice" };
 export const dynamic = "force-dynamic";
 
 /**
- * IRD tax invoice, laid out for an 80mm thermal roll.
+ * IRD tax invoice, laid out for whichever printer the shop actually owns.
  *
  * Fields follow VAT Rules 2053 Rule 17 / Schedule 5 as they fit on a
  * pharmacy counter receipt: seller identity + PAN, sequential FY bill
  * number, BS and AD datetime, buyer details, line qty/unit/rate, taxable
  * value, 13% VAT, grand total in figures and words. CBMS live upload is a
  * separate IRD-approved software step and is not this page.
+ *
+ * The paper is a platform setting - see lib/print-templates.ts - because it
+ * describes the machine on the counter. It changes how the bill is laid out
+ * and never what it says: every field above is printed by all eight
+ * templates, a narrow roll moving batch and expiry onto a sub-line rather
+ * than giving them a column.
  */
 export default async function BillPage({
   params,
@@ -62,7 +75,10 @@ export default async function BillPage({
   // Settings for a single-shop pharmacy; the issuing outlet's own identity
   // once a second branch is open. See `printedIssuer`.
   const settings = await getSettings(user.pharmacyId, user.pharmacyName);
-  const issuer = await printedIssuer(settings, sale.branchId, user.pharmacyId);
+  const [issuer, template] = await Promise.all([
+    printedIssuer(settings, sale.branchId, user.pharmacyId),
+    getPrintTemplate(user.pharmacyId),
+  ]);
 
   const issued = sale.createdAt as unknown as Date;
   const local = localParts(issued);
@@ -80,12 +96,154 @@ export default async function BillPage({
   // 0 means the till was never told, which is how every bill written before
   // the counter asked for it reads. It is not the same as "paid nothing".
   const received = sale.amountReceived ?? 0;
+  const change = received - sale.totalAmount;
   const shownBillNo = displayBillNo(sale.billNo);
   const voided = Boolean(sale.voidedAt);
   const alreadyPrinted = Boolean(sale.printedAt);
+  const paymentLabel =
+    PAYMENT_MODE_LABELS[sale.paymentMode as PaymentMode] ?? sale.paymentMode;
+  const vatNumber =
+    settings.vatRegistered && settings.vatNumber && settings.vatNumber !== issuer.pan
+      ? settings.vatNumber
+      : undefined;
+
+  const meta: BillDocumentRow[] = [
+    { label: "Bill no", value: shownBillNo },
+    ...(fyLabel ? [{ label: "FY", value: fyLabel }] : []),
+    ...(bsLabel ? [{ label: "Date (BS)", value: bsLabel }] : []),
+    { label: "Date (AD)", value: formatDateTime(issued) },
+    { label: "Payment", value: paymentLabel },
+  ];
+
+  const party: BillDocumentRow[] = [
+    { label: "Buyer", value: sale.customerName || "Walk-in customer" },
+    ...(sale.customerPan ? [{ label: "Buyer PAN", value: sale.customerPan }] : []),
+    ...(sale.customerAddress ? [{ label: "", value: sale.customerAddress }] : []),
+    ...(sale.customerPhone ? [{ label: "", value: `Tel: ${sale.customerPhone}` }] : []),
+  ];
+
+  const totals: BillDocumentTotal[] = [
+    { label: "Subtotal", value: money(sale.subtotal) },
+    // Naming the percentage saves the customer working backwards from a
+    // round number, and saves the counter re-explaining it.
+    ...(sale.discount > 0
+      ? [
+          {
+            label:
+              sale.discountPercent > 0
+                ? `Discount (${sale.discountPercent}%)`
+                : "Discount",
+            value: `− ${money(sale.discount)}`,
+          },
+        ]
+      : []),
+    { label: "Taxable", value: money(sale.taxableAmount) },
+    { label: `VAT ${vatPct}%`, value: money(sale.vatAmount) },
+    { label: "Grand total", value: money(sale.totalAmount), grand: true },
+    // Only printed when the till was actually told what was handed over. A
+    // bill claiming "Received 0.00" on a card payment would be worse than
+    // saying nothing.
+    ...(received > 0
+      ? [
+          { label: "Received", value: money(received) },
+          ...(change > 0.004 ? [{ label: "Change", value: money(change) }] : []),
+          ...(change < -0.004
+            ? [{ label: "Balance due", value: money(-change) }]
+            : []),
+        ]
+      : []),
+  ];
+
+  const document: Omit<BillDocumentProps, "copyLabel"> = {
+    templateId: template.id,
+    kicker: "कर बीजक / TAX INVOICE",
+    issuer: {
+      name: issuer.name,
+      legalName: settings.legalName || undefined,
+      address: issuer.address || undefined,
+      phone: issuer.phone || undefined,
+      email: settings.email || undefined,
+      pan: issuer.pan || undefined,
+      vat: vatNumber,
+      licence: settings.drugLicenceNo || undefined,
+    },
+    banner: voided
+      ? `VOID — ${formatDateTime(sale.voidedAt as unknown as Date)}${
+          sale.voidedByName ? ` · ${sale.voidedByName}` : ""
+        }`
+      : undefined,
+    meta,
+    party,
+    itemsHeading: "Item",
+    items: sale.items.map((item) => ({
+      name: item.medicineName,
+      batch: item.batchNumber,
+      expiry: formatExpiry(item.expiryDate),
+      qty: formatUnitCount(item.quantity, item.unit || "unit"),
+      rate: money(item.unitPrice),
+      amount: money(item.subtotal),
+    })),
+    totals,
+    words: amountInWords(sale.totalAmount),
+    note: sale.note ? `Note: ${sale.note}` : undefined,
+    footLine: `Cashier: ${sale.soldByName || "—"}${
+      sale.branchName ? ` · ${sale.branchName}` : ""
+    }`,
+    signatureLabel: "Authorised signatory",
+    tiny: [settings.billTerms, settings.billFooterNote].filter(
+      (line): line is string => Boolean(line),
+    ),
+  };
+
+  const receipt: ThermalReceipt = {
+    shop: issuer.name,
+    address: issuer.address || undefined,
+    phone: issuer.phone || undefined,
+    pan: issuer.pan || undefined,
+    vat: vatNumber,
+    licence: settings.drugLicenceNo || undefined,
+    copyLabel: alreadyPrinted
+      ? (sale.reprintCount ?? 0) > 0
+        ? `Copy of Original – ${sale.reprintCount}`
+        : "ORIGINAL"
+      : "ORIGINAL",
+    billNo: shownBillNo,
+    fiscalYear: fyLabel || undefined,
+    dateBs: bsLabel || undefined,
+    dateAd: formatDateTime(issued),
+    payment: paymentLabel,
+    buyer: sale.customerName || "Walk-in customer",
+    buyerPan: sale.customerPan || undefined,
+    items: sale.items.map((item) => ({
+      name: item.medicineName,
+      detail: `${formatUnitCount(item.quantity, item.unit || "unit")} x ${money(item.unitPrice)} · ${item.batchNumber}`,
+      amount: money(item.subtotal),
+    })),
+    subtotal: money(sale.subtotal),
+    discount: sale.discount > 0 ? `− ${money(sale.discount)}` : undefined,
+    taxable: money(sale.taxableAmount),
+    vatLabel: `VAT ${vatPct}%`,
+    vatAmount: money(sale.vatAmount),
+    total: money(sale.totalAmount),
+    received: received > 0 ? money(received) : undefined,
+    change: change > 0.004 ? money(change) : undefined,
+    balance: received > 0 && change < -0.004 ? money(-change) : undefined,
+    words: amountInWords(sale.totalAmount),
+    cashier:
+      [sale.soldByName, sale.branchName].filter(Boolean).join(" · ") || undefined,
+    terms: settings.billTerms || undefined,
+    footer: settings.billFooterNote || undefined,
+  };
 
   return (
-    <div className="receipt-page">
+    <div className="receipt-page" style={receiptVars(template) as CSSProperties}>
+      {/*
+        `@page` cannot be selected by class, so the paper size cannot live in
+        the stylesheet with the rest of the receipt rules. Each printed page
+        declares its own.
+      */}
+      <style>{pageRule(template)}</style>
+
       <div className="no-print receipt-toolbar">
         <Link href="/billing" className="btn-secondary">
           ← New sale
@@ -98,7 +256,7 @@ export default async function BillPage({
       </div>
 
       {!issuer.pan ? (
-        <p className="no-print mx-auto mb-3 max-w-[80mm] rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        <p className="no-print receipt-notice border-amber-200 bg-amber-50 text-amber-800">
           No seller PAN is set, and a tax invoice without one is not valid. Add
           it under{" "}
           <Link href="/settings" className="font-medium underline">
@@ -108,237 +266,15 @@ export default async function BillPage({
         </p>
       ) : null}
 
-      <article className="receipt">
-        <header className="receipt-head">
-          <p className="receipt-kicker">कर बीजक / TAX INVOICE</p>
-          <h1 className="receipt-shop">{issuer.name}</h1>
-          {settings.legalName && settings.legalName !== issuer.name ? (
-            <p>{settings.legalName}</p>
-          ) : null}
-          {issuer.address ? <p>{issuer.address}</p> : null}
-          {issuer.phone ? <p>Tel: {issuer.phone}</p> : null}
-          {settings.email ? <p>{settings.email}</p> : null}
-          <p className="receipt-pan">PAN: {issuer.pan || "—"}</p>
-          {settings.vatRegistered &&
-          settings.vatNumber &&
-          settings.vatNumber !== issuer.pan ? (
-            <p>VAT: {settings.vatNumber}</p>
-          ) : null}
-          {settings.drugLicenceNo ? (
-            <p>DDA licence: {settings.drugLicenceNo}</p>
-          ) : null}
-        </header>
-
-        <PrintController
-          saleId={String(sale._id)}
-          autoPrint={query.print === "1"}
-          alreadyPrinted={alreadyPrinted}
-          reprintCount={sale.reprintCount ?? 0}
-          receipt={
-            {
-              shop: issuer.name,
-              address: issuer.address || undefined,
-              phone: issuer.phone || undefined,
-              pan: issuer.pan || undefined,
-              vat:
-                settings.vatRegistered &&
-                settings.vatNumber &&
-                settings.vatNumber !== issuer.pan
-                  ? settings.vatNumber
-                  : undefined,
-              licence: settings.drugLicenceNo || undefined,
-              copyLabel: alreadyPrinted
-                ? (sale.reprintCount ?? 0) > 0
-                  ? `Copy of Original – ${sale.reprintCount}`
-                  : "ORIGINAL"
-                : "ORIGINAL",
-              billNo: shownBillNo,
-              fiscalYear: fyLabel || undefined,
-              dateBs: bsLabel || undefined,
-              dateAd: formatDateTime(issued),
-              payment:
-                PAYMENT_MODE_LABELS[sale.paymentMode as PaymentMode] ?? sale.paymentMode,
-              buyer: sale.customerName || "Walk-in customer",
-              buyerPan: sale.customerPan || undefined,
-              items: sale.items.map((item) => ({
-                name: item.medicineName,
-                detail: `${formatUnitCount(item.quantity, item.unit || "unit")} x ${money(item.unitPrice)} · ${item.batchNumber}`,
-                amount: money(item.subtotal),
-              })),
-              subtotal: money(sale.subtotal),
-              discount: sale.discount > 0 ? `− ${money(sale.discount)}` : undefined,
-              taxable: money(sale.taxableAmount),
-              vatLabel: `VAT ${vatPct}%`,
-              vatAmount: money(sale.vatAmount),
-              total: money(sale.totalAmount),
-              received: received > 0 ? money(received) : undefined,
-              change:
-                received - sale.totalAmount > 0.004
-                  ? money(received - sale.totalAmount)
-                  : undefined,
-              balance:
-                received > 0 && sale.totalAmount - received > 0.004
-                  ? money(sale.totalAmount - received)
-                  : undefined,
-              words: amountInWords(sale.totalAmount),
-              cashier: [sale.soldByName, sale.branchName].filter(Boolean).join(" · ") || undefined,
-              terms: settings.billTerms || undefined,
-              footer: settings.billFooterNote || undefined,
-            } satisfies ThermalReceipt
-          }
-        />
-
-        {voided ? (
-          <p className="receipt-void">
-            VOID — {formatDateTime(sale.voidedAt as unknown as Date)}
-            {sale.voidedByName ? ` · ${sale.voidedByName}` : ""}
-          </p>
-        ) : null}
-
-        <dl className="receipt-meta">
-          <div>
-            <dt>Bill no</dt>
-            <dd>{shownBillNo}</dd>
-          </div>
-          {fyLabel ? (
-            <div>
-              <dt>FY</dt>
-              <dd>{fyLabel}</dd>
-            </div>
-          ) : null}
-          {bsLabel ? (
-            <div>
-              <dt>Date (BS)</dt>
-              <dd>{bsLabel}</dd>
-            </div>
-          ) : null}
-          <div>
-            <dt>Date (AD)</dt>
-            <dd>{formatDateTime(issued)}</dd>
-          </div>
-          <div>
-            <dt>Payment</dt>
-            <dd>
-              {PAYMENT_MODE_LABELS[sale.paymentMode as PaymentMode] ?? sale.paymentMode}
-            </dd>
-          </div>
-        </dl>
-
-        <section className="receipt-party">
-          <p>
-            <span className="k">Buyer</span> {sale.customerName || "Walk-in customer"}
-          </p>
-          {sale.customerPan ? (
-            <p>
-              <span className="k">Buyer PAN</span> {sale.customerPan}
-            </p>
-          ) : null}
-          {sale.customerAddress ? <p>{sale.customerAddress}</p> : null}
-          {sale.customerPhone ? <p>Tel: {sale.customerPhone}</p> : null}
-        </section>
-
-        <table className="receipt-lines">
-          <thead>
-            <tr>
-              <th className="left">#</th>
-              <th className="left">Item</th>
-              <th className="right">Amt</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sale.items.map((item, index) => (
-              <tr key={`${String(item.batchId)}-${index}`}>
-                <td className="left muted">{index + 1}</td>
-                <td className="left">
-                  {item.medicineName}
-                  <span className="muted block">
-                    {formatUnitCount(item.quantity, item.unit || "unit")} ×{" "}
-                    {money(item.unitPrice)} ·{" "}
-                    {item.batchNumber} · {formatExpiry(item.expiryDate)}
-                  </span>
-                </td>
-                <td className="right">{money(item.subtotal)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        <dl className="receipt-totals">
-          <div>
-            <dt>Subtotal</dt>
-            <dd>{money(sale.subtotal)}</dd>
-          </div>
-          {sale.discount > 0 ? (
-            <div>
-              {/*
-                Naming the percentage saves the customer working backwards from
-                a round number, and saves the counter re-explaining it.
-              */}
-              <dt>
-                Discount
-                {sale.discountPercent > 0 ? ` (${sale.discountPercent}%)` : ""}
-              </dt>
-              <dd>− {money(sale.discount)}</dd>
-            </div>
-          ) : null}
-          <div>
-            <dt>Taxable</dt>
-            <dd>{money(sale.taxableAmount)}</dd>
-          </div>
-          <div>
-            <dt>VAT {vatPct}%</dt>
-            <dd>{money(sale.vatAmount)}</dd>
-          </div>
-          <div className="grand">
-            <dt>Grand total</dt>
-            <dd>{money(sale.totalAmount)}</dd>
-          </div>
-
-          {/*
-            Only printed when the till was actually told what was handed over.
-            A receipt claiming "Received 0.00" on a card payment would be
-            worse than saying nothing.
-          */}
-          {received > 0 ? (
-            <>
-              <div>
-                <dt>Received</dt>
-                <dd>{money(received)}</dd>
-              </div>
-              {received - sale.totalAmount > 0.004 ? (
-                <div>
-                  <dt>Change</dt>
-                  <dd>{money(received - sale.totalAmount)}</dd>
-                </div>
-              ) : null}
-              {sale.totalAmount - received > 0.004 ? (
-                <div>
-                  <dt>Balance due</dt>
-                  <dd>{money(sale.totalAmount - received)}</dd>
-                </div>
-              ) : null}
-            </>
-          ) : null}
-        </dl>
-
-        <p className="receipt-words">{amountInWords(sale.totalAmount)}</p>
-
-        {sale.note ? <p className="receipt-note">Note: {sale.note}</p> : null}
-
-        <footer className="receipt-foot">
-          <p>
-            Cashier: {sale.soldByName || "—"}
-            {sale.branchName ? ` · ${sale.branchName}` : ""}
-          </p>
-          <p className="sign">Authorised signatory ________________</p>
-          {settings.billTerms ? <p className="tiny">{settings.billTerms}</p> : null}
-          {settings.billFooterNote ? (
-            <p className="tiny">{settings.billFooterNote}</p>
-          ) : null}
-        </footer>
-      </article>
+      <PrintController
+        saleId={String(sale._id)}
+        autoPrint={query.print === "1"}
+        alreadyPrinted={alreadyPrinted}
+        reprintCount={sale.reprintCount ?? 0}
+        escposColumns={template.escposColumns}
+        receipt={receipt}
+        document={document}
+      />
     </div>
   );
 }
-
-

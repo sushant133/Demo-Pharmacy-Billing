@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePagePermission } from "@/lib/auth";
 import { withDbRead } from "@/lib/db";
-import { resolveViewScope } from "@/lib/branch-scope";
+import { hasMultipleBranches, resolveViewScope } from "@/lib/branch-scope";
 import { adToBs, formatBs } from "@/lib/bs-date";
 import { config } from "@/lib/config";
 import { amount, formatTime, integer, money } from "@/lib/format";
@@ -32,7 +32,7 @@ import { LineChart } from "@/components/charts/LineChart";
 import { BarChart } from "@/components/charts/BarChart";
 import { DonutChart } from "@/components/charts/DonutChart";
 import { ColumnChart } from "@/components/charts/ColumnChart";
-import { can } from "@/lib/roles";
+import { can, type Permission } from "@/lib/roles";
 
 export const metadata: Metadata = { title: "Dashboard" };
 export const dynamic = "force-dynamic";
@@ -71,7 +71,18 @@ export default async function DashboardPage({
 
   const today = localDayRange();
   const showMoney = can(user.role, "report:financial");
+  /**
+   * Whether this role may read bills at all. Only `inventory` may not, and
+   * its own description promises "no till, no customers, no money figures" -
+   * so the take, the bill count, the payment mix, the hourly columns and the
+   * recent-bills table are all behind this rather than shown to a stock clerk
+   * who cannot open /sales to check any of them.
+   */
+  const showTill = can(user.role, "sale:read");
   const scope = await withDbRead(() => resolveViewScope(user));
+  // Same rule as the sidebar: the Branches tile appears once the shop has a
+  // second outlet, not before.
+  const multiBranch = await withDbRead(() => hasMultipleBranches(user));
   const trendStart = startOfLocalDay(addDays(new Date(), -(TREND_DAYS - 1)));
   const emptySeries = Promise.resolve([]);
   const emptyMix = Promise.resolve([]);
@@ -139,6 +150,32 @@ export default async function DashboardPage({
 
   const highlightHour = hourly.findIndex((point) => point.hour === currentHour);
 
+  /*
+    Every tile used to render for every role, so a cashier got "Purchases",
+    "Reports" and "Branches" squares that middleware bounced straight back to
+    /dashboard?denied=1. The sidebar has always filtered its rows by
+    permission; this is the same rule, against the same permission each route
+    is gated on in ROUTE_PERMISSIONS.
+  */
+  const jumps = (
+    [
+      { href: "/billing", label: "Billing", permission: "sale:create" },
+      { href: "/medicines", label: "Medicines", permission: "medicine:read" },
+      { href: "/batches", label: "Batches", permission: "batch:read" },
+      { href: "/purchases", label: "Purchases", permission: "purchase:read" },
+      { href: "/reports", label: "Reports", permission: "report:financial" },
+      { href: "/branches", label: "Branches", permission: "branch:manage" },
+    ] as const satisfies ReadonlyArray<{
+      href: string;
+      label: string;
+      permission: Permission;
+    }>
+  ).filter(
+    (jump) =>
+      can(user.role, jump.permission) &&
+      (jump.href !== "/branches" || multiBranch),
+  );
+
   return (
     <>
       <section className="dash-hero relative mb-6 overflow-hidden rounded-2xl px-5 py-6 text-white sm:px-7 sm:py-7">
@@ -151,7 +188,7 @@ export default async function DashboardPage({
               as of {formatTime(now)}
             </p>
             <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
-              Good {greeting()}, {firstName}
+              Good {greeting(currentHour)}, {firstName}
             </h1>
             <p className="mt-1.5 text-sm text-slate-300">
               {dateLabel}
@@ -189,6 +226,7 @@ export default async function DashboardPage({
             </div>
           </div>
 
+          {showTill ? (
           <div className="w-full shrink-0 lg:w-[22rem]">
             <p className="text-[11px] font-semibold tracking-[0.14em] text-brand-300 uppercase">
               Taken today
@@ -217,6 +255,7 @@ export default async function DashboardPage({
               </div>
             ) : null}
           </div>
+          ) : null}
         </div>
       </section>
 
@@ -233,15 +272,22 @@ export default async function DashboardPage({
         <ExpiredBanner count={expiryAlerts.counts.expired} />
       ) : null}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Kpi
-          label="Bills today"
-          value={integer(summary.today.billCount)}
-          hint={`Average ${money(summary.today.averageBill)}`}
-          href="/sales"
-          icon="M7 8h10M7 12h6M6 21V5a2 2 0 012-2h8a2 2 0 012 2v16l-3-2-3 2-3-2-3 2z"
-          tone="brand"
-        />
+      <div
+        className={cx(
+          "grid grid-cols-2 gap-3",
+          showTill ? "lg:grid-cols-4" : "lg:grid-cols-3",
+        )}
+      >
+        {showTill ? (
+          <Kpi
+            label="Bills today"
+            value={integer(summary.today.billCount)}
+            hint={`Average ${money(summary.today.averageBill)}`}
+            href="/sales"
+            icon="M7 8h10M7 12h6M6 21V5a2 2 0 012-2h8a2 2 0 012 2v16l-3-2-3 2-3-2-3 2z"
+            tone="brand"
+          />
+        ) : null}
         {profit ? (
           <Kpi
             label="Gross profit"
@@ -288,306 +334,330 @@ export default async function DashboardPage({
         />
       </div>
 
+      {/*
+        One grid, two flowing columns: wide cards left, narrow cards right.
+        Separate rows would pin each pair to the taller card and leave a hole
+        under the shorter one. `contents` drops the columns on phones so the
+        `order-*` classes keep the old interleaved single-file sequence.
+      */}
       <div className="mt-4 grid items-start gap-4 lg:grid-cols-3">
-        <Card className="p-4 sm:p-5 lg:col-span-2">
-          <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
-            <div>
-              <h2 className="text-sm font-semibold text-slate-900">
-                Revenue and profit
-              </h2>
+        {showTill || showMoney ? (
+        <div className="contents lg:col-span-2 lg:block lg:space-y-4">
+          {showTill ? (
+          <Card className="order-1 p-4 sm:p-5">
+            <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-900">
+                  Revenue and profit
+                </h2>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Last {TREND_DAYS} days, taxable amount, one scale.
+                  {trendAverage > 0 ? (
+                    <>
+                      {" "}
+                      <span className="tnum font-medium text-slate-700">
+                        {money(trendAverage)}
+                      </span>{" "}
+                      a day on average.
+                    </>
+                  ) : null}
+                </p>
+              </div>
+              {showMoney ? (
+                <Link href="/reports" className="text-xs font-medium text-brand-700 hover:text-brand-800">
+                  Full report &rarr;
+                </Link>
+              ) : null}
+            </div>
+            {showMoney ? (
+              <LineChart
+                caption={`Revenue and gross profit over the last ${TREND_DAYS} days`}
+                labels={series.map((point) => point.label)}
+                series={[
+                  {
+                    key: "revenue",
+                    label: "Revenue",
+                    color: "--color-series-1",
+                    values: series.map((point) => point.revenue),
+                  },
+                  {
+                    key: "profit",
+                    label: "Gross profit",
+                    color: "--color-series-2",
+                    values: series.map((point) => point.profit),
+                  },
+                ]}
+              />
+            ) : (
+              <p className="py-10 text-center text-sm text-slate-500">
+                Sales figures are limited on this account.
+              </p>
+            )}
+          </Card>
+          ) : null}
+
+          {showTill ? (
+          <Card className="order-3 p-4 sm:p-5">
+            <div className="mb-3">
+              <h2 className="text-sm font-semibold text-slate-900">Today, hour by hour</h2>
               <p className="mt-0.5 text-xs text-slate-500">
-                Last {TREND_DAYS} days, taxable amount, one scale.
-                {trendAverage > 0 ? (
-                  <>
-                    {" "}
-                    <span className="tnum font-medium text-slate-700">
-                      {money(trendAverage)}
-                    </span>{" "}
-                    a day on average.
-                  </>
-                ) : null}
+                Collected from customers, VAT included. The current hour is the
+                darker column.
               </p>
             </div>
-            <Link href="/reports" className="text-xs font-medium text-brand-700 hover:text-brand-800">
-              Full report &rarr;
-            </Link>
-          </div>
-          {showMoney ? (
-            <LineChart
-              caption={`Revenue and gross profit over the last ${TREND_DAYS} days`}
-              labels={series.map((point) => point.label)}
-              series={[
-                {
-                  key: "revenue",
-                  label: "Revenue",
-                  color: "--color-series-1",
-                  values: series.map((point) => point.revenue),
-                },
-                {
-                  key: "profit",
-                  label: "Gross profit",
-                  color: "--color-series-2",
-                  values: series.map((point) => point.profit),
-                },
-              ]}
-            />
-          ) : (
-            <p className="py-10 text-center text-sm text-slate-500">
-              Sales figures are limited on this account.
-            </p>
-          )}
-        </Card>
-
-        <Card className="p-4 sm:p-5">
-          <div className="mb-3 flex items-baseline justify-between gap-2">
-            <h2 className="text-sm font-semibold text-slate-900">How they paid</h2>
-            <span className="tnum text-xs text-slate-500">{money(summary.today.salesTotal)}</span>
-          </div>
-          <DonutChart
-            caption="Today's payments by mode"
-            centerLabel={
-              payments.find((row) => row.mode === "cash")
-                ? amount(payments.find((row) => row.mode === "cash")!.amount)
-                : undefined
-            }
-            centerHint={payments.some((row) => row.mode === "cash") ? "cash in drawer" : "today"}
-            formatValue={money}
-            slices={payments.map((row) => ({
-              key: row.mode,
-              label: PAYMENT_MODE_LABELS[row.mode as PaymentMode] ?? row.mode,
-              value: row.amount,
-              color: PAYMENT_COLOR[row.mode] ?? "--color-series-5",
-            }))}
-          />
-          {payments.length > 0 ? (
-            <p className="mt-3 border-t border-slate-100 pt-3 text-[11px] leading-relaxed text-slate-500">
-              {payments.find((row) => row.mode === "cash") ? (
-                <>
-                  Cash should be in the drawer. Card, wallets and credit settle
-                  elsewhere.
-                </>
-              ) : (
-                "Nothing was taken in cash today."
-              )}
-            </p>
-          ) : null}
-        </Card>
-      </div>
-
-      <div className="mt-4 grid items-start gap-4 lg:grid-cols-3">
-        <Card className="p-4 sm:p-5 lg:col-span-2">
-          <div className="mb-3">
-            <h2 className="text-sm font-semibold text-slate-900">Today, hour by hour</h2>
-            <p className="mt-0.5 text-xs text-slate-500">
-              Collected from customers, VAT included. The current hour is the
-              darker column.
-            </p>
-          </div>
-          <ColumnChart
-            caption="Today's collections by hour"
-            highlightIndex={highlightHour >= 0 ? highlightHour : undefined}
-            data={hourly.map((point) => ({
-              label: point.label,
-              value: point.amount,
-              detail: `${point.billCount} bill${point.billCount === 1 ? "" : "s"}`,
-            }))}
-          />
-        </Card>
-
-        <Card className="p-4 sm:p-5">
-          <h2 className="text-sm font-semibold text-slate-900">What is selling</h2>
-          <p className="mt-0.5 mb-3 text-xs text-slate-500">
-            Last {TREND_DAYS} days, by category.
-          </p>
-          {categories.length === 0 ? (
-            <p className="py-8 text-center text-sm text-slate-500">
-              Categories appear once bills are rung up.
-            </p>
-          ) : (
-            <DonutChart
-              caption={`Revenue by category, last ${TREND_DAYS} days`}
-              formatValue={money}
-              slices={categories.map((row, index) => ({
-                key: row.category,
-                label: row.category,
-                value: row.revenue,
-                color: SERIES_COLORS[index] ?? "--color-series-5",
+            <ColumnChart
+              caption="Today's collections by hour"
+              highlightIndex={highlightHour >= 0 ? highlightHour : undefined}
+              data={hourly.map((point) => ({
+                label: point.label,
+                value: point.amount,
+                detail: `${point.billCount} bill${point.billCount === 1 ? "" : "s"}`,
               }))}
             />
-          )}
-        </Card>
-      </div>
+          </Card>
+          ) : null}
 
-      <div className="mt-4 grid items-start gap-4 lg:grid-cols-3">
-        <Card className="p-4 sm:p-5 lg:col-span-2">
-          <div className="mb-3 flex items-baseline justify-between gap-2">
-            <div>
-              <h2 className="text-sm font-semibold text-slate-900">Top medicines</h2>
-              <p className="mt-0.5 text-xs text-slate-500">
-                Last {TREND_DAYS} days, ranked by revenue.
-              </p>
+          {showMoney ? (
+          <Card className="order-5 p-4 sm:p-5">
+            <div className="mb-3 flex items-baseline justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-900">Top medicines</h2>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Last {TREND_DAYS} days, ranked by revenue.
+                </p>
+              </div>
+              <Link href="/reports" className="text-xs font-medium text-brand-700 hover:text-brand-800">
+                Rank by profit &rarr;
+              </Link>
             </div>
-            <Link href="/reports" className="text-xs font-medium text-brand-700 hover:text-brand-800">
-              Rank by profit &rarr;
-            </Link>
-          </div>
-          <BarChart
-            caption={`Top medicines by revenue, last ${TREND_DAYS} days`}
-            valueHeader="Revenue"
-            data={topMedicines.map((medicine) => ({
-              label: medicine.medicineName,
-              sublabel: `${integer(medicine.unitsSold)} units · ${medicine.marginPercent.toFixed(0)}% margin`,
-              value: medicine.revenue,
-              detail: `${money(medicine.profit)} profit`,
-            }))}
-          />
-        </Card>
-
-        <div className="space-y-4">
-          <AlertList
-            title="Needs ordering"
-            href="/alerts?tab=stock"
-            empty="Every medicine is above its reorder level."
-            items={stockIssues.map((row) => ({
-              key: row.medicineId,
-              name: row.medicineName,
-              meta:
-                row.assessment.daysOfCover !== null
-                  ? `${row.assessment.daysOfCover} days of cover`
-                  : `${integer(row.stockQuantity)} ${row.unit} left`,
-              tone: row.assessment.severity,
-              badge: STOCK_LABEL[row.assessment.severity],
-              href: can(user.role, "purchase:write")
-                ? `/purchases/new?medicineId=${row.medicineId}`
-                : undefined,
-            }))}
-          />
-          <AlertList
-            title="Expiring on the shelf"
-            href="/alerts?tab=expiry"
-            empty="Nothing on the shelf is near its expiry."
-            items={expiryAlerts.rows.map((row) => ({
-              key: row.batchId,
-              name: row.medicineName,
-              meta:
-                row.daysRemaining < 0
-                  ? `${Math.abs(row.daysRemaining)} days past`
-                  : `${row.daysRemaining} days left · ${integer(row.quantity)} left`,
-              tone: row.severity,
-              badge: EXPIRY_LABEL[row.severity],
-            }))}
-          />
-        </div>
-      </div>
-
-      <div className="mt-4 grid items-start gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-            <h2 className="text-sm font-semibold text-slate-900">Recent sales</h2>
-            <Link href="/sales" className="text-xs font-medium text-brand-700 hover:text-brand-800">
-              View all
-            </Link>
-          </div>
-          {summary.recentSales.length === 0 ? (
-            <EmptyState
-              title="No sales yet"
-              description="Bills will appear here as soon as the counter starts ringing them up."
+            <BarChart
+              caption={`Top medicines by revenue, last ${TREND_DAYS} days`}
+              valueHeader="Revenue"
+              data={topMedicines.map((medicine) => ({
+                label: medicine.medicineName,
+                sublabel: `${integer(medicine.unitsSold)} units · ${medicine.marginPercent.toFixed(0)}% margin`,
+                value: medicine.revenue,
+                detail: `${money(medicine.profit)} profit`,
+              }))}
             />
-          ) : (
-            <TableWrap>
-              <thead className="border-b border-slate-200 bg-slate-50">
-                <tr>
-                  <th className="th">Bill</th>
-                  <th className="th">Customer</th>
-                  <th className="th text-right">Items</th>
-                  <th className="th">Paid by</th>
-                  <th className="th text-right">Amount</th>
-                  <th className="th text-right">Time</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {summary.recentSales.map((sale) => (
-                  <tr key={sale.id} className="hover:bg-slate-50">
-                    <td className="td">
-                      <Link
-                        href={`/sales/${sale.id}`}
-                        className="font-medium text-brand-700 hover:underline"
-                      >
-                        {sale.billNo}
-                      </Link>
-                    </td>
-                    <td className="td">
-                      {sale.customerName || <span className="text-slate-400">Walk-in</span>}
-                    </td>
-                    <td className="td tnum text-right text-slate-600">{sale.itemCount}</td>
-                    <td className="td">
-                      <Badge tone="slate">
-                        {PAYMENT_MODE_LABELS[sale.paymentMode as PaymentMode] ?? sale.paymentMode}
-                      </Badge>
-                    </td>
-                    <td className="td tnum text-right font-medium text-slate-900">
-                      {money(sale.totalAmount)}
-                    </td>
-                    <td className="td tnum text-right text-slate-500">
-                      {formatTime(sale.createdAt)}
-                    </td>
+          </Card>
+          ) : null}
+
+          {showTill ? (
+          <Card className="order-7">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+              <h2 className="text-sm font-semibold text-slate-900">Recent sales</h2>
+              <Link href="/sales" className="text-xs font-medium text-brand-700 hover:text-brand-800">
+                View all
+              </Link>
+            </div>
+            {summary.recentSales.length === 0 ? (
+              <EmptyState
+                title="No sales yet"
+                description="Bills will appear here as soon as the counter starts ringing them up."
+              />
+            ) : (
+              <TableWrap>
+                <thead className="border-b border-slate-200 bg-slate-50">
+                  <tr>
+                    <th className="th">Bill</th>
+                    <th className="th">Customer</th>
+                    <th className="th text-right">Items</th>
+                    <th className="th">Paid by</th>
+                    <th className="th text-right">Amount</th>
+                    <th className="th text-right">Time</th>
                   </tr>
-                ))}
-              </tbody>
-            </TableWrap>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {summary.recentSales.map((sale) => (
+                    <tr key={sale.id} className="hover:bg-slate-50">
+                      <td className="td">
+                        <Link
+                          href={`/sales/${sale.id}`}
+                          className="font-medium text-brand-700 hover:underline"
+                        >
+                          {sale.billNo}
+                        </Link>
+                      </td>
+                      <td className="td">
+                        {sale.customerName || <span className="text-slate-400">Walk-in</span>}
+                      </td>
+                      <td className="td tnum text-right text-slate-600">{sale.itemCount}</td>
+                      <td className="td">
+                        <Badge tone="slate">
+                          {PAYMENT_MODE_LABELS[sale.paymentMode as PaymentMode] ?? sale.paymentMode}
+                        </Badge>
+                      </td>
+                      <td className="td tnum text-right font-medium text-slate-900">
+                        {money(sale.totalAmount)}
+                      </td>
+                      <td className="td tnum text-right text-slate-500">
+                        {formatTime(sale.createdAt)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </TableWrap>
+            )}
+          </Card>
+          ) : null}
+        </div>
+        ) : null}
+
+        <div
+          className={cx(
+            "contents lg:block lg:space-y-4",
+            !showTill && !showMoney && "lg:col-span-3",
           )}
-        </Card>
+        >
+          {showTill ? (
+          <Card className="order-2 p-4 sm:p-5">
+            <div className="mb-3 flex items-baseline justify-between gap-2">
+              <h2 className="text-sm font-semibold text-slate-900">How they paid</h2>
+              <span className="tnum text-xs text-slate-500">{money(summary.today.salesTotal)}</span>
+            </div>
+            <DonutChart
+              caption="Today's payments by mode"
+              centerLabel={
+                payments.find((row) => row.mode === "cash")
+                  ? amount(payments.find((row) => row.mode === "cash")!.amount)
+                  : undefined
+              }
+              centerHint={payments.some((row) => row.mode === "cash") ? "cash in drawer" : "today"}
+              formatValue={money}
+              slices={payments.map((row) => ({
+                key: row.mode,
+                label: PAYMENT_MODE_LABELS[row.mode as PaymentMode] ?? row.mode,
+                value: row.amount,
+                color: PAYMENT_COLOR[row.mode] ?? "--color-series-5",
+              }))}
+            />
+            {payments.length > 0 ? (
+              <p className="mt-3 border-t border-slate-100 pt-3 text-[11px] leading-relaxed text-slate-500">
+                {payments.find((row) => row.mode === "cash") ? (
+                  <>
+                    Cash should be in the drawer. Card, wallets and credit settle
+                    elsewhere.
+                  </>
+                ) : (
+                  "Nothing was taken in cash today."
+                )}
+              </p>
+            ) : null}
+          </Card>
+          ) : null}
 
-        <div className="space-y-4">
-          <Card className="p-5">
-            <h2 className="text-sm font-semibold text-slate-900">Inventory health</h2>
-            <dl className="mt-4 space-y-3">
-              <HealthRow
-                label="Stock value"
-                value={money(summary.inventoryValue)}
-                hint="At cost"
+          {showTill ? (
+          <Card className="order-4 p-4 sm:p-5">
+            <h2 className="text-sm font-semibold text-slate-900">What is selling</h2>
+            <p className="mt-0.5 mb-3 text-xs text-slate-500">
+              Last {TREND_DAYS} days, by category.
+            </p>
+            {categories.length === 0 ? (
+              <p className="py-8 text-center text-sm text-slate-500">
+                Categories appear once bills are rung up.
+              </p>
+            ) : (
+              <DonutChart
+                caption={`Revenue by category, last ${TREND_DAYS} days`}
+                formatValue={money}
+                slices={categories.map((row, index) => ({
+                  key: row.category,
+                  label: row.category,
+                  value: row.revenue,
+                  color: SERIES_COLORS[index] ?? "--color-series-5",
+                }))}
               />
-              <HealthRow
-                label="Needs reorder"
-                value={integer(summary.lowStockCount)}
-                tone={summary.lowStockCount > 0 ? "warning" : undefined}
-              />
-              <HealthRow
-                label={`Expiring in ${summary.expiryWindowDays} days`}
-                value={integer(summary.expiringSoonCount)}
-                tone={summary.expiringSoonCount > 0 ? "warning" : undefined}
-              />
-              <HealthRow
-                label="Not moving"
-                value={integer(stockAlerts.deadStockCount)}
-                hint={
-                  showMoney && stockAlerts.deadStockValue > 0
-                    ? money(stockAlerts.deadStockValue)
-                    : undefined
-                }
-              />
-              {stockFlow ? (
+            )}
+          </Card>
+          ) : null}
+
+          <div className="order-6 space-y-4">
+            <AlertList
+              title="Needs ordering"
+              href="/alerts?tab=stock"
+              empty="Every medicine is above its reorder level."
+              items={stockIssues.map((row) => ({
+                key: row.medicineId,
+                name: row.medicineName,
+                meta:
+                  row.assessment.daysOfCover !== null
+                    ? `${row.assessment.daysOfCover} days of cover`
+                    : `${integer(row.stockQuantity)} ${row.unit} left`,
+                tone: row.assessment.severity,
+                badge: STOCK_LABEL[row.assessment.severity],
+                href: can(user.role, "purchase:write")
+                  ? `/purchases/new?medicineId=${row.medicineId}`
+                  : undefined,
+              }))}
+            />
+            <AlertList
+              title="Expiring on the shelf"
+              href="/alerts?tab=expiry"
+              empty="Nothing on the shelf is near its expiry."
+              items={expiryAlerts.rows.map((row) => ({
+                key: row.batchId,
+                name: row.medicineName,
+                meta:
+                  row.daysRemaining < 0
+                    ? `${Math.abs(row.daysRemaining)} days past`
+                    : `${row.daysRemaining} days left · ${integer(row.quantity)} left`,
+                tone: row.severity,
+                badge: EXPIRY_LABEL[row.severity],
+              }))}
+            />
+          </div>
+
+          <div className="order-8 space-y-4">
+            <Card className="p-5">
+              <h2 className="text-sm font-semibold text-slate-900">Inventory health</h2>
+              <dl className="mt-4 space-y-3">
                 <HealthRow
-                  label="Net stock this fortnight"
-                  value={`${stockFlow.netStockChange >= 0 ? "+" : ""}${money(stockFlow.netStockChange)}`}
-                  hint={`Bought ${money(stockFlow.purchased)} · sold at cost ${money(stockFlow.soldAtCost)}`}
-                  tone={stockFlow.netStockChange < 0 ? "warning" : undefined}
+                  label="Stock value"
+                  value={money(summary.inventoryValue)}
+                  hint="At cost"
                 />
-              ) : null}
-            </dl>
-          </Card>
+                <HealthRow
+                  label="Needs reorder"
+                  value={integer(summary.lowStockCount)}
+                  tone={summary.lowStockCount > 0 ? "warning" : undefined}
+                />
+                <HealthRow
+                  label={`Expiring in ${summary.expiryWindowDays} days`}
+                  value={integer(summary.expiringSoonCount)}
+                  tone={summary.expiringSoonCount > 0 ? "warning" : undefined}
+                />
+                <HealthRow
+                  label="Not moving"
+                  value={integer(stockAlerts.deadStockCount)}
+                  hint={
+                    showMoney && stockAlerts.deadStockValue > 0
+                      ? money(stockAlerts.deadStockValue)
+                      : undefined
+                  }
+                />
+                {stockFlow ? (
+                  <HealthRow
+                    label="Net stock this fortnight"
+                    value={`${stockFlow.netStockChange >= 0 ? "+" : ""}${money(stockFlow.netStockChange)}`}
+                    hint={`Bought ${money(stockFlow.purchased)} · sold at cost ${money(stockFlow.soldAtCost)}`}
+                    tone={stockFlow.netStockChange < 0 ? "warning" : undefined}
+                  />
+                ) : null}
+              </dl>
+            </Card>
 
-          <Card className="p-5">
-            <h2 className="text-sm font-semibold text-slate-900">Jump to</h2>
-            <ul className="mt-3 grid grid-cols-2 gap-2">
-              <Jump href="/billing" label="Billing" />
-              <Jump href="/medicines" label="Medicines" />
-              <Jump href="/batches" label="Batches" />
-              <Jump href="/purchases" label="Purchases" />
-              <Jump href="/reports" label="Reports" />
-              <Jump href="/branches" label="Branches" />
-            </ul>
-          </Card>
+            {jumps.length > 0 ? (
+              <Card className="p-5">
+                <h2 className="text-sm font-semibold text-slate-900">Jump to</h2>
+                <ul className="mt-3 grid grid-cols-2 gap-2">
+                  {jumps.map((jump) => (
+                    <Jump key={jump.href} href={jump.href} label={jump.label} />
+                  ))}
+                </ul>
+              </Card>
+            ) : null}
+          </div>
         </div>
       </div>
     </>
@@ -813,10 +883,14 @@ function ExpiredBanner({ count }: { count: number }) {
   );
 }
 
-function greeting(): string {
-  const hour = new Date().getUTCHours() + 5.75;
-  const local = ((hour % 24) + 24) % 24;
-  if (local < 12) return "morning";
-  if (local < 17) return "afternoon";
+/**
+ * Takes the hour already resolved against `config.timezone` rather than
+ * working one out itself. This used to add a hardcoded 5.75 to the UTC hour,
+ * so a shop in any other zone was greeted with the wrong half of the day
+ * while the column chart beside it used the configured one.
+ */
+function greeting(hour: number): string {
+  if (hour < 12) return "morning";
+  if (hour < 17) return "afternoon";
   return "evening";
 }

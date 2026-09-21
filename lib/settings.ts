@@ -1,6 +1,11 @@
 import { Types } from "mongoose";
 import { config } from "@/lib/config";
 import { connectDB } from "@/lib/db";
+import {
+  DEFAULT_PRINT_TEMPLATE,
+  printTemplate,
+  type PrintTemplate,
+} from "@/lib/print-templates";
 import { invalidateTtl, onceTtl } from "@/lib/ttl-cache";
 import { Branch } from "@/models/Branch";
 import { Pharmacy } from "@/models/Pharmacy";
@@ -55,6 +60,46 @@ export interface BusinessSettings {
 }
 
 /**
+ * The fields the shop may read but not write.
+ *
+ * The business's registered identity: the names a bill is headed with, the
+ * tax numbers it is filed under, and the licences that make it lawful to
+ * dispense. Superadmin sets them on the pharmacy record; `getSettings`
+ * overlays them here so the bill header, the PDF and every preview go on
+ * reading `settings.pan` as they always have.
+ *
+ * Kept as a list so the Settings screen and the tests can both ask which
+ * fields are locked, rather than each keeping its own copy of the answer.
+ */
+export const PLATFORM_IDENTITY_FIELDS = [
+  "businessName",
+  "legalName",
+  "pan",
+  "vatNumber",
+  "vatRegistered",
+  "registrationNo",
+  "drugLicenceNo",
+] as const;
+
+export type PlatformIdentityField = (typeof PLATFORM_IDENTITY_FIELDS)[number];
+
+/** Just the locked fields, as the platform holds them. */
+export type PlatformIdentity = Pick<BusinessSettings, PlatformIdentityField>;
+
+/** The locked half of a settings record, for a screen that shows it read-only. */
+export function platformIdentity(settings: BusinessSettings): PlatformIdentity {
+  return {
+    businessName: settings.businessName,
+    legalName: settings.legalName,
+    pan: settings.pan,
+    vatNumber: settings.vatNumber,
+    vatRegistered: settings.vatRegistered,
+    registrationNo: settings.registrationNo,
+    drugLicenceNo: settings.drugLicenceNo,
+  };
+}
+
+/**
  * What a pharmacy sees before it has saved anything.
  *
  * Seeded from the environment so an existing install keeps the name and PAN it
@@ -83,24 +128,62 @@ export const DEFAULT_SETTINGS: BusinessSettings = {
 
 type SettingsShape = Partial<Record<keyof BusinessSettings, unknown>>;
 
-/** Fill every field, so a record saved before a field existed still reads. */
+/**
+ * The platform's record of one shop, as the overlay reads it.
+ *
+ * `name` rather than `businessName`: this is the Pharmacy document, where the
+ * trading name is the account's name.
+ */
+interface PlatformShape {
+  name?: unknown;
+  legalName?: unknown;
+  pan?: unknown;
+  vatNumber?: unknown;
+  vatRegistered?: unknown;
+  registrationNo?: unknown;
+  drugLicenceNo?: unknown;
+}
+
+/**
+ * Fill every field, so a record saved before a field existed still reads.
+ *
+ * `platform` wins outright over the shop's own record wherever it is given.
+ * It is not a fallback for a blank: superadmin clearing a licence that has
+ * lapsed has to actually clear it, and a stale value left behind in the
+ * Setting document would quietly keep printing it.
+ */
 function hydrate(
   doc: SettingsShape | null,
   fallbackName?: string | null,
+  platform?: PlatformShape | null,
 ): BusinessSettings {
+  const str = (value: unknown, fallback = ""): string =>
+    typeof value === "string" ? value : fallback;
+
   // A pharmacy with no settings row must still wear its own name, never the
   // platform default - that is how one vendor would see "Mantra Pharmacy"
   // on another shop's door.
   const defaultName = fallbackName?.trim() || "";
+
+  const identity: PlatformIdentity | null = platform
+    ? {
+        businessName: str(platform.name, defaultName),
+        legalName: str(platform.legalName),
+        pan: str(platform.pan),
+        vatNumber: str(platform.vatNumber),
+        vatRegistered: platform.vatRegistered !== false,
+        registrationNo: str(platform.registrationNo),
+        drugLicenceNo: str(platform.drugLicenceNo),
+      }
+    : null;
+
   if (!doc) {
     return {
       ...DEFAULT_SETTINGS,
       businessName: defaultName,
+      ...identity,
     };
   }
-
-  const str = (value: unknown, fallback = ""): string =>
-    typeof value === "string" ? value : fallback;
 
   return {
     businessName: str(doc.businessName, defaultName || DEFAULT_SETTINGS.businessName),
@@ -128,6 +211,7 @@ function hydrate(
           .map((value) => value.trim())
           .filter(Boolean)
       : [],
+    ...identity,
   };
 }
 
@@ -142,11 +226,25 @@ async function loadSettings(
   fallbackName?: string | null,
 ): Promise<BusinessSettings> {
   await connectDB();
-  const doc = await Setting.findOne({
-    pharmacyId: asObjectId(pharmacyId),
-    key: "business",
-  }).lean();
-  return hydrate(doc as SettingsShape | null, fallbackName);
+  const id = asObjectId(pharmacyId);
+
+  // Two documents, one object. The shop owns its address, its wording and
+  // its categories; the platform owns the names, tax numbers and licences a
+  // tax invoice is judged on. Everything downstream - the bill header, the
+  // PDF, the previews - reads the merged result and does not need to know
+  // which half a field came from.
+  const [doc, platform] = await Promise.all([
+    Setting.findOne({ pharmacyId: id, key: "business" }).lean(),
+    Pharmacy.findById(id)
+      .select("name legalName pan vatNumber vatRegistered registrationNo drugLicenceNo")
+      .lean(),
+  ]);
+
+  return hydrate(
+    doc as SettingsShape | null,
+    fallbackName,
+    platform as PlatformShape | null,
+  );
 }
 
 /**
@@ -197,7 +295,13 @@ export async function saveSettings(
   const { vatRate, ...rest } = input;
   const id = asObjectId(pharmacyId);
 
-  const doc = await Setting.findOneAndUpdate(
+  /*
+    `rest` cannot contain a name, a PAN, a VAT number or a licence: those are
+    not in `settingsSchema`, so the parser drops them before this function is
+    reached. That is the whole guarantee - nothing here has to remember to
+    strip them, and a request that invents them gets nowhere.
+  */
+  await Setting.findOneAndUpdate(
     { pharmacyId: id, key: "business" },
     {
       $set: { ...rest, vatRate: round4(vatRate / 100) },
@@ -209,19 +313,65 @@ export async function saveSettings(
   invalidateTtl(cacheKey(String(pharmacyId)));
   invalidateTtl(`active-branch-count:${String(pharmacyId)}`);
 
-  // The sidebar, tab title and superadmin list all read this name. Keeping it
-  // in step with Settings means renaming the shop on the bill also renames
-  // the shop on the door.
-  if (rest.businessName) {
-    await Pharmacy.updateOne({ _id: id }, { $set: { name: rest.businessName } });
-  }
+  // Re-read rather than hydrating the write: what comes back has to carry
+  // the platform's half of the record too, and that half was not part of
+  // this save.
+  return loadSettings(id);
+}
 
-  return hydrate(doc as SettingsShape | null);
+/**
+ * Drop a pharmacy's cached details after superadmin has changed its identity.
+ *
+ * Without this, a corrected PAN would sit unused for up to fifteen seconds
+ * while bills went on printing the old one.
+ */
+export function invalidateSettings(pharmacyId: string | Types.ObjectId): void {
+  invalidateTtl(cacheKey(String(pharmacyId)));
 }
 
 /** Percentage for display, from the stored fraction. */
 export function vatPercent(settings: BusinessSettings): number {
   return round4(settings.vatRate * 100);
+}
+
+function templateCacheKey(pharmacyId: string): string {
+  return `print-template:${pharmacyId}`;
+}
+
+/**
+ * The bill layout this pharmacy's printer can produce.
+ *
+ * Lives on the platform's pharmacy record rather than in Settings, because it
+ * describes the hardware on the counter and only superadmin sets it. Read on
+ * every printed bill, credit note and downloaded invoice, so it is cached
+ * beside the shop's own details and for the same few seconds.
+ *
+ * Like `getSettings`, this never throws: an unreachable database gives back
+ * the 80mm roll, which is what every pharmacy could print before templates
+ * existed. Paper that is the wrong size beats a bill that will not render.
+ */
+export async function getPrintTemplate(
+  pharmacyId?: string | Types.ObjectId | null,
+): Promise<PrintTemplate> {
+  if (!pharmacyId) return printTemplate(DEFAULT_PRINT_TEMPLATE);
+
+  try {
+    const id = await onceTtl(templateCacheKey(String(pharmacyId)), CACHE_MS, async () => {
+      await connectDB();
+      const doc = await Pharmacy.findById(asObjectId(pharmacyId))
+        .select("printTemplate")
+        .lean();
+      return doc?.printTemplate ?? DEFAULT_PRINT_TEMPLATE;
+    });
+    return printTemplate(id);
+  } catch {
+    return printTemplate(DEFAULT_PRINT_TEMPLATE);
+  }
+}
+
+/** Drop the cached layout after superadmin has changed it. */
+export function invalidatePrintTemplate(pharmacyId: string | Types.ObjectId): void {
+  invalidateTtl(templateCacheKey(String(pharmacyId)));
 }
 
 /**

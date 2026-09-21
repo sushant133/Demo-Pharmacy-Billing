@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { LoginForm } from "@/components/LoginForm";
+import { cx } from "@/components/ui";
 import { adToBs, formatBs, nepaliFiscalYear } from "@/lib/bs-date";
 import { config } from "@/lib/config";
-import { getSettings, type BusinessSettings } from "@/lib/settings";
 import { localParts } from "@/lib/dates";
 
 export const metadata: Metadata = { title: "Sign in" };
@@ -10,17 +10,22 @@ export const metadata: Metadata = { title: "Sign in" };
 /**
  * Sign-in screen.
  *
- * Server component around one interactive island, so the shop's identity, the
- * date and the branding render on the server and only the credential form
- * ships JavaScript.
+ * Server component around one interactive island, so the date and the
+ * branding render on the server and only the credential form ships
+ * JavaScript.
  *
- * Two audiences meet here. A stranger who found the URL should learn nothing
- * they could use. Staff opening the counter should be able to tell at a
- * glance, without signing in, that this is the right terminal for the right
- * shop on the right day - which is why the card carries the trading name, the
- * PAN, both calendars and the fiscal year rather than a headline alone.
- * Pharmacy records are regulated and auditable, and the door to them should
- * look like it.
+ * This is the platform's front door, not any one shop's. Every pharmacy on
+ * MantraMed signs in through this same URL, so nothing here names a
+ * tenant: a screen headed "Mantra Pharmacy" is wrong for every vendor except
+ * one, and the deployment default it used to read is not a real pharmacy at
+ * all. The shop's own identity appears once it is known, which is after
+ * sign-in.
+ *
+ * What is safe to show before then is what is true for everyone: the product,
+ * both calendars and the fiscal year that bills are filed under. A stranger
+ * who found the URL should learn nothing they could use; staff opening the
+ * counter should still be able to tell at a glance that this is the right
+ * terminal on the right day.
  */
 export default async function LoginPage({
   searchParams,
@@ -52,38 +57,29 @@ export default async function LoginPage({
 
   const sessionHours = Math.max(1, Math.round(config.sessionTtlSeconds / 3600));
 
-  // The shop names itself, from Settings. Falls back to the environment
-  // defaults if Mongo is unreachable, so the door still opens.
-  const shop = await getSettings();
-  const shopAddress = [shop.address, shop.city].filter(Boolean).join(", ");
-
   return (
     <div className="grid min-h-dvh lg:grid-cols-[minmax(0,1fr)_minmax(0,30rem)] xl:grid-cols-2">
-      <BrandPanel shop={shop} address={shopAddress} />
+      <BrandPanel />
 
       {/* Counter panel */}
-      <div className="flex flex-col justify-center bg-slate-100 px-4 py-10 sm:px-8 lg:px-12">
+      <div className="login-counter flex flex-col justify-center px-4 py-10 sm:px-8 lg:px-12">
         <div className="mx-auto w-full max-w-[26rem]">
           <MobileBrand />
 
           <div className="login-card overflow-hidden">
-            {/* Terminal strip: which shop this till belongs to. */}
-            <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-5 py-3">
-              <div className="min-w-0">
-                <p className="truncate text-[11px] font-semibold tracking-[0.08em] text-slate-500 uppercase">
-                  {shop.businessName}
-                </p>
-                {shopAddress ? (
-                  <p className="truncate text-[11px] text-slate-400">{shopAddress}</p>
-                ) : null}
-              </div>
-              <SecureBadge />
-            </div>
-
             <div className="px-5 py-6 sm:px-7 sm:py-7">
-              <h1 className="text-[22px] leading-tight font-semibold tracking-tight text-slate-900">
-                Sign in
-              </h1>
+              {/*
+                The badge sits with the heading rather than in a strip of its
+                own. The strip used to carry the shop's name, and on a
+                platform every pharmacy signs into, there is no shop to name
+                until someone has signed in.
+              */}
+              <div className="flex items-start justify-between gap-3">
+                <h1 className="text-[22px] leading-tight font-semibold tracking-tight text-slate-900">
+                  Sign in
+                </h1>
+                <SecureBadge />
+              </div>
               <p className="mt-1.5 text-sm text-slate-500">
                 {safeNext && safeNext !== "/" ? (
                   <>
@@ -141,11 +137,13 @@ export default async function LoginPage({
             raised it.
           </p>
 
-          {shop.pan ? (
-            <p className="mt-2 text-center text-[11px] text-slate-400">
-              PAN <span className="tnum">{shop.pan}</span>
-            </p>
-          ) : null}
+          {/*
+            Phones only. On a desktop the same imprint sits at the foot of the
+            brand panel, which is not rendered here.
+          */}
+          <div className="mt-6 lg:hidden">
+            <PackImprint tone="light" />
+          </div>
         </div>
       </div>
     </div>
@@ -157,13 +155,7 @@ export default async function LoginPage({
  * counter tablet held in one hand, decoration that pushes the password field
  * below the fold is worse than no decoration at all.
  */
-function BrandPanel({
-  shop,
-  address,
-}: {
-  shop: BusinessSettings;
-  address: string;
-}) {
+function BrandPanel() {
   return (
     <div className="login-ground relative hidden overflow-hidden lg:flex lg:flex-col lg:justify-between lg:p-12 xl:p-14">
       <div className="login-blister absolute inset-0" aria-hidden="true" />
@@ -187,7 +179,7 @@ function BrandPanel({
           M
         </span>
         <span className="text-[15px] leading-tight font-semibold text-white">
-          MantraSphere
+          MantraMed
           <span className="block text-[11px] font-normal tracking-wide text-slate-400">
             Pharmacy Suite
           </span>
@@ -229,16 +221,88 @@ function BrandPanel({
         </ul>
       </div>
 
-      <p className="relative text-[11px] text-slate-400">
-        {[
-          shop.businessName,
-          address,
-          shop.pan ? `PAN ${shop.pan}` : "",
-          shop.drugLicenceNo ? `DDA ${shop.drugLicenceNo}` : "",
-        ]
-          .filter(Boolean)
-          .join(" · ")}
-      </p>
+      {/* Same measure as the headline above it, so the column reads as one. */}
+      <div className="relative max-w-md">
+        <PackImprint tone="dark" />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Who made the software, written the way a pack says who made the medicine.
+ *
+ * Every carton on the shelf behind this counter carries the same block in the
+ * same order - a tear line, "A product of" in small caps, then the name - and
+ * a pharmacist reads it a hundred times a day. Borrowing it is the one credit
+ * on this screen that belongs to the room it is standing in, rather than a
+ * copyright notice lifted from the bottom of a marketing site.
+ *
+ * Given weight on purpose. A maker's mark whispered in 9pt grey is a maker's
+ * mark nobody reads, and on a pack this panel is printed to be legible at
+ * arm's length across a dispensary - so it gets a framed panel, a solid
+ * brand-coloured cross and a name at a size the eye actually stops on.
+ *
+ * Only what is true goes on it. A real pack imprint also carries a licence
+ * number, a batch and a plant address, and inventing any of those to complete
+ * the picture is the one thing that would make the whole conceit dishonest.
+ */
+function PackImprint({ tone }: { tone: "dark" | "light" }) {
+  const dark = tone === "dark";
+
+  return (
+    <div className="space-y-3">
+      {/* The tear line, as on the flap it would be printed under. */}
+      <div
+        className={cx(
+          "border-t border-dashed",
+          dark ? "border-white/20" : "border-slate-300",
+        )}
+        aria-hidden="true"
+      />
+
+      <div
+        className={cx(
+          "flex items-center gap-3.5 rounded-xl border px-4 py-3.5",
+          dark
+            ? "border-white/12 bg-white/[0.045]"
+            : "border-slate-200 bg-white shadow-sm",
+        )}
+      >
+        {/* The dispensing cross, as the maker's mark. */}
+        <span
+          className={cx(
+            "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white",
+            dark
+              ? "bg-brand-500 shadow-lg shadow-brand-500/25"
+              : "bg-brand-600 shadow-sm",
+          )}
+          aria-hidden="true"
+        >
+          <svg className="h-5 w-5" viewBox="0 0 100 100" fill="currentColor">
+            <path d="M38 6h24a6 6 0 016 6v20h20a6 6 0 016 6v24a6 6 0 01-6 6H68v20a6 6 0 01-6 6H38a6 6 0 01-6-6V68H12a6 6 0 01-6-6V38a6 6 0 016-6h20V12a6 6 0 016-6z" />
+          </svg>
+        </span>
+
+        <p className="min-w-0">
+          <span
+            className={cx(
+              "block text-[10px] font-bold tracking-[0.2em] uppercase",
+              dark ? "text-brand-300" : "text-brand-700",
+            )}
+          >
+            A product of
+          </span>
+          <span
+            className={cx(
+              "mt-0.5 block text-[15px] leading-snug font-semibold tracking-tight",
+              dark ? "text-white" : "text-slate-900",
+            )}
+          >
+            MantraSphere Innovations Pvt.&nbsp;Ltd.
+          </span>
+        </p>
+      </div>
     </div>
   );
 }
@@ -251,7 +315,7 @@ function MobileBrand() {
         M
       </span>
       <span className="text-[15px] leading-tight font-semibold text-slate-900">
-        MantraSphere
+        MantraMed
         <span className="block text-[11px] font-normal text-slate-500">
           Pharmacy Suite
         </span>

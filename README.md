@@ -1,7 +1,9 @@
-# MantraPharma
+# MantraMed
 
 Pharmacy management for Nepali retail pharmacies: point of sale, batch-level
 inventory, FEFO dispensing, expiry control and 13% VAT billing.
+
+A product of MantraSphere Innovations Pvt. Ltd.
 
 A single Next.js 15 full-stack app — App Router pages, Route Handlers for the
 API, MongoDB via Mongoose. One process, one deploy.

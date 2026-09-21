@@ -18,23 +18,30 @@ export interface BranchFormValues {
   isActive: boolean;
 }
 
+/**
+ * Edit an existing outlet.
+ *
+ * Only an existing one: outlets are opened by the platform on request, so
+ * there is no "add" mode here and no POST to /api/branches. What a shop does
+ * with the outlet it has - its printed name, address and PAN, which one is
+ * the default, and closing it - is all still its own.
+ */
 export function BranchFormPanel({
   branch,
   returnTo = "/branches",
 }: {
-  branch: BranchFormValues | null;
+  branch: BranchFormValues;
   returnTo?: string;
 }) {
   const router = useRouter();
-  const isEdit = Boolean(branch);
 
   const [values, setValues] = useState({
-    code: branch?.code ?? "",
-    name: branch?.name ?? "",
-    address: branch?.address ?? "",
-    phone: branch?.phone ?? "",
-    panNo: branch?.panNo ?? "",
-    notes: branch?.notes ?? "",
+    code: branch.code,
+    name: branch.name,
+    address: branch.address,
+    phone: branch.phone,
+    panNo: branch.panNo,
+    notes: branch.notes,
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -66,10 +73,10 @@ export function BranchFormPanel({
     setErrors({});
     setSaving(true);
 
-    const result = await apiFetch(
-      isEdit ? `/api/branches/${branch!.id}` : "/api/branches",
-      { method: isEdit ? "PATCH" : "POST", json: parsed.data },
-    );
+    const result = await apiFetch(`/api/branches/${branch.id}`, {
+      method: "PATCH",
+      json: parsed.data,
+    });
 
     if (!result.ok) {
       setFormError(result.message);
@@ -81,7 +88,6 @@ export function BranchFormPanel({
   }
 
   async function makeDefault() {
-    if (!branch) return;
     setSaving(true);
     setFormError(null);
     const result = await apiFetch(`/api/branches/${branch.id}/default`, { method: "POST" });
@@ -94,7 +100,6 @@ export function BranchFormPanel({
   }
 
   async function closeOutlet() {
-    if (!branch) return;
     setSaving(true);
     setFormError(null);
     const result = await apiFetch(`/api/branches/${branch.id}/close`, { method: "POST" });
@@ -108,12 +113,8 @@ export function BranchFormPanel({
 
   return (
     <SlideOver
-      title={isEdit ? "Edit branch" : "Add branch"}
-      description={
-        isEdit
-          ? "Printed bills from this outlet use this name, address and PAN."
-          : "A physical outlet. Stock, sales and receipts stay here until you transfer them."
-      }
+      title="Edit branch"
+      description="Printed bills from this outlet use this name, address and PAN."
       onClose={close}
       footer={
         <div className="flex flex-col gap-2">
@@ -125,15 +126,15 @@ export function BranchFormPanel({
               disabled={saving}
               className="btn-primary flex-1"
             >
-              {saving ? "Saving…" : isEdit ? "Save changes" : "Add branch"}
+              {saving ? "Saving…" : "Save changes"}
             </button>
             <button type="button" onClick={close} className="btn-secondary">
               Cancel
             </button>
           </div>
-          {isEdit && branch?.isActive !== false ? (
+          {branch.isActive !== false ? (
             <div className="flex items-center gap-2">
-              {!branch?.isDefault ? (
+              {!branch.isDefault ? (
                 <button
                   type="button"
                   onClick={makeDefault}
@@ -143,7 +144,7 @@ export function BranchFormPanel({
                   Make default
                 </button>
               ) : null}
-              {!branch?.isDefault ? (
+              {!branch.isDefault ? (
                 <button
                   type="button"
                   onClick={closeOutlet}
@@ -159,14 +160,13 @@ export function BranchFormPanel({
       }
     >
       <div className="space-y-4">
-        <Field label="Code" htmlFor="code" error={errors.code} hint="Used in URLs. Lowercase, letters, numbers and hyphens.">
-          <input
-            id="code"
-            className="input"
-            value={values.code}
-            onChange={(event) => set("code", event.target.value)}
-            disabled={isEdit}
-          />
+        <Field
+          label="Code"
+          htmlFor="code"
+          error={errors.code}
+          hint="Set when the outlet was opened. It appears in URLs and the branch switcher, so it cannot change."
+        >
+          <input id="code" className="input" value={values.code} disabled readOnly />
         </Field>
         <Field label="Name" htmlFor="name" error={errors.name}>
           <input

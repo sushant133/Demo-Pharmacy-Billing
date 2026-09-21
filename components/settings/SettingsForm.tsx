@@ -5,6 +5,7 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { apiFetch } from "@/lib/client";
 import { cx } from "@/components/ui";
 import { MEDICINE_CATEGORIES } from "@/lib/constants";
+import type { PlatformIdentity } from "@/lib/settings";
 import { settingsSchema } from "@/lib/validation";
 
 /**
@@ -16,20 +17,21 @@ import { settingsSchema } from "@/lib/validation";
  * the receipt" is answered without saving, printing, and finding out at the
  * counter.
  *
- * Validated with the same Zod schema the API enforces, so a nine-digit PAN
- * rule cannot drift between the two.
+ * The registered identity - both names, the PAN, the VAT number and the
+ * licences - is shown but not editable. MantraMed sets those when the
+ * account is opened, because a shop that can type its own PAN can issue tax
+ * invoices under a number nobody verified. They are still displayed, and
+ * still drawn into the preview, since what matters day to day is whether the
+ * bill is right rather than which half of the record a line came from.
+ *
+ * Validated with the same Zod schema the API enforces, and that schema has no
+ * field for the locked values at all - which is what stops a hand-rolled
+ * request writing one.
  */
 
 export interface SettingsValues {
-  businessName: string;
-  legalName: string;
-  pan: string;
-  vatRegistered: boolean;
-  vatNumber: string;
   /** A percentage in this form. The API stores the fraction. */
   vatRate: number;
-  drugLicenceNo: string;
-  registrationNo: string;
   address: string;
   city: string;
   phone: string;
@@ -41,16 +43,32 @@ export interface SettingsValues {
   medicineCategories: string[];
 }
 
-export function SettingsForm({ initial }: { initial: SettingsValues }) {
+/** The fields this form owns, picked out of a whole settings record. */
+function editableOnly(record: SettingsValues): SettingsValues {
+  return {
+    vatRate: record.vatRate,
+    address: record.address,
+    city: record.city,
+    phone: record.phone,
+    altPhone: record.altPhone,
+    email: record.email,
+    website: record.website,
+    billTerms: record.billTerms,
+    billFooterNote: record.billFooterNote,
+    medicineCategories: record.medicineCategories ?? [],
+  };
+}
+
+export function SettingsForm({
+  initial,
+  identity,
+}: {
+  initial: SettingsValues;
+  identity: PlatformIdentity;
+}) {
   const router = useRouter();
-  const [values, setValues] = useState<SettingsValues>({
-    ...initial,
-    medicineCategories: initial.medicineCategories ?? [],
-  });
-  const [saved, setSaved] = useState<SettingsValues>({
-    ...initial,
-    medicineCategories: initial.medicineCategories ?? [],
-  });
+  const [values, setValues] = useState<SettingsValues>(() => editableOnly(initial));
+  const [saved, setSaved] = useState<SettingsValues>(() => editableOnly(initial));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -125,11 +143,15 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
       return;
     }
 
-    setValues(result.data);
-    setSaved(result.data);
+    // The response carries the whole record, locked half included. Only the
+    // editable half is kept, so the dirty check keeps comparing like with
+    // like and a stray identity field can never ride along on the next save.
+    const stored = editableOnly(result.data);
+    setValues(stored);
+    setSaved(stored);
     setSavedAt(new Date().toLocaleTimeString());
-    // The name and PAN are rendered on the server elsewhere - the page title,
-    // the sign-in card, the next bill - so drop the cached render of them.
+    // The address and phone are rendered on the server elsewhere - the next
+    // bill, an exported report's letterhead - so drop the cached render.
     router.refresh();
   }
 
@@ -144,53 +166,12 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
           ) : null}
         </div>
 
-        <Section
-          title="Identity"
-          description="The name at the head of every bill, and the registered name if it differs."
-        >
-          <Field
-            label="Pharmacy name"
-            name="businessName"
-            required
-            value={values.businessName}
-            error={errors.businessName}
-            onChange={(value) => set("businessName", value)}
-            hint="The trading name customers know you by."
-          />
-          <Field
-            label="Registered name"
-            name="legalName"
-            value={values.legalName}
-            error={errors.legalName}
-            onChange={(value) => set("legalName", value)}
-            hint="Optional. Printed under the trading name when the two differ."
-          />
-        </Section>
+        <RegisteredIdentity identity={identity} />
 
         <Section
-          title="Tax registration"
-          description="A tax invoice without a seller PAN is not valid. These print on every bill."
+          title="Tax rate"
+          description="The rate charged on new bills. Past bills keep the rate they were charged at."
         >
-          <Field
-            label="PAN"
-            name="pan"
-            value={values.pan}
-            error={errors.pan}
-            onChange={(value) => set("pan", value)}
-            inputMode="numeric"
-            hint="Nine digits."
-            className="tnum"
-          />
-          <Field
-            label="VAT number"
-            name="vatNumber"
-            value={values.vatNumber}
-            error={errors.vatNumber}
-            onChange={(value) => set("vatNumber", value)}
-            inputMode="numeric"
-            hint="Usually the same as the PAN."
-            className="tnum"
-          />
           <Field
             label="VAT rate"
             name="vatRate"
@@ -199,46 +180,12 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
             onChange={(value) => set("vatRate", Number(value))}
             inputMode="decimal"
             suffix="%"
-            hint="Applies to new bills only. Past bills keep the rate they were charged at."
+            hint={
+              identity.vatRegistered
+                ? "13% in Nepal unless you have been told otherwise."
+                : "This pharmacy is not VAT registered, so no VAT line is printed."
+            }
             className="tnum"
-          />
-          <label className="flex items-start gap-2.5 sm:col-span-2">
-            <input
-              type="checkbox"
-              name="vatRegistered"
-              checked={values.vatRegistered}
-              onChange={(event) => set("vatRegistered", event.target.checked)}
-              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500/25"
-            />
-            <span className="text-sm text-slate-700">
-              This pharmacy is VAT registered
-              <span className="block text-xs text-slate-500">
-                Uncheck for a PAN-only business. The VAT number is then left off
-                the bill.
-              </span>
-            </span>
-          </label>
-        </Section>
-
-        <Section
-          title="Licences"
-          description="Kept on record and printed on the bill, where an inspector expects to find them."
-        >
-          <Field
-            label="Drug licence number"
-            name="drugLicenceNo"
-            value={values.drugLicenceNo}
-            error={errors.drugLicenceNo}
-            onChange={(value) => set("drugLicenceNo", value)}
-            hint="Department of Drug Administration."
-          />
-          <Field
-            label="Registration number"
-            name="registrationNo"
-            value={values.registrationNo}
-            error={errors.registrationNo}
-            onChange={(value) => set("registrationNo", value)}
-            hint="Company or firm registration."
           />
         </Section>
 
@@ -430,8 +377,95 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
         </div>
       </div>
 
-      <BillPreview values={values} />
+      <BillPreview values={values} identity={identity} />
     </form>
+  );
+}
+
+/**
+ * The registered identity, shown and not editable.
+ *
+ * Displayed rather than hidden: these are the lines an inspector reads off a
+ * bill, and a shop that cannot see what its own invoice claims has no way to
+ * notice a wrong digit. What it gets instead of an input is a way to report
+ * one - which is the right shape, because correcting a PAN is a thing the
+ * platform has to verify, not a field anybody can retype.
+ */
+function RegisteredIdentity({ identity }: { identity: PlatformIdentity }) {
+  const rows: Array<{ label: string; value: string; hint?: string }> = [
+    {
+      label: "Pharmacy name",
+      value: identity.businessName,
+      hint: "The trading name at the head of every bill.",
+    },
+    {
+      label: "Registered name",
+      value: identity.legalName,
+      hint: "Printed under the trading name when the two differ.",
+    },
+    { label: "PAN", value: identity.pan, hint: "Nine digits." },
+    {
+      label: "VAT number",
+      value: identity.vatRegistered ? identity.vatNumber : "",
+      hint: identity.vatRegistered
+        ? "Usually the same as the PAN."
+        : "Not VAT registered, so nothing is printed.",
+    },
+    {
+      label: "Drug licence number",
+      value: identity.drugLicenceNo,
+      hint: "Department of Drug Administration.",
+    },
+    {
+      label: "Registration number",
+      value: identity.registrationNo,
+      hint: "Company or firm registration.",
+    },
+  ];
+
+  return (
+    <section className="card p-5">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h2 className="text-sm font-semibold text-slate-900">
+            Registered identity
+          </h2>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Set by MantraMed from your registration papers. These print on
+            every bill.
+          </p>
+        </div>
+        <span className="badge bg-slate-100 text-slate-600 ring-slate-200">
+          Read only
+        </span>
+      </div>
+
+      <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+        {rows.map((row) => (
+          <div key={row.label}>
+            <dt className="label mb-0">{row.label}</dt>
+            <dd
+              className={cx(
+                "mt-1 text-sm",
+                row.value ? "text-slate-900" : "text-slate-400",
+              )}
+            >
+              {row.value || "Not set"}
+            </dd>
+            {row.hint ? (
+              <p className="mt-0.5 text-xs text-slate-400">{row.hint}</p>
+            ) : null}
+          </div>
+        ))}
+      </dl>
+
+      <p className="mt-4 rounded-lg bg-slate-50 px-3.5 py-3 text-xs leading-relaxed text-slate-600">
+        Something wrong here? Contact MantraMed support with the corrected
+        document. Changing a PAN or a licence number on a tax invoice is a
+        change the platform has to be able to stand behind, which is why it is
+        not a field you can edit.
+      </p>
+    </section>
   );
 }
 
@@ -443,7 +477,13 @@ export function SettingsForm({ initial }: { initial: SettingsValues }) {
  * produces. The line items are stand-ins; everything drawn from settings is
  * live.
  */
-function BillPreview({ values }: { values: SettingsValues }) {
+function BillPreview({
+  values,
+  identity,
+}: {
+  values: SettingsValues;
+  identity: PlatformIdentity;
+}) {
   const addressLine = [values.address, values.city].filter(Boolean).join(", ");
 
   return (
@@ -456,8 +496,8 @@ function BillPreview({ values }: { values: SettingsValues }) {
         <article className="receipt">
           <header className="receipt-head">
             <p className="receipt-kicker">कर बीजक / TAX INVOICE</p>
-            <h1 className="receipt-shop">{values.businessName || "Your pharmacy"}</h1>
-            {values.legalName ? <p>{values.legalName}</p> : null}
+            <h1 className="receipt-shop">{identity.businessName || "Your pharmacy"}</h1>
+            {identity.legalName ? <p>{identity.legalName}</p> : null}
             {addressLine ? <p>{addressLine}</p> : null}
             {values.phone ? (
               <p>
@@ -466,11 +506,15 @@ function BillPreview({ values }: { values: SettingsValues }) {
               </p>
             ) : null}
             {values.email ? <p>{values.email}</p> : null}
-            <p className="receipt-pan">PAN: {values.pan || "—"}</p>
-            {values.vatRegistered && values.vatNumber && values.vatNumber !== values.pan ? (
-              <p>VAT: {values.vatNumber}</p>
+            <p className="receipt-pan">PAN: {identity.pan || "—"}</p>
+            {identity.vatRegistered &&
+            identity.vatNumber &&
+            identity.vatNumber !== identity.pan ? (
+              <p>VAT: {identity.vatNumber}</p>
             ) : null}
-            {values.drugLicenceNo ? <p>DDA licence: {values.drugLicenceNo}</p> : null}
+            {identity.drugLicenceNo ? (
+              <p>DDA licence: {identity.drugLicenceNo}</p>
+            ) : null}
           </header>
 
           <div className="receipt-meta">
@@ -509,7 +553,7 @@ function BillPreview({ values }: { values: SettingsValues }) {
               <dt>Taxable</dt>
               <dd>100.00</dd>
             </div>
-            {values.vatRegistered ? (
+            {identity.vatRegistered ? (
               <div>
                 <dt>VAT {formatRate(values.vatRate)}%</dt>
                 <dd>{((100 * (values.vatRate || 0)) / 100).toFixed(2)}</dd>
@@ -518,7 +562,7 @@ function BillPreview({ values }: { values: SettingsValues }) {
             <div className="grand">
               <dt>Grand total</dt>
               <dd>
-                {(100 + (values.vatRegistered ? values.vatRate || 0 : 0)).toFixed(2)}
+                {(100 + (identity.vatRegistered ? values.vatRate || 0 : 0)).toFixed(2)}
               </dd>
             </div>
           </dl>

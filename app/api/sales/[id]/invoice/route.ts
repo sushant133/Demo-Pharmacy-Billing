@@ -5,7 +5,7 @@ import { adToBs, formatBs, formatBsIso } from "@/lib/bs-date";
 import { connectDB } from "@/lib/db";
 import { localParts } from "@/lib/dates";
 import { formatExpiry } from "@/lib/format";
-import { getSettings, printedIssuer } from "@/lib/settings";
+import { getPrintTemplate, getSettings, printedIssuer } from "@/lib/settings";
 import { INVOICE_CONTENT_TYPE, toInvoicePdf } from "@/lib/export/invoice-pdf";
 import { displayBillNo } from "@/models/Counter";
 import { Sale } from "@/models/Sale";
@@ -22,9 +22,10 @@ type Ctx = { params: Promise<{ id: string }> };
  * GET /api/sales/:id/invoice - the bill as a PDF.
  *
  * What "Download invoice" fetches at the end of a sale, and what a customer
- * gets when a link is shared with them. The 80mm receipt at /bills/:id is the
- * thing that goes to the roll printer; this is the A4 copy that goes into
- * somebody's records.
+ * gets when a link is shared with them. /bills/:id is the page the counter
+ * prints; this is the file that gets emailed or filed. Both follow the
+ * pharmacy's assigned template, so the copy in somebody's records is the same
+ * shape as the one they were handed.
  *
  * Read-only: unlike printing, downloading does not consume a copy number, so
  * fetching it twice does not turn the original into "Copy of Original – 1".
@@ -45,7 +46,13 @@ export const GET = withRoute<Ctx>(async (_req, ctx) => {
   assertVisibleInScope(sale.branchId, scope, "No bill found with that number.");
 
   const settings = await getSettings(user.pharmacyId, user.pharmacyName);
-  const issuer = await printedIssuer(settings, sale.branchId, user.pharmacyId);
+  // The downloaded copy is laid out on the same paper the counter prints on,
+  // so the file a customer is emailed and the slip they were handed are the
+  // same document rather than two shapes of the same numbers.
+  const [issuer, template] = await Promise.all([
+    printedIssuer(settings, sale.branchId, user.pharmacyId),
+    getPrintTemplate(user.pharmacyId),
+  ]);
 
   const issuedAt = (sale.createdAt as unknown as Date) ?? new Date();
   let bsDate = "";
@@ -101,7 +108,7 @@ export const GET = withRoute<Ctx>(async (_req, ctx) => {
     footerNote: settings.billFooterNote,
     voided: Boolean(sale.voidedAt),
     reprintCount: sale.reprintCount ?? 0,
-  });
+  }, template.id);
 
   const fileName = `invoice-${displayBillNo(sale.billNo).replace(/[^\w.-]+/g, "-")}.pdf`;
 

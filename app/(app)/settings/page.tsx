@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePagePermission } from "@/lib/auth";
+import { hasMultipleBranches } from "@/lib/branch-scope";
 import { withDbRead } from "@/lib/db";
-import { getSettings, vatPercent } from "@/lib/settings";
+import { getSettings, platformIdentity, vatPercent } from "@/lib/settings";
 import { PageHeader } from "@/components/ui";
 import { SettingsForm } from "@/components/settings/SettingsForm";
 
@@ -12,15 +13,20 @@ export const dynamic = "force-dynamic";
 /**
  * The shop's own details.
  *
- * These are the fields a tax invoice is legally required to carry, so they
- * belong to the pharmacy rather than to the deployment: an owner who has just
- * been issued a PAN, or who has moved premises, should be able to correct the
- * bill header without anyone touching a server.
+ * Split in two, and the split is the point. The premises, the phone, the
+ * terms and the footer line are the shop's: an owner who has moved should be
+ * able to correct the bill header without anyone touching a server. The
+ * registered identity - both names, the PAN, the VAT number and the licences
+ * - is MantraMed's, shown here read-only, because a shop that can type its
+ * own PAN can issue tax invoices under a number nobody verified.
  */
 export default async function SettingsPage() {
   const user = await requirePagePermission("settings:manage");
-  const settings = await withDbRead(() =>
-    getSettings(user.pharmacyId, user.pharmacyName),
+  const [settings, multiBranch] = await withDbRead(() =>
+    Promise.all([
+      getSettings(user.pharmacyId, user.pharmacyName),
+      hasMultipleBranches(user),
+    ]),
   );
 
   return (
@@ -49,23 +55,40 @@ export default async function SettingsPage() {
           <span>
             <strong className="font-semibold">No PAN is set.</strong> A tax
             invoice without the seller&apos;s PAN is not valid, so every bill
-            printed until this is filled in carries a gap where the number should
-            be.
+            printed until this is filled in carries a gap where the number
+            should be. Send yours to MantraMed support and it will be added
+            to your registered identity below.
           </span>
         </div>
       ) : null}
 
-      <SettingsForm initial={{ ...settings, vatRate: vatPercent(settings) }} />
+      <SettingsForm
+        initial={{ ...settings, vatRate: vatPercent(settings) }}
+        identity={platformIdentity(settings)}
+      />
 
       <p className="mt-6 max-w-2xl text-xs leading-relaxed text-slate-500">
         Running more than one outlet? A branch may print its own name, address,
         phone and PAN &mdash; a VAT invoice has to carry the identity of the
         outlet that issued it. Anything a branch leaves blank falls back to what
-        is set here. Set those on the{" "}
-        <Link href="/branches" className="font-medium text-brand-700 hover:underline">
-          Branches
-        </Link>{" "}
-        screen.
+        is set here.{" "}
+        {multiBranch ? (
+          <>
+            Set those on the{" "}
+            <Link
+              href="/branches"
+              className="font-medium text-brand-700 hover:underline"
+            >
+              Branches
+            </Link>{" "}
+            screen.
+          </>
+        ) : (
+          <>
+            Ask MantraMed support to open a second outlet for this pharmacy
+            and a Branches screen appears here for it.
+          </>
+        )}
       </p>
     </>
   );

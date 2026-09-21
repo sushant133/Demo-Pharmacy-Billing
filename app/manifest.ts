@@ -2,9 +2,9 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Pharmacy counter",
-    short_name: "Pharmacy",
-    description: "Sales and 80mm thermal bills on a phone or till.",
+    name: "MantraMed",
+    short_name: "MantraMed",
+    description: "Sales and thermal bills on a phone or till.",
     start_url: "/billing",
     display: "standalone",
     background_color: "#f1f5f9",

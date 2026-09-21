@@ -218,21 +218,40 @@ export function LoginForm({
         ) : null}
       </div>
 
+      {/*
+        Development only - the page passes null in production.
+
+        One row per account, with the credentials on their own line in
+        monospace and the button pinned right. The previous layout ran the
+        label, email and password together as prose, which wrapped mid-address
+        at this width and made the block the untidiest thing on an otherwise
+        composed screen.
+      */}
       {demo && demo.length > 0 ? (
-        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3 text-xs text-slate-600">
-          <p className="font-medium text-slate-700">Demo logins</p>
-          <ul className="mt-2 space-y-2">
+        <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+          <p className="border-b border-slate-200 px-3.5 py-2 text-[11px] font-semibold tracking-[0.12em] text-slate-500 uppercase">
+            Demo logins
+          </p>
+          <ul className="divide-y divide-slate-200">
             {demo.map((account) => (
-              <li key={account.email}>
-                <p className="font-medium text-slate-700">{account.label}</p>
-                <p className="leading-relaxed">
-                  Email <span className="tnum font-medium text-slate-800">{account.email}</span>
-                  <span className="mx-1.5 text-slate-300">·</span>
-                  Password <span className="font-medium text-slate-800">{account.password}</span>
-                </p>
+              <li
+                key={account.email}
+                className="flex items-start justify-between gap-3 px-3.5 py-2.5"
+              >
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-slate-700">
+                    {account.label}
+                  </p>
+                  <p className="mt-0.5 truncate font-mono text-[11px] text-slate-500">
+                    {account.email}
+                  </p>
+                  <p className="font-mono text-[11px] text-slate-500">
+                    {account.password}
+                  </p>
+                </div>
                 <button
                   type="button"
-                  className="mt-1 text-[11px] font-medium text-brand-700 hover:text-brand-800"
+                  className="shrink-0 rounded-md bg-white px-2.5 py-1 text-[11px] font-medium text-brand-700 ring-1 ring-slate-200 ring-inset transition-colors hover:bg-brand-50 hover:text-brand-800"
                   onClick={() => {
                     setEmail(account.email);
                     setPassword(account.password);
@@ -240,7 +259,7 @@ export function LoginForm({
                     setErrors({});
                   }}
                 >
-                  Fill this login
+                  Use
                 </button>
               </li>
             ))}

@@ -225,6 +225,30 @@
   background-position: 0 0, 22px 22px;
 }
 
+/*
+  The counter side.
+
+  A flat slab of grey against the dark brand panel makes the seam read as two
+  screenshots stitched together. A soft wash from the top and the same blister
+  dots at a whisper - dark here rather than light - settle it into the same
+  surface as the panel beside it.
+*/
+.login-counter {
+  background-color: var(--color-slate-100);
+  background-image:
+    radial-gradient(120% 70% at 50% 0%, rgb(255 255 255 / 0.85), transparent 62%),
+    radial-gradient(circle, rgb(15 23 42 / 0.022) 16%, transparent 17%),
+    radial-gradient(circle, rgb(15 23 42 / 0.022) 16%, transparent 17%);
+  background-size:
+    auto,
+    56px 56px,
+    56px 56px;
+  background-position:
+    0 0,
+    0 0,
+    28px 28px;
+}
+
 /* Hairline separators inside the brand panel's feature list. */
 .login-rule {
   background-image: linear-gradient(
@@ -291,8 +315,15 @@
 }
 
 /*
-  80mm thermal tax invoice. The printable width of an 80mm roll is ~72mm;
-  58mm printers still fit because the layout is a single column.
+  The printed tax invoice and credit note.
+
+  One set of rules for every paper the platform supports. The shape a given
+  pharmacy prints on arrives as custom properties and two data attributes,
+  set from its `PrintTemplate` in lib/print-templates.ts - the width, the body
+  size, whether the line items are a single stacked column or a real table,
+  and whether the head is fixed-pitch for an impact printer. The `@page` size
+  cannot live here, because `@page` cannot be selected by class; each printed
+  page emits its own.
 */
 .receipt-page {
   min-height: 100dvh;
@@ -302,7 +333,7 @@
 
 .receipt-toolbar {
   display: flex;
-  max-width: 22rem;
+  max-width: min(100%, max(22rem, var(--receipt-width, 76mm)));
   margin: 0 auto 1rem;
   align-items: center;
   justify-content: space-between;
@@ -311,10 +342,31 @@
   padding: 0 0.25rem;
 }
 
+/*
+  The print buttons and anything that warns about the bill sit above the
+  document and match its width, so a 58mm roll does not end up under a
+  control bar four times wider than the paper.
+*/
+.receipt-print-actions,
+.receipt-notice {
+  max-width: min(100%, max(22rem, var(--receipt-width, 76mm)));
+  margin-inline: auto;
+}
+
 .receipt-print-actions {
   display: grid;
   gap: 0.5rem;
-  margin: 0.5rem 0 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.receipt-notice {
+  margin-bottom: 0.75rem;
+  border-radius: 0.5rem;
+  border-width: 1px;
+  border-style: solid;
+  padding: 0.5rem 0.875rem;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .receipt-print-hint {
@@ -326,14 +378,47 @@
 }
 
 .receipt {
-  width: 80mm;
+  width: var(--receipt-width, 76mm);
+  max-width: 100%;
   margin: 0 auto;
   background: #fff;
   color: #111;
-  padding: 4mm 3mm 6mm;
-  font-size: 11px;
+  padding: var(--receipt-pad, 4mm 3mm 6mm);
+  font-size: var(--receipt-font, 11px);
   line-height: 1.35;
   box-shadow: 0 1px 3px rgb(15 23 42 / 0.12);
+}
+
+/*
+  Impact printers render one fixed-pitch face cleanly and grey fills as mud,
+  so the dot-matrix templates ask for the face and the rules below drop every
+  tint back to plain ink.
+*/
+.receipt[data-mono="true"] {
+  font-family: ui-monospace, "Courier New", monospace;
+}
+
+.receipt[data-mono="true"] .muted,
+.receipt[data-mono="true"] .receipt-meta dt,
+.receipt[data-mono="true"] .receipt-party .k,
+.receipt[data-mono="true"] .receipt-foot .tiny {
+  color: #111;
+}
+
+/* A second copy is a second sheet, not a longer one. */
+.receipt + .receipt {
+  margin-top: 1.25rem;
+}
+
+.receipt-caption {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: 1px solid #111;
+  padding: 3px 0;
+  margin-bottom: 6px;
 }
 
 .receipt-head {
@@ -495,12 +580,106 @@
   color: #444;
 }
 
-@media print {
-  @page {
-    size: 80mm auto;
-    margin: 2mm;
-  }
+/*
+  Sheet and tractor paper.
 
+  Everything above is a single column, because 54mm of roll cannot be
+  anything else. Once there is a page to work with, the same fields want a
+  letterhead across the top, the invoice details beside the buyer rather than
+  under them, a real column per value, and the totals pulled to the right
+  where an accountant expects to find them.
+*/
+.receipt[data-layout="table"] .receipt-head {
+  text-align: left;
+  border-bottom-style: solid;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+}
+
+.receipt[data-layout="table"] .receipt-kicker {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+}
+
+.receipt[data-layout="table"] .receipt-shop {
+  font-size: 18px;
+}
+
+.receipt[data-layout="table"] .receipt-copy {
+  text-align: right;
+  margin-top: -18px;
+}
+
+.receipt[data-layout="table"] .receipt-meta {
+  grid-template-columns: 1fr 1fr;
+  column-gap: 24px;
+  border-bottom-style: solid;
+}
+
+.receipt[data-layout="table"] .receipt-party {
+  border-bottom-style: solid;
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+}
+
+.receipt[data-layout="table"] .receipt-lines th {
+  border-bottom-width: 1px;
+  padding: 4px 6px;
+}
+
+.receipt[data-layout="table"] .receipt-lines td {
+  padding: 5px 6px;
+  border-bottom: 1px solid #d4d4d4;
+}
+
+.receipt[data-layout="table"] .receipt-lines .col-index {
+  width: 5%;
+}
+
+.receipt[data-layout="table"] .receipt-lines .col-batch,
+.receipt[data-layout="table"] .receipt-lines .col-expiry {
+  width: 13%;
+}
+
+.receipt[data-layout="table"] .receipt-lines .col-qty {
+  width: 10%;
+}
+
+.receipt[data-layout="table"] .receipt-lines .col-rate,
+.receipt[data-layout="table"] .receipt-lines .col-amount {
+  width: 12%;
+}
+
+/* Numbers line up under each other, which is the point of the columns. */
+.receipt[data-layout="table"] .receipt-lines td.right {
+  font-variant-numeric: tabular-nums;
+}
+
+.receipt[data-layout="table"] .receipt-totals {
+  width: 52%;
+  margin-left: auto;
+  border-top-style: solid;
+}
+
+.receipt[data-layout="table"] .receipt-totals div {
+  padding: 2px 6px;
+}
+
+.receipt[data-layout="table"] .receipt-words {
+  font-size: 11px;
+}
+
+.receipt[data-layout="table"] .receipt-foot {
+  border-top-style: solid;
+  text-align: left;
+}
+
+.receipt[data-layout="table"] .receipt-foot .sign {
+  text-align: right;
+  margin: 24px 0 6px;
+}
+
+@media print {
   html,
   body {
     background: #fff !important;
@@ -519,9 +698,19 @@
   }
 
   .receipt {
-    width: 76mm;
+    width: var(--receipt-width, 76mm);
+    max-width: none;
     margin: 0;
     padding: 0;
     box-shadow: none;
+  }
+
+  /*
+    A buyer's copy and an office copy are two sheets. On a continuous roll
+    there is only ever one document, so this rule never fires there.
+  */
+  .receipt + .receipt {
+    break-before: page;
+    margin-top: 0;
   }
 }

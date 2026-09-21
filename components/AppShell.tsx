@@ -136,6 +136,11 @@ export function AppShell({
     return query ? `${pathname}?${query}` : pathname;
   }, [pathname, searchParams]);
 
+  // A shop is multi-branch once it has a second outlet. Outlets are opened by
+  // the platform on request, so one is the normal state and the rows that only
+  // make sense across several stay out of the menu until then.
+  const multiBranch = branches.length > 1;
+
   // Role filter, applied once to the whole tree. A group with nothing left in
   // it disappears rather than showing an empty heading.
   const sections = useMemo(
@@ -144,6 +149,7 @@ export function AppShell({
         ...section,
         items: section.items
           .filter((item) => can(user.role, item.permission))
+          .filter((item) => multiBranch || !item.multiBranchOnly)
           .map((item) => ({
             ...item,
             children: item.children?.filter((child) =>
@@ -151,7 +157,7 @@ export function AppShell({
             ),
           })),
       })).filter((section) => section.items.length > 0),
-    [user.role],
+    [user.role, multiBranch],
   );
 
   // Arriving at a sub-route opens the menu that holds it, so the sidebar never
@@ -666,7 +672,7 @@ function UserCard({
         </div>
       </div>
 
-      {scope.switchable && branches.length > 0 ? (
+      {scope.switchable && branches.length > 1 ? (
         <BranchSwitcher current={scope.code ?? "all"} branches={branches} />
       ) : user.branchName ? (
         // No switcher to show where they are, so the card says it instead.

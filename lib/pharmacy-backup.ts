@@ -6,11 +6,14 @@ import { Batch } from "@/models/Batch";
 import { Branch } from "@/models/Branch";
 import { Counter } from "@/models/Counter";
 import { Customer } from "@/models/Customer";
+import { Expense } from "@/models/Expense";
 import { Medicine } from "@/models/Medicine";
 import { Pharmacy } from "@/models/Pharmacy";
+import { Prescription } from "@/models/Prescription";
 import { Purchase } from "@/models/Purchase";
 import { Sale } from "@/models/Sale";
 import { Setting } from "@/models/Setting";
+import { StockMovement } from "@/models/StockMovement";
 import { Supplier } from "@/models/Supplier";
 import { SupplierPayment } from "@/models/SupplierPayment";
 import { User } from "@/models/User";
@@ -30,6 +33,15 @@ import { User } from "@/models/User";
 export const BACKUP_FORMAT = "mantrapharma-pharmacy-backup";
 export const BACKUP_VERSION = 1;
 
+/**
+ * Every collection the file carries.
+ *
+ * This list is the promise the backup makes, so it has to cover everything a
+ * pharmacy owns - prescriptions, the stock ledger and expenses included.
+ * Leaving one out was survivable while a backup was only ever a copy; it is
+ * not now that deleting an account is possible and this file is what somebody
+ * is told to take first.
+ */
 const COLLECTIONS = [
   "users",
   "branches",
@@ -41,6 +53,9 @@ const COLLECTIONS = [
   "purchases",
   "payments",
   "sales",
+  "prescriptions",
+  "movements",
+  "expenses",
   "counters",
 ] as const;
 
@@ -116,6 +131,9 @@ export async function backupPharmacy(id: string): Promise<{
     purchases,
     payments,
     sales,
+    prescriptions,
+    movements,
+    expenses,
     counters,
   ] = await Promise.all([
     User.find(tenant).select("-passwordHash").lean(),
@@ -128,6 +146,9 @@ export async function backupPharmacy(id: string): Promise<{
     loadAll(Purchase, tenant),
     loadAll(SupplierPayment, tenant),
     loadAll(Sale, tenant),
+    loadAll(Prescription, tenant),
+    loadAll(StockMovement, tenant),
+    loadAll(Expense, tenant),
     Counter.find({ _id: { $regex: `^${prefix}` } }).lean(),
   ]);
 
@@ -142,6 +163,9 @@ export async function backupPharmacy(id: string): Promise<{
     purchases,
     payments,
     sales,
+    prescriptions,
+    movements,
+    expenses,
     counters: counters.map(serializeValue),
   };
 

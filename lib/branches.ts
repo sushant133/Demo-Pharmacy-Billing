@@ -8,8 +8,12 @@ import { pharmacyFilter, pharmacyObjectId } from "@/lib/tenant";
 import { sessionOption, withTransaction } from "@/lib/transaction";
 import { Batch } from "@/models/Batch";
 import { Branch } from "@/models/Branch";
+import { Expense } from "@/models/Expense";
+import { Pharmacy } from "@/models/Pharmacy";
+import { Prescription } from "@/models/Prescription";
 import { Purchase } from "@/models/Purchase";
 import { Sale } from "@/models/Sale";
+import { StockMovement } from "@/models/StockMovement";
 import { User } from "@/models/User";
 import type { BranchInput } from "@/lib/validation";
 
@@ -42,9 +46,27 @@ export async function listBranches(
   user: SessionUser,
   includeInactive = false,
 ): Promise<BranchSummary[]> {
+  return listBranchesForPharmacy(pharmacyObjectId(user), includeInactive);
+}
+
+/**
+ * The same registry, addressed by pharmacy rather than by session.
+ *
+ * Superadmin belongs to no shop, so it cannot read one through
+ * `pharmacyFilter`. The platform screens name the pharmacy explicitly, which
+ * is also the only way an outlet is opened now - see
+ * `createBranchForPharmacy`.
+ */
+export async function listBranchesForPharmacy(
+  pharmacyId: string | Types.ObjectId,
+  includeInactive = false,
+): Promise<BranchSummary[]> {
   await connectDB();
 
-  const filter: Record<string, unknown> = { ...pharmacyFilter(user) };
+  const tenant =
+    typeof pharmacyId === "string" ? new Types.ObjectId(pharmacyId) : pharmacyId;
+
+  const filter: Record<string, unknown> = { pharmacyId: tenant };
   if (!includeInactive) filter.isActive = true;
   const branches = await Branch.find(filter).sort({ name: 1 }).lean();
   if (branches.length === 0) return [];
@@ -94,20 +116,39 @@ export async function listBranches(
   });
 }
 
-export async function createBranch(user: SessionUser, input: BranchInput) {
+/**
+ * Open an outlet for one pharmacy. Superadmin only, and deliberately so.
+ *
+ * An outlet is a billing identity - it prints its own name, address and PAN
+ * on a VAT invoice - and it permanently splits the shop's stock in two. A
+ * shop that wants another one asks the platform, and the platform opens it.
+ * That is why this takes a pharmacy id rather than a session, and why
+ * POST /api/branches no longer exists.
+ */
+export async function createBranchForPharmacy(
+  pharmacyId: string | Types.ObjectId,
+  input: BranchInput,
+) {
   await connectDB();
-  const pharmacyId = pharmacyObjectId(user);
+
+  const tenant =
+    typeof pharmacyId === "string" ? new Types.ObjectId(pharmacyId) : pharmacyId;
+
+  const shop = await Pharmacy.findById(tenant).select("_id").lean();
+  if (!shop) throw ApiError.notFound("That pharmacy no longer exists.");
 
   return withTransaction(async ({ session }) => {
     const [branch] = await Branch.create(
-      [{ ...input, pharmacyId, isDefault: false }],
+      [{ ...input, pharmacyId: tenant, isDefault: false }],
       sessionOption(session),
     );
     if (!branch) throw new Error("Branch was not created.");
 
     // The very first branch has to be the default, or nothing has anywhere to
     // go: new users, the seed and the migration all fall back to it.
-    const count = await Branch.countDocuments({ pharmacyId }).session(session);
+    const count = await Branch.countDocuments({ pharmacyId: tenant }).session(
+      session,
+    );
     if (count === 1) {
       await Branch.updateOne(
         { _id: branch._id },
@@ -211,6 +252,144 @@ export async function closeBranch(user: SessionUser, id: string) {
   await branch.save();
 
   return { id: String(branch._id), name: branch.name, closed: true };
+}
+
+/**
+ * Everything that would be orphaned by deleting a branch.
+ *
+ * Deliberately every collection that carries a `branchId`, not just the ones
+ * a person would think of. A bill has to reprint, a GRN has to reconcile, a
+ * stock movement is the only account of where units went - none of that
+ * survives the outlet it points at being removed from under it.
+ */
+const BRANCH_REFERENCES = [
+  ["lot of stock", "lots of stock", Batch],
+  ["bill", "bills", Sale],
+  ["purchase", "purchases", Purchase],
+  ["stock movement", "stock movements", StockMovement],
+  ["prescription", "prescriptions", Prescription],
+  ["expense", "expenses", Expense],
+  ["staff login", "staff logins", User],
+] as const;
+
+export interface BranchDeletionBlock {
+  count: number;
+  /** Worded and ready to read: "1 bill", "12 bills". */
+  text: string;
+}
+
+/** Worded here so the refusal message and the screen cannot disagree. */
+function wordBlock(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+/**
+ * What stands between each of a pharmacy's branches and deletion.
+ *
+ * Read by the platform screen so it can offer Delete only where it would
+ * work, and say what is in the way where it would not. The server checks
+ * again before deleting anything - this is the courtesy, not the guard.
+ *
+ * One query per collection for the whole pharmacy rather than per branch, so
+ * a chain with twenty outlets still costs seven round trips, not a hundred
+ * and forty.
+ */
+export async function branchDeletionBlockers(
+  pharmacyId: string | Types.ObjectId,
+): Promise<Map<string, BranchDeletionBlock[]>> {
+  await connectDB();
+  const tenant =
+    typeof pharmacyId === "string" ? new Types.ObjectId(pharmacyId) : pharmacyId;
+
+  const blockers = new Map<string, BranchDeletionBlock[]>();
+
+  const grouped = await Promise.all(
+    BRANCH_REFERENCES.map(async ([singular, plural, model]) => {
+      const rows = await (model as { aggregate: typeof Batch.aggregate }).aggregate<{
+        _id: Types.ObjectId | null;
+        count: number;
+      }>([
+        { $match: { pharmacyId: tenant, branchId: { $ne: null } } },
+        { $group: { _id: "$branchId", count: { $sum: 1 } } },
+      ]);
+      return { singular, plural, rows };
+    }),
+  );
+
+  for (const { singular, plural, rows } of grouped) {
+    for (const row of rows) {
+      if (!row._id || row.count === 0) continue;
+      const key = String(row._id);
+      const list = blockers.get(key) ?? [];
+      list.push({ count: row.count, text: wordBlock(row.count, singular, plural) });
+      blockers.set(key, list);
+    }
+  }
+
+  return blockers;
+}
+
+/**
+ * Delete an outlet for good. Superadmin only.
+ *
+ * The shop closes a branch it has finished with - see `closeBranch` - which
+ * keeps it, its bills and its history intact and merely stops it trading.
+ * This is the other thing: an outlet opened by mistake, with the wrong code
+ * or against the wrong pharmacy, that should never have existed. So it is
+ * only ever allowed when nothing at all points at the branch. A branch that
+ * has traded is a branch that has to be closed, not erased, and this refuses
+ * rather than quietly cascading.
+ *
+ * The default outlet is refused too: a pharmacy with nowhere to bill cannot
+ * work, and `ensureDefaultBranch` silently conjuring a replacement would be
+ * a worse surprise than being told to nominate one first.
+ */
+export async function deleteBranchForPharmacy(
+  pharmacyId: string | Types.ObjectId,
+  branchId: string,
+  confirm: string,
+): Promise<{ id: string; code: string; name: string }> {
+  await connectDB();
+  const tenant =
+    typeof pharmacyId === "string" ? new Types.ObjectId(pharmacyId) : pharmacyId;
+
+  const branch = await Branch.findOne({ _id: branchId, pharmacyId: tenant });
+  if (!branch) throw ApiError.notFound("That branch no longer exists.");
+
+  if (confirm.trim().toLowerCase() !== branch.code.toLowerCase()) {
+    throw ApiError.badRequest(
+      `Type the branch code (${branch.code}) exactly to confirm this deletion.`,
+    );
+  }
+
+  if (branch.isDefault) {
+    throw ApiError.conflict(
+      `${branch.name} is the default outlet. Make another branch the default before deleting this one.`,
+    );
+  }
+
+  // Counted here rather than trusted from the screen: the list was rendered
+  // at some point in the past, and a bill can be rung up in between.
+  const counts = await Promise.all(
+    BRANCH_REFERENCES.map(async ([singular, plural, model]) => {
+      const count = await (
+        model as { countDocuments: typeof Batch.countDocuments }
+      ).countDocuments({ branchId: branch._id });
+      return { count, text: wordBlock(count, singular, plural) };
+    }),
+  );
+
+  const holding = counts.filter((entry) => entry.count > 0);
+  if (holding.length > 0) {
+    const what = holding.map((entry) => entry.text).join(", ");
+    throw ApiError.conflict(
+      `${branch.name} still has ${what}. An outlet that has traded is closed, not deleted, so its bills keep reprinting and its stock stays accounted for.`,
+    );
+  }
+
+  await Branch.deleteOne({ _id: branch._id });
+
+  return { id: String(branch._id), code: branch.code, name: branch.name };
 }
 
 /**

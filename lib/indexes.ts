@@ -4,6 +4,7 @@ import { Customer } from "@/models/Customer";
 import { Expense } from "@/models/Expense";
 import { Medicine } from "@/models/Medicine";
 import { Pharmacy } from "@/models/Pharmacy";
+import { PlatformEvent } from "@/models/PlatformEvent";
 import { Prescription } from "@/models/Prescription";
 import { Purchase } from "@/models/Purchase";
 import { Sale } from "@/models/Sale";
@@ -23,6 +24,9 @@ import { User } from "@/models/User";
 export async function syncTenantIndexes(): Promise<void> {
   await Promise.all([
     Pharmacy.syncIndexes(),
+    // Not a tenant collection, but it is read by date on every platform
+    // screen and nothing else would ever build its index.
+    PlatformEvent.syncIndexes(),
     User.syncIndexes(),
     Branch.syncIndexes(),
     Medicine.syncIndexes(),

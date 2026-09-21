@@ -1,10 +1,24 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { apiFetch } from "@/lib/client";
+import {
+  DEFAULT_PRINT_TEMPLATE,
+  PRINT_TEMPLATE_LIST,
+} from "@/lib/print-templates";
 import { createPharmacySchema } from "@/lib/validation";
 
+/**
+ * Opening an account.
+ *
+ * Four fields are required - the shop's name and the three that make a
+ * working login - and everything else is paperwork that can follow. That is
+ * not laziness: an account is usually opened while the owner is on the phone,
+ * and a form that demands a drug licence number before it will save is a form
+ * that gets a made-up number typed into it.
+ */
 export function CreatePharmacyForm() {
   const router = useRouter();
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -76,40 +90,128 @@ export function CreatePharmacyForm() {
           <input id="slug" name="slug" className="input" placeholder="sagarmatha-pharmacy" />
           {errors.slug ? <p className="mt-1.5 text-xs text-rose-600">{errors.slug}</p> : null}
         </div>
+      </fieldset>
+
+      <fieldset className="space-y-4 border-t border-slate-100 pt-5">
+        <legend className="text-sm font-semibold text-slate-900">
+          Registration &amp; licences
+        </legend>
+        <p className="text-sm text-slate-500">
+          All optional. Fill in what you have; the rest can be added from the
+          pharmacy&rsquo;s own page when the paperwork arrives.
+        </p>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor="pan" className="label">
               PAN <span className="font-normal text-slate-400">(optional)</span>
             </label>
             <input id="pan" name="pan" className="input" inputMode="numeric" maxLength={9} />
+            <p className="mt-1.5 text-xs text-slate-500">
+              Nine digits. Printed on every tax invoice the shop issues.
+            </p>
             {errors.pan ? <p className="mt-1.5 text-xs text-rose-600">{errors.pan}</p> : null}
           </div>
           <div>
-            <label htmlFor="phone" className="label">
-              Phone
+            <label htmlFor="registrationNo" className="label">
+              Company / firm registration{" "}
+              <span className="font-normal text-slate-400">(optional)</span>
             </label>
-            <input id="phone" name="phone" className="input" />
+            <input id="registrationNo" name="registrationNo" className="input" />
+          </div>
+          <div>
+            <label htmlFor="drugLicenceNo" className="label">
+              DDA drug licence <span className="font-normal text-slate-400">(optional)</span>
+            </label>
+            <input id="drugLicenceNo" name="drugLicenceNo" className="input" />
+          </div>
+          <div>
+            <label htmlFor="licenceExpiry" className="label">
+              Licence expiry <span className="font-normal text-slate-400">(optional)</span>
+            </label>
+            <input id="licenceExpiry" name="licenceExpiry" type="date" className="input" />
+            {errors.licenceExpiry ? (
+              <p className="mt-1.5 text-xs text-rose-600">{errors.licenceExpiry}</p>
+            ) : null}
           </div>
         </div>
+      </fieldset>
+
+      <fieldset className="space-y-4 border-t border-slate-100 pt-5">
+        <legend className="text-sm font-semibold text-slate-900">Contact</legend>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor="address" className="label">
-              Address
+              Address <span className="font-normal text-slate-400">(optional)</span>
             </label>
             <input id="address" name="address" className="input" />
           </div>
           <div>
             <label htmlFor="city" className="label">
-              City
+              City <span className="font-normal text-slate-400">(optional)</span>
             </label>
             <input id="city" name="city" className="input" />
           </div>
+          <div>
+            <label htmlFor="phone" className="label">
+              Shop phone <span className="font-normal text-slate-400">(optional)</span>
+            </label>
+            <input id="phone" name="phone" className="input" />
+          </div>
+          <div>
+            <label htmlFor="email" className="label">
+              Shop email <span className="font-normal text-slate-400">(optional)</span>
+            </label>
+            <input id="email" name="email" type="email" className="input" />
+            {errors.email ? (
+              <p className="mt-1.5 text-xs text-rose-600">{errors.email}</p>
+            ) : null}
+          </div>
+        </div>
+        <div>
+          <label htmlFor="printTemplate" className="label">
+            Bill template
+          </label>
+          {/*
+            Asked at the counter, not guessed: "what printer do you have?" is
+            a question the owner can answer on the phone while the account is
+            being opened, and it is the one setting that makes their first
+            bill come out the right size. Changeable afterwards from the
+            pharmacy's own page.
+          */}
+          <select
+            id="printTemplate"
+            name="printTemplate"
+            className="input"
+            defaultValue={DEFAULT_PRINT_TEMPLATE}
+          >
+            {PRINT_TEMPLATE_LIST.map((template) => (
+              <option key={template.id} value={template.id}>
+                {template.label} — {template.printer}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1.5 text-xs text-slate-500">
+            What the shop&rsquo;s printer can produce.{" "}
+            <Link
+              href="/superadmin/templates"
+              className="font-medium text-brand-700 hover:text-brand-800"
+            >
+              Compare the layouts
+            </Link>{" "}
+            if they are not sure.
+          </p>
+          {errors.printTemplate ? (
+            <p className="mt-1.5 text-xs text-rose-600">{errors.printTemplate}</p>
+          ) : null}
         </div>
         <div>
           <label htmlFor="notes" className="label">
-            Internal notes
+            Internal notes <span className="font-normal text-slate-400">(optional)</span>
           </label>
           <textarea id="notes" name="notes" rows={2} className="input" />
+          <p className="mt-1.5 text-xs text-slate-500">
+            Only the platform sees these. The shop never does.
+          </p>
         </div>
       </fieldset>
 
@@ -163,6 +265,26 @@ export function CreatePharmacyForm() {
           <p className="mt-1.5 text-xs text-slate-500">
             Give this to the owner in person. They can change it later from their shop.
           </p>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label htmlFor="ownerPhone" className="label">
+              Owner phone <span className="font-normal text-slate-400">(optional)</span>
+            </label>
+            <input id="ownerPhone" name="ownerPhone" className="input" />
+          </div>
+          <div>
+            <label htmlFor="ownerCitizenshipNo" className="label">
+              Citizenship number <span className="font-normal text-slate-400">(optional)</span>
+            </label>
+            <input id="ownerCitizenshipNo" name="ownerCitizenshipNo" className="input" />
+            <p className="mt-1.5 text-xs text-slate-500">
+              Know-your-customer only. Never printed, never shown to the shop.
+            </p>
+            {errors.ownerCitizenshipNo ? (
+              <p className="mt-1.5 text-xs text-rose-600">{errors.ownerCitizenshipNo}</p>
+            ) : null}
+          </div>
         </div>
       </fieldset>
 

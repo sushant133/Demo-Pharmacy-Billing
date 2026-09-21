@@ -1,5 +1,10 @@
 import { SignJWT, jwtVerify } from "jose";
-import { SESSION_COOKIE, config, requireAuthSecret } from "@/lib/config";
+import {
+  IMPERSONATION_COOKIE,
+  SESSION_COOKIE,
+  config,
+  requireAuthSecret,
+} from "@/lib/config";
 import { ROLE_SCHEME_VERSION, normalizeRole, type Role } from "@/lib/roles";
 
 /**
@@ -26,6 +31,17 @@ export interface SessionUser {
   branchId: string;
   branchCode: string;
   branchName: string;
+  /**
+   * Set only while a platform administrator is signed in as this user.
+   *
+   * The session is genuinely the owner's - that is the point, it has to see
+   * exactly what they see - so the only thing separating support from a
+   * silent takeover is that the token says so. Every screen that renders it
+   * and every record written under it can therefore be traced back to the
+   * person who started it.
+   */
+  impersonatorId?: string;
+  impersonatorName?: string;
 }
 
 const encoder = new TextEncoder();
@@ -36,7 +52,10 @@ function secretKey(): Uint8Array {
   return encoder.encode(requireAuthSecret());
 }
 
-export async function signSession(user: SessionUser): Promise<string> {
+export async function signSession(
+  user: SessionUser,
+  ttlSeconds = config.sessionTtlSeconds,
+): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
 
   return new SignJWT({
@@ -53,12 +72,17 @@ export async function signSession(user: SessionUser): Promise<string> {
     branchId: user.branchId,
     branchCode: user.branchCode,
     branchName: user.branchName,
+    // Absent on an ordinary sign-in, so a normal token is byte-for-byte what
+    // it always was and nothing downstream has to know this feature exists.
+    ...(user.impersonatorId
+      ? { impBy: user.impersonatorId, impName: user.impersonatorName ?? "" }
+      : {}),
   })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setSubject(user.id)
     .setIssuedAt(now)
     .setNotBefore(now)
-    .setExpirationTime(now + config.sessionTtlSeconds)
+    .setExpirationTime(now + ttlSeconds)
     .setIssuer("mantrapharma")
     .setAudience("mantrapharma:web")
     .sign(secretKey());
@@ -90,6 +114,12 @@ export async function verifySession(token: string): Promise<SessionUser | null> 
       branchId: str(payload.branchId),
       branchCode: str(payload.branchCode),
       branchName: str(payload.branchName),
+      ...(str(payload.impBy)
+        ? {
+            impersonatorId: str(payload.impBy),
+            impersonatorName: str(payload.impName),
+          }
+        : {}),
     };
   } catch {
     return null;
@@ -110,4 +140,19 @@ export function sessionCookieOptions(maxAge: number) {
   };
 }
 
-export { SESSION_COOKIE };
+/**
+ * Cookie options for the parked platform session.
+ *
+ * Same flags as the live one, with one difference that matters: it is not
+ * readable on the pharmacy side by anything but this application, and it
+ * expires on its own, so an abandoned impersonation cannot leave a superadmin
+ * token sitting in a browser indefinitely.
+ */
+export function impersonationCookieOptions(maxAge: number) {
+  return {
+    ...sessionCookieOptions(maxAge),
+    name: IMPERSONATION_COOKIE,
+  };
+}
+
+export { IMPERSONATION_COOKIE, SESSION_COOKIE };

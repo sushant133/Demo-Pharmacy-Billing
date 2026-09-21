@@ -9,17 +9,16 @@ export const contentType = "image/png";
 
 /**
  * Tab icon follows whoever is signed in: the pharmacy's initial after an
- * owner logs in, a platform M for superadmin, a generic P at the door.
+ * owner logs in, and the product's own M for superadmin or at the door,
+ * where no shop is known yet.
  */
 export default async function Icon() {
   const session = await getSession();
 
-  let name = "P";
-  if (session?.role === "superadmin") {
-    name = "MantraSphere";
-  } else if (session?.pharmacyId) {
+  let name = "MantraMed";
+  if (session?.pharmacyId) {
     const settings = await getSettings(session.pharmacyId, session.pharmacyName);
-    name = settings.businessName.trim() || session.pharmacyName.trim() || "P";
+    name = settings.businessName.trim() || session.pharmacyName.trim() || "MantraMed";
   }
 
   const letter = brandLetter(name);

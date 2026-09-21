@@ -37,6 +37,16 @@ const NAV: NavItem[] = [
     icon: icon("M3 21h18M5 21V7l7-4 7 4v14M9 21v-5h6v5"),
   },
   {
+    href: "/superadmin/templates",
+    label: "Bill templates",
+    icon: icon("M7 17v4h10v-4M7 17H5a2 2 0 01-2-2v-4a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2h-2M7 9V3h10v6"),
+  },
+  {
+    href: "/superadmin/activity",
+    label: "Activity",
+    icon: icon("M4 4v16h16M8 14l3-4 3 3 4-6"),
+  },
+  {
     href: "/superadmin/backups",
     label: "Backups",
     icon: icon("M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M12 4v12m0 0l-4-4m4 4l4-4"),
@@ -105,11 +115,36 @@ export function SuperAdminShell({
         M
       </span>
       <span className="text-[15px] leading-tight font-semibold text-white">
-        MantraSphere
+        MantraMed
         <span className="block text-[11px] font-normal text-slate-400">
           Platform
         </span>
       </span>
+    </div>
+  );
+
+  const userCard = (
+    <div className="border-t border-slate-800 p-3">
+      <div className="flex items-center gap-3 rounded-lg px-2 py-2">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-500 text-xs font-semibold text-white">
+          {initials(user.name)}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-white">{user.name}</p>
+          <p className="truncate text-xs text-slate-400">Super administrator</p>
+          <p className="truncate text-[11px] text-slate-500">{user.email}</p>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={async () => {
+          await fetch("/api/auth/logout", { method: "POST" });
+          window.location.href = "/login";
+        }}
+        className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
+      >
+        Sign out
+      </button>
     </div>
   );
 
@@ -118,27 +153,7 @@ export function SuperAdminShell({
       <aside className="hidden w-60 shrink-0 flex-col bg-slate-900 lg:sticky lg:top-0 lg:flex lg:h-dvh">
         {brand}
         {navLinks}
-        <div className="border-t border-slate-800 p-3">
-          <div className="flex items-center gap-3 rounded-lg px-2 py-2">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-500 text-xs font-semibold text-white">
-              {initials(user.name)}
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-white">{user.name}</p>
-              <p className="truncate text-xs text-slate-400">Super administrator</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={async () => {
-              await fetch("/api/auth/logout", { method: "POST" });
-              window.location.href = "/login";
-            }}
-            className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
-          >
-            Sign out
-          </button>
-        </div>
+        {userCard}
       </aside>
 
       {drawerOpen ? (
@@ -149,9 +164,10 @@ export function SuperAdminShell({
             onClick={() => setDrawerOpen(false)}
             className="absolute inset-0 bg-slate-900/60"
           />
-          <div className="relative flex h-full w-64 flex-col bg-slate-900">
+          <div className="relative flex h-full w-64 max-w-[85vw] flex-col bg-slate-900">
             {brand}
             {navLinks}
+            {userCard}
           </div>
         </div>
       ) : null}
@@ -169,7 +185,7 @@ export function SuperAdminShell({
             </svg>
           </button>
           <span className="text-[15px] leading-tight font-semibold text-slate-900">
-            MantraSphere
+            MantraMed
             <span className="block text-[11px] font-normal text-slate-500">Platform</span>
           </span>
         </header>

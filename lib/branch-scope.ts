@@ -272,6 +272,20 @@ export function assertVisibleInScope(
   }
 }
 
+/**
+ * Whether this shop actually runs more than one outlet.
+ *
+ * What the Branches row, the dashboard tile and the switcher are gated on.
+ * Every pharmacy is created with one outlet it never asked for, and it can no
+ * longer open a second itself - the platform does that on request - so until
+ * one exists those controls offer a screen with a single row and a switcher
+ * with a single choice. Reads the same 30s-cached list the switcher does, so
+ * asking costs nothing on the common path.
+ */
+export async function hasMultipleBranches(user: SessionUser): Promise<boolean> {
+  return (await switchableBranches(user)).length > 1;
+}
+
 /** Every branch a user may view, for the switcher. Empty when they cannot. */
 export async function switchableBranches(
   user: SessionUser,

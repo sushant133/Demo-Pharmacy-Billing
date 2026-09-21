@@ -18,8 +18,14 @@ import type { CapacitorConfig } from "@capacitor/cli";
 const SERVER_URL = process.env.CAP_SERVER_URL ?? "https://REPLACE-WITH-YOUR-VERCEL-DOMAIN";
 
 const config: CapacitorConfig = {
+  /*
+    The application id is the app's identity on the Play Store and cannot be
+    changed without publishing a different app that installed copies have no
+    upgrade path to. It carries the company's domain, which is unchanged, so
+    it stays as it is even though the product is now called MantraMed.
+  */
   appId: "np.com.mantrasphere.pharmacy",
-  appName: "Pharmacy Counter",
+  appName: "MantraMed",
   webDir: "capacitor-shell",
   server: {
     url: SERVER_URL,

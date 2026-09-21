@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
+import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import { requirePageSession } from "@/lib/auth";
 import { resolveViewScope, switchableBranches } from "@/lib/branch-scope";
 import { withDbRead } from "@/lib/db";
@@ -46,23 +47,37 @@ export default async function AppLayout({
     settings.businessName.trim() || user.pharmacyName.trim() || "Pharmacy";
 
   return (
-    <AppShell
-      user={{
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        branchName: user.branchName || scope.label,
-        pharmacyName,
-      }}
-      scope={{
-        code: scope.code,
-        label: scope.label,
-        switchable: scope.switchable,
-      }}
-      branches={branches}
-      alertCount={alertCount}
-    >
-      {children}
-    </AppShell>
+    <>
+      {/*
+        Outside the shell rather than inside it: the banner has to be the
+        first thing on the page on every screen, including the ones that
+        render their own chrome, and it must not scroll away with the sidebar.
+      */}
+      {user.impersonatorId ? (
+        <ImpersonationBanner
+          platformUser={user.impersonatorName || "A platform administrator"}
+          actingAs={user.name}
+          pharmacyName={pharmacyName}
+        />
+      ) : null}
+      <AppShell
+        user={{
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          branchName: user.branchName || scope.label,
+          pharmacyName,
+        }}
+        scope={{
+          code: scope.code,
+          label: scope.label,
+          switchable: scope.switchable,
+        }}
+        branches={branches}
+        alertCount={alertCount}
+      >
+        {children}
+      </AppShell>
+    </>
   );
 }

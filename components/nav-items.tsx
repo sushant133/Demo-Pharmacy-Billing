@@ -43,6 +43,13 @@ export interface NavItem {
   hint?: string;
   /** Shows the pending-alert count when there is one. */
   badge?: "alerts";
+  /**
+   * Hidden until the shop has a second outlet.
+   *
+   * A single-branch shop cannot open one itself any more, so the row would
+   * lead to a table with one line and nothing on it worth a menu slot.
+   */
+  multiBranchOnly?: boolean;
   /** Rows that only exist while the parent is expanded. */
   children?: NavChild[];
 }
@@ -268,6 +275,7 @@ export const NAV_SECTIONS: NavSection[] = [
         href: "/branches",
         label: "Branches",
         permission: "branch:manage",
+        multiBranchOnly: true,
         icon: icon("M8 21V9l4-4 4 4v12M3 21h18M10 13h4"),
       },
       {

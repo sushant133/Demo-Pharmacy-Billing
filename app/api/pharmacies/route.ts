@@ -1,6 +1,7 @@
 import { created, ok, parseJson, parseQuery, withRoute } from "@/lib/api";
 import { requirePermission } from "@/lib/auth";
 import { createPharmacy, listPharmacies, pharmacyCounts } from "@/lib/pharmacies";
+import { recordPlatformEvent } from "@/lib/platform-events";
 import { createPharmacySchema, pharmacyQuerySchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
@@ -29,5 +30,13 @@ export const POST = withRoute(async (req) => {
   const user = await requirePermission("pharmacy:manage");
   const input = await parseJson(req, createPharmacySchema);
   const pharmacy = await createPharmacy(input, user);
+
+  await recordPlatformEvent(user, "pharmacy.created", {
+    pharmacyId: pharmacy.id,
+    pharmacyName: pharmacy.name,
+    summary: `Created ${pharmacy.name} with owner ${pharmacy.ownerEmail}.`,
+    detail: `Short code ${pharmacy.slug}.`,
+  });
+
   return created(pharmacy);
 });

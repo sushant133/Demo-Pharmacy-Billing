@@ -20,13 +20,19 @@ export const dynamic = "force-dynamic";
 /**
  * Branch registry.
  *
- * Each outlet holds its own stock. This screen is where an admin names them,
- * assigns the default, and closes one once its lots and staff have moved.
+ * Each outlet holds its own stock. This screen is where an admin renames
+ * them, assigns the default, and closes one once its lots and staff have
+ * moved.
+ *
+ * Opening one is not here. An outlet is a billing identity that prints its
+ * own name and PAN on a VAT invoice, and it splits the shop's stock in two,
+ * so the platform opens it on request rather than the shop minting one for
+ * itself. Everything after that is the shop's own to run.
  */
 export default async function BranchesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ new?: string; edit?: string }>;
+  searchParams: Promise<{ edit?: string }>;
 }) {
   const user = await requirePagePermission("branch:manage");
   const params = await searchParams;
@@ -44,11 +50,6 @@ export default async function BranchesPage({
       <PageHeader
         title="Branches"
         subtitle="Each outlet has its own stock. Sales and receipts land where the user stands."
-        actions={
-          <Link href="/branches?new=1" className="btn-primary">
-            Add branch
-          </Link>
-        }
       />
 
       <div className="mb-5 grid gap-3 sm:grid-cols-3">
@@ -61,7 +62,7 @@ export default async function BranchesPage({
         {branches.length === 0 ? (
           <EmptyState
             title="No branches yet"
-            description="Add the first outlet. Existing stock and users will attach to it."
+            description="Ask MantraMed support to open your first outlet. Existing stock and users will attach to it."
           />
         ) : (
           <TableWrap>
@@ -105,7 +106,13 @@ export default async function BranchesPage({
         )}
       </Card>
 
-      {params.new === "1" ? <BranchFormPanel branch={null} /> : null}
+      <p className="mt-4 max-w-2xl text-xs leading-relaxed text-slate-500">
+        Need another outlet? Send MantraMed support the outlet&rsquo;s name,
+        address and PAN and they will open it against this pharmacy. It appears
+        here as soon as it is created, and you can rename it, make it the
+        default or close it yourself.
+      </p>
+
       {editing ? (
         <BranchFormPanel
           branch={{

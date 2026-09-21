@@ -8,27 +8,46 @@ import {
   openPrintSheet,
   printToRoll,
 } from "@/components/bills/print-transport";
+import {
+  BillDocument,
+  type BillDocumentProps,
+} from "@/components/bills/BillDocument";
 
 /**
  * Records the original vs reprint, then sends the bill to paper.
  *
- * Desktop and Wi-Fi printers use the system print sheet (80mm CSS). Android
- * Chrome and the Android app can also talk to a Bluetooth ESC/POS printer
- * directly; `print-transport` picks the route the current shell supports.
- * Mobile browsers block print() without a tap, so auto-print is desktop-only.
+ * Desktop and Wi-Fi printers use the system print sheet, laid out by the
+ * pharmacy's assigned template. A thermal roll can also be driven directly
+ * over Bluetooth from Android Chrome and the Android app; `print-transport`
+ * picks the route the current shell supports. Mobile browsers block print()
+ * without a tap, so auto-print is desktop-only.
+ *
+ * The document is rendered here rather than by the page because the copy
+ * label is live: the first print stamps the bill as the original and every
+ * one after it increments a copy number, and the paper has to say which it
+ * is at the moment it comes out, not what it was when the page loaded.
  */
 export function PrintController({
   saleId,
   autoPrint = false,
   alreadyPrinted,
   reprintCount,
+  escposColumns,
   receipt,
+  document,
 }: {
   saleId: string;
   autoPrint?: boolean;
   alreadyPrinted: boolean;
   reprintCount: number;
+  /**
+   * Characters per line on this shop's roll, or null when its template is
+   * not a roll at all - a sheet printer has no ESC/POS route, so offering
+   * the button would only produce a printer that never responds.
+   */
+  escposColumns: number | null;
   receipt: ThermalReceipt;
+  document: Omit<BillDocumentProps, "copyLabel">;
 }) {
   const [label, setLabel] = useState(
     alreadyPrinted
@@ -43,8 +62,8 @@ export function PrintController({
   const started = useRef(false);
 
   useEffect(() => {
-    setBluetoothOk(canPrintToRoll());
-  }, []);
+    setBluetoothOk(escposColumns !== null && canPrintToRoll());
+  }, [escposColumns]);
 
   async function recordPrint(): Promise<string> {
     const response = await fetch(`/api/sales/${saleId}/print`, { method: "POST" });
@@ -88,7 +107,9 @@ export function PrintController({
     window.setTimeout(() => {
       if (!openPrintSheet("Bill")) {
         setError(
-          "This device has no print sheet. Use the Bluetooth printer button for the 80mm roll.",
+          escposColumns !== null
+            ? "This device has no print sheet. Use the Bluetooth printer button for the roll."
+            : "This device has no print sheet. Open the bill on a computer to print it.",
         );
       }
       setBusy(null);
@@ -96,12 +117,15 @@ export function PrintController({
   }
 
   async function onBluetoothClick() {
+    if (escposColumns === null) return;
     setError(null);
     setBusy("bt");
     try {
       const nextLabel = await recordPrint();
       const payload = { ...receipt, copyLabel: nextLabel };
-      await printToRoll(encodeEscPos(formatThermalReceipt(payload)));
+      await printToRoll(
+        encodeEscPos(formatThermalReceipt(payload, escposColumns)),
+      );
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Could not reach the Bluetooth printer.";
@@ -116,9 +140,6 @@ export function PrintController({
 
   return (
     <>
-      <p className={label === "ORIGINAL" ? "receipt-copy original" : "receipt-copy reprint"}>
-        {label}
-      </p>
       <div className="no-print receipt-print-actions">
         <button
           type="button"
@@ -139,8 +160,9 @@ export function PrintController({
           </button>
         ) : null}
         <p className="receipt-print-hint">
-          Wi-Fi or USB printer: tap Print bill and pick it in the system sheet.
-          80mm roll: tap Bluetooth printer and choose the till printer.
+          {escposColumns !== null
+            ? "Wi-Fi or USB printer: tap Print bill and pick it in the system sheet. Roll printer: tap Bluetooth printer and choose the till printer."
+            : "Tap Print bill and pick the printer in the system sheet."}
         </p>
         {error ? (
           <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
@@ -148,6 +170,12 @@ export function PrintController({
           </p>
         ) : null}
       </div>
+
+      <BillDocument
+        {...document}
+        copyLabel={label}
+        copyIsReprint={label !== "ORIGINAL"}
+      />
     </>
   );
 }

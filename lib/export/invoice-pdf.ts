@@ -1,6 +1,13 @@
 import PDFDocument from "pdfkit";
 import { amountInWords } from "@/lib/money-words";
 import { PAYMENT_MODE_LABELS, type PaymentMode } from "@/lib/constants";
+import {
+  hasColumn,
+  mmToPt,
+  printTemplate,
+  type BillColumn,
+  type PrintTemplate,
+} from "@/lib/print-templates";
 
 /**
  * The tax invoice as a downloadable PDF.
@@ -10,15 +17,16 @@ import { PAYMENT_MODE_LABELS, type PaymentMode } from "@/lib/constants";
  * amount in words, so it gets its own renderer rather than being forced
  * through a column layout.
  *
- * A4 rather than the 80mm roll the receipt prints on: the roll is for handing
- * over at the counter, this is the copy a customer files or emails to their
- * accountant. Both carry the same numbers, and both are the same bill.
+ * The page follows the shop's assigned template, the same one its counter
+ * prints on - see lib/print-templates.ts. A pharmacy running a 58mm roll gets
+ * a 58mm PDF it can send straight back to that roll; one running A4 gets the
+ * full six-column page. Handing every shop an A4 file regardless would mean
+ * the downloaded copy and the counter copy were different documents.
  *
  * No database access here. Everything is passed in, the same discipline the
  * report renderer follows.
  */
 
-const MARGIN = 48;
 const RULE = "#d7dce3";
 const INK = "#0f172a";
 const MUTED = "#64748b";
@@ -88,11 +96,36 @@ function rs(value: number): string {
   });
 }
 
-export function toInvoicePdf(invoice: InvoiceData): Promise<Buffer> {
+/**
+ * How tall a continuous roll has to be for this bill.
+ *
+ * A roll has no page height, but a PDF must declare one. Estimated generously
+ * from the line count: an over-long page wastes nothing on a roll printer,
+ * which cuts at the end of the print, whereas an under-long one spills onto a
+ * second page and gets cut through the middle of the totals.
+ */
+function rollHeightPt(invoice: InvoiceData): number {
+  const fixedMm = 150;
+  const perItemMm = 14;
+  const termsMm = (invoice.terms.length + invoice.footerNote.length) / 40;
+  return mmToPt(fixedMm + invoice.items.length * perItemMm + termsMm);
+}
+
+export function toInvoicePdf(
+  invoice: InvoiceData,
+  templateId?: string | null,
+): Promise<Buffer> {
+  const template = printTemplate(templateId);
+
   return new Promise((resolve, reject) => {
+    const height =
+      template.paperHeightMm === null
+        ? rollHeightPt(invoice)
+        : mmToPt(template.paperHeightMm);
+
     const doc = new PDFDocument({
-      size: "A4",
-      margin: MARGIN,
+      size: [mmToPt(template.paperWidthMm), height],
+      margin: mmToPt(template.marginMm),
       bufferPages: true,
       info: {
         Title: `Tax Invoice ${invoice.billNo}`,
@@ -107,7 +140,13 @@ export function toInvoicePdf(invoice: InvoiceData): Promise<Buffer> {
     doc.on("error", reject);
 
     try {
-      render(doc, invoice);
+      // A template that asks for a buyer copy and an office copy gets two
+      // pages. A roll never does: `copies` is a single blank entry there.
+      template.copies.forEach((caption, index) => {
+        if (index > 0) doc.addPage();
+        if (template.layout === "roll") renderRoll(doc, invoice, template);
+        else renderSheet(doc, invoice, template, caption);
+      });
       doc.end();
     } catch (error) {
       reject(error);
@@ -115,15 +154,130 @@ export function toInvoicePdf(invoice: InvoiceData): Promise<Buffer> {
   });
 }
 
-function render(doc: PDFKit.PDFDocument, invoice: InvoiceData): void {
-  const left = MARGIN;
-  const right = doc.page.width - MARGIN;
+/** Relative widths for everything except the item name, which takes the rest. */
+const COLUMN_SHARE: Partial<Record<BillColumn, number>> = {
+  index: 0.05,
+  batch: 0.13,
+  expiry: 0.12,
+  qty: 0.1,
+  rate: 0.11,
+  amount: 0.13,
+};
+
+interface LaidOutColumn {
+  key: BillColumn;
+  x: number;
+  width: number;
+  right: boolean;
+  header: string;
+}
+
+const COLUMN_HEADER: Record<BillColumn, string> = {
+  index: "#",
+  item: "ITEM",
+  batch: "BATCH",
+  expiry: "EXPIRY",
+  qty: "QTY",
+  rate: "RATE",
+  amount: "AMOUNT",
+};
+
+/**
+ * Place the template's columns across the page.
+ *
+ * Everything but the item name has a share of the width; the name gets what
+ * is left, because a medicine name is the one field that genuinely varies in
+ * length and the one worth giving the slack to.
+ */
+function layOutColumns(
+  template: PrintTemplate,
+  left: number,
+  width: number,
+): LaidOutColumn[] {
+  const fixed = template.columns
+    .filter((key) => key !== "item")
+    .reduce((sum, key) => sum + (COLUMN_SHARE[key] ?? 0), 0);
+
+  let x = left;
+  return template.columns.map((key) => {
+    const share = key === "item" ? Math.max(0.2, 1 - fixed) : (COLUMN_SHARE[key] ?? 0.1);
+    const columnWidth = width * share;
+    const column: LaidOutColumn = {
+      key,
+      x,
+      width: columnWidth - 4,
+      right: key === "qty" || key === "rate" || key === "amount",
+      header: COLUMN_HEADER[key],
+    };
+    x += columnWidth;
+    return column;
+  });
+}
+
+function cellText(item: InvoiceItem, key: BillColumn, index: number): string {
+  switch (key) {
+    case "index":
+      return String(index + 1);
+    case "item":
+      return item.medicineName;
+    case "batch":
+      return item.batchNumber;
+    case "expiry":
+      return item.expiryDate;
+    case "qty":
+      return `${item.quantity} ${item.unit}`;
+    case "rate":
+      return rs(item.unitPrice);
+    case "amount":
+      return rs(item.subtotal);
+  }
+}
+
+/** A4's usable height, which the other sheet sizes are measured against. */
+const A4_USABLE_PT = mmToPt(297 - 24);
+
+/** Sheet and tractor paper: a letterhead, real columns, totals on the right. */
+function renderSheet(
+  doc: PDFKit.PDFDocument,
+  invoice: InvoiceData,
+  template: PrintTemplate,
+  caption: string,
+): void {
+  const margin = mmToPt(template.marginMm);
+  const left = margin;
+  const right = doc.page.width - margin;
   const width = right - left;
 
-  // --- Header -------------------------------------------------------------
-  doc.fillColor(INK).font("Helvetica-Bold").fontSize(16).text(invoice.issuer.name, left, MARGIN);
+  /*
+    The layout is drawn at A4 and scaled to whatever paper this actually is.
+    Set in points and left alone, an A5 invoice runs its totals off the
+    bottom and a 5.5-inch tractor form spills a five-line bill onto a second
+    form. The scale follows whichever dimension is tighter - a narrow page
+    wraps the item names, a short one runs out of room underneath them -
+    floored so that no paper ever prints type nobody can read.
+  */
+  const usableHeight = doc.page.height - margin * 2;
+  const scale = Math.max(
+    0.7,
+    Math.min(1, template.contentWidthMm / 186, usableHeight / A4_USABLE_PT),
+  );
+  const fs = (points: number): number => points * scale;
 
-  doc.font("Helvetica").fontSize(9).fillColor(MUTED);
+  /*
+    Room kept below the last item for the totals, the amount in words and the
+    signature. A fixed 150pt is a third of an A4 page and most of a 5.5-inch
+    tractor form, which is why the short papers used to break after two lines.
+  */
+  const reserve = Math.min(fs(150), usableHeight * 0.4);
+
+  // --- Header -------------------------------------------------------------
+  doc
+    .fillColor(INK)
+    .font("Helvetica-Bold")
+    .fontSize(fs(16))
+    .text(invoice.issuer.name, left, margin);
+
+  doc.font("Helvetica").fontSize(fs(9)).fillColor(MUTED);
   const issuerLines = [
     invoice.issuer.address,
     invoice.issuer.phone ? `Tel: ${invoice.issuer.phone}` : "",
@@ -136,14 +290,14 @@ function render(doc: PDFKit.PDFDocument, invoice: InvoiceData): void {
   // Title block, right-aligned against the header.
   doc
     .font("Helvetica-Bold")
-    .fontSize(13)
+    .fontSize(fs(13))
     .fillColor(INK)
-    .text("TAX INVOICE", left + width * 0.55, MARGIN, {
+    .text("TAX INVOICE", left + width * 0.55, margin, {
       width: width * 0.45,
       align: "right",
     });
 
-  doc.font("Helvetica").fontSize(9).fillColor(MUTED);
+  doc.font("Helvetica").fontSize(fs(9)).fillColor(MUTED);
   const metaLines = [
     `Invoice no.  ${invoice.billNo}`,
     `Date  ${invoice.issuedAt.toLocaleString("en-GB", {
@@ -161,7 +315,17 @@ function render(doc: PDFKit.PDFDocument, invoice: InvoiceData): void {
     doc.text(line, left + width * 0.55, doc.y, { width: width * 0.45, align: "right" });
   }
 
-  let y = Math.max(doc.y, MARGIN + 74) + 14;
+  let y = Math.max(doc.y, margin + fs(74)) + fs(14);
+
+  // Which of the two sheets this is, when the template prints both.
+  if (caption) {
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(fs(9))
+      .fillColor(MUTED)
+      .text(caption.toUpperCase(), left, y, { width, align: "center" });
+    y = doc.y + 6;
+  }
 
   if (invoice.voided || invoice.reprintCount > 0) {
     const label = invoice.voided
@@ -169,21 +333,21 @@ function render(doc: PDFKit.PDFDocument, invoice: InvoiceData): void {
       : `Copy of Original – ${invoice.reprintCount}`;
     doc
       .font("Helvetica-Bold")
-      .fontSize(9)
+      .fontSize(fs(9))
       .fillColor(invoice.voided ? "#be123c" : MUTED)
       .text(label, left, y, { width, align: "center" });
     y = doc.y + 8;
   }
 
   doc.moveTo(left, y).lineTo(right, y).lineWidth(0.8).strokeColor(RULE).stroke();
-  y += 12;
+  y += fs(12);
 
   // --- Buyer --------------------------------------------------------------
-  doc.font("Helvetica-Bold").fontSize(9).fillColor(MUTED).text("BILLED TO", left, y);
+  doc.font("Helvetica-Bold").fontSize(fs(9)).fillColor(MUTED).text("BILLED TO", left, y);
   y = doc.y + 2;
   doc
     .font("Helvetica")
-    .fontSize(10)
+    .fontSize(fs(10))
     .fillColor(INK)
     .text(invoice.buyer.name || "Walk-in customer", left, y, { width: width * 0.6 });
   y = doc.y;
@@ -193,42 +357,27 @@ function render(doc: PDFKit.PDFDocument, invoice: InvoiceData): void {
     invoice.buyer.phone,
     invoice.buyer.pan ? `PAN: ${invoice.buyer.pan}` : "",
   ].filter(Boolean);
-  doc.fontSize(9).fillColor(MUTED);
+  doc.fontSize(fs(9)).fillColor(MUTED);
   for (const line of buyerLines) {
     doc.text(line, left, y, { width: width * 0.6 });
     y = doc.y;
   }
 
-  y += 14;
+  y += fs(14);
 
   // --- Items --------------------------------------------------------------
-  // Fixed columns: an invoice always has the same six, so they are laid out
-  // by hand rather than weighted like a report's arbitrary column set.
-  const cols = {
-    item: left,
-    batch: left + width * 0.38,
-    expiry: left + width * 0.53,
-    qty: left + width * 0.66,
-    rate: left + width * 0.76,
-    amount: left + width * 0.88,
-  };
-  const widths = {
-    item: width * 0.36,
-    batch: width * 0.14,
-    expiry: width * 0.12,
-    qty: width * 0.09,
-    rate: width * 0.11,
-    amount: width * 0.12,
-  };
+  const columns = layOutColumns(template, left, width);
+  const batch = hasColumn(template, "batch");
+  const expiry = hasColumn(template, "expiry");
 
   function headerRow(at: number): number {
-    doc.font("Helvetica-Bold").fontSize(8.5).fillColor(MUTED);
-    doc.text("ITEM", cols.item, at, { width: widths.item });
-    doc.text("BATCH", cols.batch, at, { width: widths.batch });
-    doc.text("EXPIRY", cols.expiry, at, { width: widths.expiry });
-    doc.text("QTY", cols.qty, at, { width: widths.qty, align: "right" });
-    doc.text("RATE", cols.rate, at, { width: widths.rate, align: "right" });
-    doc.text("AMOUNT", cols.amount, at, { width: widths.amount, align: "right" });
+    doc.font("Helvetica-Bold").fontSize(fs(8.5)).fillColor(MUTED);
+    for (const column of columns) {
+      doc.text(column.header, column.x, at, {
+        width: column.width,
+        align: column.right ? "right" : "left",
+      });
+    }
     const next = doc.y + 4;
     doc.moveTo(left, next).lineTo(right, next).lineWidth(0.8).strokeColor(RULE).stroke();
     return next + 6;
@@ -236,38 +385,50 @@ function render(doc: PDFKit.PDFDocument, invoice: InvoiceData): void {
 
   y = headerRow(y);
 
-  doc.font("Helvetica").fontSize(9).fillColor(INK);
-  for (const item of invoice.items) {
+  doc.font("Helvetica").fontSize(fs(9)).fillColor(INK);
+  invoice.items.forEach((item, index) => {
     // Keep the totals block with at least one row; never orphan a header.
-    if (y > doc.page.height - MARGIN - 150) {
+    if (y > doc.page.height - margin - reserve) {
       doc.addPage();
-      y = headerRow(MARGIN);
-      doc.font("Helvetica").fontSize(9).fillColor(INK);
+      y = headerRow(margin);
+      doc.font("Helvetica").fontSize(fs(9)).fillColor(INK);
     }
 
     const top = y;
-    doc.text(item.medicineName, cols.item, top, { width: widths.item });
-    const rowBottom = doc.y;
+    let bottom = y;
+    for (const column of columns) {
+      doc.fillColor(
+        column.key === "batch" || column.key === "expiry" || column.key === "index"
+          ? MUTED
+          : INK,
+      );
+      doc.text(cellText(item, column.key, index), column.x, top, {
+        width: column.width,
+        align: column.right ? "right" : "left",
+      });
+      bottom = Math.max(bottom, doc.y);
+    }
 
-    doc.fillColor(MUTED);
-    doc.text(item.batchNumber, cols.batch, top, { width: widths.batch });
-    doc.text(item.expiryDate, cols.expiry, top, { width: widths.expiry });
-    doc.fillColor(INK);
-    doc.text(`${item.quantity} ${item.unit}`, cols.qty, top, {
-      width: widths.qty,
-      align: "right",
-    });
-    doc.text(rs(item.unitPrice), cols.rate, top, { width: widths.rate, align: "right" });
-    doc.text(rs(item.subtotal), cols.amount, top, {
-      width: widths.amount,
-      align: "right",
-    });
+    // Whatever this paper has no column for still has to appear: a batch
+    // number missing from a tax invoice is a compliance problem, not a
+    // layout preference.
+    const spilled = [batch ? "" : item.batchNumber, expiry ? "" : item.expiryDate]
+      .filter(Boolean)
+      .join(" · ");
+    if (spilled) {
+      const nameColumn = columns.find((column) => column.key === "item");
+      doc.fontSize(fs(8)).fillColor(MUTED).text(spilled, nameColumn?.x ?? left, bottom, {
+        width: nameColumn?.width ?? width,
+      });
+      bottom = doc.y;
+      doc.fontSize(fs(9));
+    }
 
-    y = Math.max(rowBottom, doc.y) + 6;
-  }
+    y = bottom + fs(6);
+  });
 
   doc.moveTo(left, y).lineTo(right, y).lineWidth(0.8).strokeColor(RULE).stroke();
-  y += 10;
+  y += fs(10);
 
   // --- Totals -------------------------------------------------------------
   const labelX = left + width * 0.58;
@@ -278,14 +439,14 @@ function render(doc: PDFKit.PDFDocument, invoice: InvoiceData): void {
   function totalRow(label: string, value: string, bold = false): void {
     doc
       .font(bold ? "Helvetica-Bold" : "Helvetica")
-      .fontSize(bold ? 11 : 9.5)
+      .fontSize(bold ? fs(11) : fs(9.5))
       .fillColor(bold ? INK : MUTED)
       .text(label, labelX, y, { width: labelW, align: "right" });
     doc
       .font(bold ? "Helvetica-Bold" : "Helvetica")
       .fillColor(INK)
       .text(value, valueX, y, { width: valueW, align: "right" });
-    y = doc.y + 4;
+    y = doc.y + fs(4);
   }
 
   totalRow("Subtotal", rs(invoice.subtotal));
@@ -315,15 +476,15 @@ function render(doc: PDFKit.PDFDocument, invoice: InvoiceData): void {
   y += 6;
 
   // --- Amount in words, payment, signature --------------------------------
-  doc.font("Helvetica-Bold").fontSize(8.5).fillColor(MUTED).text("IN WORDS", left, y);
+  doc.font("Helvetica-Bold").fontSize(fs(8.5)).fillColor(MUTED).text("IN WORDS", left, y);
   doc
     .font("Helvetica")
-    .fontSize(9)
+    .fontSize(fs(9))
     .fillColor(INK)
     .text(amountInWords(invoice.totalAmount), left, doc.y + 1, { width: width * 0.55 });
   y = doc.y + 8;
 
-  doc.fontSize(9).fillColor(MUTED);
+  doc.fontSize(fs(9)).fillColor(MUTED);
   doc.text(
     `Payment: ${PAYMENT_MODE_LABELS[invoice.paymentMode] ?? invoice.paymentMode}` +
       (invoice.soldByName ? `   ·   Billed by: ${invoice.soldByName}` : ""),
@@ -338,25 +499,173 @@ function render(doc: PDFKit.PDFDocument, invoice: InvoiceData): void {
     y = doc.y;
   }
 
-  y += 30;
-  doc.moveTo(right - width * 0.28, y).lineTo(right, y).lineWidth(0.8).strokeColor(RULE).stroke();
-  doc
-    .fontSize(8.5)
-    .fillColor(MUTED)
-    .text("Authorised signature", right - width * 0.28, y + 3, {
-      width: width * 0.28,
-      align: "center",
-    });
+  if (template.showSignature) {
+    y += fs(28);
+    doc.moveTo(right - width * 0.28, y).lineTo(right, y).lineWidth(0.8).strokeColor(RULE).stroke();
+    doc
+      .fontSize(fs(8.5))
+      .fillColor(MUTED)
+      .text("Authorised signature", right - width * 0.28, y + 3, {
+        width: width * 0.28,
+        align: "center",
+      });
+  }
 
   // --- Footer -------------------------------------------------------------
-  const footerY = doc.page.height - MARGIN - 34;
-  if (y + 20 < footerY) {
-    doc.fontSize(7.5).fillColor(MUTED);
+  const footerY = doc.page.height - margin - fs(34);
+  if (y + fs(16) < footerY) {
+    doc.fontSize(fs(7.5)).fillColor(MUTED);
     if (invoice.terms) {
       doc.text(invoice.terms, left, footerY, { width, align: "center" });
     }
     if (invoice.footerNote) {
       doc.text(invoice.footerNote, left, doc.y + 2, { width, align: "center" });
     }
+  }
+}
+
+/**
+ * Roll paper: one narrow column, the same fields, nothing side by side.
+ *
+ * 54mm of paper cannot hold six columns, so the layout is the one a till
+ * roll has always used - label on the left, figure on the right, the batch
+ * and expiry on a sub-line under the medicine name.
+ */
+function renderRoll(
+  doc: PDFKit.PDFDocument,
+  invoice: InvoiceData,
+  template: PrintTemplate,
+): void {
+  const margin = mmToPt(template.marginMm);
+  const left = margin;
+  const right = doc.page.width - margin;
+  const width = right - left;
+  const base = 7.5;
+
+  let y = margin;
+
+  function centre(text: string, size: number, bold = false): void {
+    doc
+      .font(bold ? "Helvetica-Bold" : "Helvetica")
+      .fontSize(size)
+      .fillColor(INK)
+      .text(text, left, y, { width, align: "center" });
+    y = doc.y;
+  }
+
+  function pair(label: string, value: string, bold = false): void {
+    const top = y;
+    doc
+      .font(bold ? "Helvetica-Bold" : "Helvetica")
+      .fontSize(bold ? base + 1.5 : base)
+      .fillColor(bold ? INK : MUTED)
+      .text(label, left, top, { width: width * 0.52 });
+    const bottom = doc.y;
+    doc
+      .font(bold ? "Helvetica-Bold" : "Helvetica")
+      .fillColor(INK)
+      .text(value, left + width * 0.52, top, { width: width * 0.48, align: "right" });
+    y = Math.max(bottom, doc.y) + 1;
+  }
+
+  function rule(): void {
+    y += 3;
+    doc.moveTo(left, y).lineTo(right, y).lineWidth(0.5).strokeColor(RULE).stroke();
+    y += 4;
+  }
+
+  centre("TAX INVOICE", base);
+  centre(invoice.issuer.name.toUpperCase(), base + 3, true);
+  for (const line of [
+    invoice.issuer.address,
+    invoice.issuer.phone ? `Tel: ${invoice.issuer.phone}` : "",
+    `PAN: ${invoice.issuer.pan || "—"}`,
+    invoice.issuer.vatNumber ? `VAT: ${invoice.issuer.vatNumber}` : "",
+  ].filter(Boolean)) {
+    centre(line, base);
+  }
+
+  rule();
+  if (invoice.voided) centre("VOIDED — THIS BILL HAS BEEN CANCELLED", base, true);
+  else if (invoice.reprintCount > 0) {
+    centre(`Copy of Original – ${invoice.reprintCount}`, base, true);
+  } else centre("ORIGINAL", base, true);
+  rule();
+
+  pair("Bill no", invoice.billNo);
+  if (invoice.fiscalYear) pair("FY", invoice.fiscalYear);
+  if (invoice.bsDate) pair("Date (BS)", invoice.bsDate);
+  pair(
+    "Date (AD)",
+    invoice.issuedAt.toLocaleString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
+  );
+  pair("Payment", PAYMENT_MODE_LABELS[invoice.paymentMode] ?? invoice.paymentMode);
+  rule();
+
+  pair("Buyer", invoice.buyer.name || "Walk-in customer");
+  if (invoice.buyer.pan) pair("Buyer PAN", invoice.buyer.pan);
+  if (invoice.buyer.phone) pair("Tel", invoice.buyer.phone);
+  rule();
+
+  for (const item of invoice.items) {
+    doc.font("Helvetica").fontSize(base).fillColor(INK).text(item.medicineName, left, y, {
+      width,
+    });
+    y = doc.y;
+    pair(
+      `  ${item.quantity} ${item.unit} × ${rs(item.unitPrice)} · ${item.batchNumber}${
+        item.expiryDate ? ` · ${item.expiryDate}` : ""
+      }`,
+      rs(item.subtotal),
+    );
+  }
+
+  rule();
+  pair("Subtotal", rs(invoice.subtotal));
+  if (invoice.discount > 0) {
+    pair(
+      invoice.discountPercent > 0
+        ? `Discount (${invoice.discountPercent}%)`
+        : "Discount",
+      `− ${rs(invoice.discount)}`,
+    );
+  }
+  pair("Taxable", rs(invoice.taxableAmount));
+  pair(`VAT ${Math.round(invoice.vatRate * 100)}%`, rs(invoice.vatAmount));
+  pair("TOTAL", `Rs ${rs(invoice.totalAmount)}`, true);
+
+  if (invoice.amountReceived > 0) {
+    pair("Received", rs(invoice.amountReceived));
+    const balance = invoice.totalAmount - invoice.amountReceived;
+    if (balance > 0.004) pair("Balance due", rs(balance));
+    else if (balance < -0.004) pair("Change", rs(-balance));
+  }
+
+  rule();
+  doc
+    .font("Helvetica-Oblique")
+    .fontSize(base - 0.5)
+    .fillColor(INK)
+    .text(amountInWords(invoice.totalAmount), left, y, { width });
+  y = doc.y + 4;
+
+  doc.font("Helvetica").fontSize(base - 0.5).fillColor(MUTED);
+  if (invoice.soldByName) {
+    doc.text(`Cashier: ${invoice.soldByName}`, left, y, { width });
+    y = doc.y;
+  }
+  if (invoice.note) {
+    doc.text(`Note: ${invoice.note}`, left, y, { width });
+    y = doc.y;
+  }
+  for (const line of [invoice.terms, invoice.footerNote].filter(Boolean)) {
+    doc.text(line, left, y + 3, { width, align: "center" });
+    y = doc.y;
   }
 }

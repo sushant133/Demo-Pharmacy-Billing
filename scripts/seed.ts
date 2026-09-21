@@ -446,6 +446,12 @@ async function main() {
         name: SAMPLE_PHARMACY.name,
         slug: SAMPLE_PHARMACY.slug,
         status: "active",
+        // The registered identity lives on the pharmacy now, and the bill
+        // header reads it from here. Seeded from the environment defaults so
+        // a demo install still prints a PAN rather than a dash.
+        pan: DEFAULT_SETTINGS.pan,
+        vatNumber: DEFAULT_SETTINGS.vatNumber || DEFAULT_SETTINGS.pan,
+        vatRegistered: DEFAULT_SETTINGS.vatRegistered,
         ownerName: SAMPLE_PHARMACY.ownerName,
         ownerEmail: SAMPLE_PHARMACY.ownerEmail,
       },

@@ -9,6 +9,7 @@ import { REFUND_METHODS, RETURN_REASONS } from "@/lib/return-eligibility";
 import { PURCHASE_RETURN_REASONS } from "@/lib/purchase-return";
 import { ADJUSTMENT_REASONS, WRITE_OFF_REASONS } from "@/lib/movement-kinds";
 import { EXPENSE_CATEGORIES, EXPENSE_METHODS } from "@/lib/expense-categories";
+import { DEFAULT_PRINT_TEMPLATE, PRINT_TEMPLATE_IDS } from "@/lib/print-templates";
 import { ASSIGNABLE_ROLES } from "@/lib/roles";
 
 /**
@@ -468,47 +469,61 @@ export const expiringQuerySchema = z.object({
 // ---------------------------------------------------------------------------
 
 /**
+ * A checkbox, honestly.
+ *
+ * `z.coerce.boolean()` is JavaScript truthiness: it reads the string "false"
+ * as true, because a non-empty string is truthy. That is survivable on a flag
+ * nobody serialises, and not survivable on one that decides whether a VAT
+ * line prints on a tax invoice. This takes real booleans, and the handful of
+ * strings an HTML form or a query string actually sends, and reads the rest
+ * as the default.
+ */
+const checkboxSchema = (fallback: boolean) =>
+  z
+    .union([z.boolean(), z.string(), z.undefined(), z.null()])
+    .transform((value) => {
+      if (typeof value === "boolean") return value;
+      if (value === undefined || value === null) return fallback;
+      const text = value.trim().toLowerCase();
+      if (["true", "1", "yes", "on"].includes(text)) return true;
+      if (["false", "0", "no", "off", ""].includes(text)) return false;
+      return fallback;
+    })
+    .default(fallback);
+
+/**
+ * A nine-digit Nepali tax number: a PAN, or the VAT number that is usually
+ * the same thing. Anything else on a tax invoice is a typo that the IRD, not
+ * the shop, will find first.
+ */
+const taxNumberSchema = (label: string) =>
+  z
+    .string()
+    .trim()
+    .max(30)
+    .default("")
+    .refine((value) => value === "" || /^\d{9}$/.test(value), label);
+
+/**
  * The shop's own details, as the Settings screen submits them.
  *
- * Only the trading name is required: a pharmacy setting the system up should
- * not be blocked at the first screen for want of a licence number it has to go
- * and look up. The PAN is the one field the bill genuinely cannot do without,
- * so its absence is warned about on the invoice itself rather than refused
- * here.
+ * Deliberately *not* here: the trading name, registered name, PAN, VAT
+ * number, company registration and drug licence. Those are the business's
+ * registered identity, superadmin sets them on the pharmacy record, and the
+ * Settings screen shows them read-only. Leaving them out of this schema is
+ * what makes that a rule rather than a convention - a hand-rolled request
+ * carrying a PAN cannot talk its way past a field the parser does not have.
+ *
+ * Nothing that remains is required: a pharmacy setting the system up should
+ * not be blocked at the first screen for want of a line it has to go and
+ * look up.
  */
 export const settingsSchema = z.object({
-  businessName: z.string().trim().min(2, "The pharmacy name is required.").max(160),
-  legalName: z.string().trim().max(160).default(""),
-
-  pan: z
-    .string()
-    .trim()
-    .max(30)
-    .default("")
-    // Nepali PANs are nine digits. Anything else on a tax invoice is a typo
-    // that the IRD, not the shop, will find first.
-    .refine(
-      (value) => value === "" || /^\d{9}$/.test(value),
-      "A Nepali PAN is nine digits.",
-    ),
-  vatRegistered: z.coerce.boolean().default(true),
-  vatNumber: z
-    .string()
-    .trim()
-    .max(30)
-    .default("")
-    .refine(
-      (value) => value === "" || /^\d{9}$/.test(value),
-      "A VAT number is nine digits.",
-    ),
   /** Entered as a percentage, stored as a fraction. */
   vatRate: numberFromInput("VAT rate must be a number.")
     .min(0, "VAT rate cannot be negative.")
     .max(100, "VAT rate is a percentage, so it cannot exceed 100.")
     .default(13),
-
-  drugLicenceNo: z.string().trim().max(60).default(""),
-  registrationNo: z.string().trim().max(60).default(""),
 
   address: z.string().trim().max(300).default(""),
   city: z.string().trim().max(120).default(""),
@@ -861,9 +876,61 @@ export type BranchScopeBody = z.infer<typeof branchScopeBodySchema>;
 // Pharmacies (platform / superadmin)
 // ---------------------------------------------------------------------------
 
-export const createPharmacySchema = z.object({
-  name: z.string().trim().min(2, "Pharmacy name is required.").max(160),
+/**
+ * The paperwork a pharmacy account carries. All of it optional.
+ *
+ * An account is usually opened from a phone call: a name, a person and a
+ * password are enough to have the shop billing this afternoon, and the licence
+ * numbers arrive by photograph next week. Making any of these required would
+ * only teach whoever is typing to invent a value, and an invented PAN is worse
+ * than a blank one - it prints on a tax invoice.
+ *
+ * Shared by create and update, so a field cannot be validated one way on the
+ * way in and another way when it is corrected.
+ */
+const pharmacyProfileFields = {
   legalName: z.string().trim().max(160).default(""),
+  pan: taxNumberSchema("A Nepali PAN is nine digits."),
+  /** In Nepal this is usually the PAN itself, so it is checked the same way. */
+  vatNumber: taxNumberSchema("A VAT number is nine digits."),
+  /** False for a PAN-only business, which leaves VAT off its bills. */
+  vatRegistered: checkboxSchema(true),
+  /** Company or firm registration. Free-form: the format varies by district. */
+  registrationNo: z.string().trim().max(60).default(""),
+  /** Department of Drug Administration licence, which every pharmacy needs. */
+  drugLicenceNo: z.string().trim().max(60).default(""),
+  /** When that licence runs out, so an expiring one can be chased. */
+  licenceExpiry: optionalDateSchema,
+  address: z.string().trim().max(300).default(""),
+  city: z.string().trim().max(120).default(""),
+  phone: z.string().trim().max(40).default(""),
+  email: z
+    .union([
+      z.string().trim().toLowerCase().email("Enter a valid email address."),
+      z.literal(""),
+    ])
+    .default(""),
+  ownerPhone: z.string().trim().max(40).default(""),
+  /**
+   * Nepali citizenship numbers are district-formatted - "12-01-75-01234" and
+   * "075/76-1234" are both real - so only the shape is checked, never a
+   * pattern that would reject a genuine document.
+   */
+  ownerCitizenshipNo: z
+    .string()
+    .trim()
+    .max(40)
+    .default("")
+    .refine(
+      (value) => value === "" || /^[0-9A-Za-z/\-\s.]+$/.test(value),
+      "Use digits, letters, hyphens and slashes only.",
+    ),
+  notes: z.string().trim().max(500).default(""),
+};
+
+export const createPharmacySchema = z.object({
+  ...pharmacyProfileFields,
+  name: z.string().trim().min(2, "Pharmacy name is required.").max(160),
   slug: z
     .string()
     .trim()
@@ -881,25 +948,80 @@ export const createPharmacySchema = z.object({
     .string()
     .min(8, "Password must be at least 8 characters.")
     .max(72, "Password is too long."),
-  pan: z
-    .string()
-    .trim()
-    .max(30)
-    .default("")
-    .refine((value) => value === "" || /^\d{9}$/.test(value), "A Nepali PAN is nine digits."),
-  address: z.string().trim().max(300).default(""),
-  city: z.string().trim().max(120).default(""),
-  phone: z.string().trim().max(40).default(""),
-  notes: z.string().trim().max(500).default(""),
+  /** The paper on the counter. Changed later from the pharmacy's own page. */
+  printTemplate: z.enum(PRINT_TEMPLATE_IDS).default(DEFAULT_PRINT_TEMPLATE),
 });
 export type CreatePharmacyInput = z.infer<typeof createPharmacySchema>;
 
+/**
+ * Correcting the platform's record of a shop.
+ *
+ * The owner login is deliberately absent. Changing who can sign in is its own
+ * action with its own route, so it cannot happen as a side effect of fixing a
+ * typo in an address.
+ */
 export const updatePharmacySchema = z.object({
-  name: z.string().trim().min(2, "Pharmacy name is required.").max(160).optional(),
-  legalName: z.string().trim().max(160).optional(),
-  notes: z.string().trim().max(500).optional(),
+  ...pharmacyProfileFields,
+  name: z.string().trim().min(2, "Pharmacy name is required.").max(160),
 });
 export type UpdatePharmacyInput = z.infer<typeof updatePharmacySchema>;
+
+/** Renaming the owner, or moving their login to a different email. */
+export const updateOwnerSchema = z.object({
+  ownerName: z.string().trim().min(2, "Owner name is required.").max(120),
+  ownerEmail: z.string().trim().toLowerCase().email("Enter a valid email address."),
+});
+export type UpdateOwnerInput = z.infer<typeof updateOwnerSchema>;
+
+/**
+ * Suspending or restoring a shop's access.
+ *
+ * The reason is optional but asked for: three months later, "why is this shop
+ * locked out?" is a question only the audit trail can answer.
+ */
+export const pharmacyStatusSchema = z.object({
+  reason: z.string().trim().max(300).default(""),
+});
+export type PharmacyStatusInput = z.infer<typeof pharmacyStatusSchema>;
+
+/**
+ * Deleting a pharmacy and everything it owns.
+ *
+ * `confirm` must be the shop's own short code, typed by hand. Nothing about
+ * this action can be undone, so the guard that matters is that it cannot be
+ * reached by a mis-click on a page whose other buttons are harmless.
+ */
+export const deletePharmacySchema = z.object({
+  confirm: z.string().trim().min(1, "Type the short code to confirm."),
+});
+export type DeletePharmacyInput = z.infer<typeof deletePharmacySchema>;
+
+/**
+ * Deleting one outlet.
+ *
+ * Same shape and same reason as above: the branch's own code, typed by hand,
+ * so the action cannot be reached by a mis-click in a list of rows that all
+ * look alike.
+ */
+export const deleteBranchSchema = z.object({
+  confirm: z.string().trim().min(1, "Type the branch code to confirm."),
+});
+export type DeleteBranchInput = z.infer<typeof deleteBranchSchema>;
+
+/**
+ * Which bill layout a shop's printer can produce.
+ *
+ * Its own route rather than a field on the profile form: it is a decision
+ * about the hardware on the counter, it changes what every future bill looks
+ * like, and it wants to be recorded in the platform's history as a deliberate
+ * act rather than buried in "details changed".
+ */
+export const printTemplateSchema = z.object({
+  printTemplate: z.enum(PRINT_TEMPLATE_IDS, {
+    message: "Choose one of the listed bill templates.",
+  }),
+});
+export type PrintTemplateInput = z.infer<typeof printTemplateSchema>;
 
 export const resetOwnerPasswordSchema = z.object({
   password: z

@@ -71,6 +71,21 @@ export const config = {
 /** Session cookie name. Kept here so middleware and route handlers agree. */
 export const SESSION_COOKIE = "mp_session";
 
+/**
+ * Where a superadmin's own session waits while they are signed in as a shop
+ * owner. Holding it in a second cookie is what makes "return to platform" a
+ * click rather than a fresh sign-in, and keeps the whole thing stateless.
+ */
+export const IMPERSONATION_COOKIE = "mp_platform_session";
+
+/**
+ * How long an impersonated session lasts, however long a normal one does.
+ *
+ * Support work is minutes; a session that can act inside somebody else's till
+ * should not outlive the call that justified it.
+ */
+export const IMPERSONATION_TTL_SECONDS = 30 * 60;
+
 export function requireAuthSecret(): string {
   const secret = config.authSecret;
   if (secret.length >= 32) return secret;
