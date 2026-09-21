@@ -13,6 +13,7 @@ import {
   TableWrap,
   cx,
 } from "@/components/ui";
+import { ActionBar, ActionIcon } from "@/components/action-icons";
 
 export const metadata: Metadata = { title: "Receivables" };
 export const dynamic = "force-dynamic";
@@ -200,15 +201,15 @@ export default async function ReceivablesPage() {
           />
         ) : (
           <>
-            <TableWrap>
+            <TableWrap minWidth="36rem" pinFirst pinLast>
               <thead>
                 <tr>
                   <th className="th">Customer</th>
-                  <th className="th hidden sm:table-cell">Phone</th>
-                  <th className="th hidden text-right lg:table-cell">Bills</th>
+                  <th className="th">Phone</th>
+                  <th className="th text-right">Bills</th>
                   <th className="th">Oldest</th>
                   <th className="th text-right">Outstanding</th>
-                  <th className="th text-right">Actions</th>
+                  <th className="th text-right col-actions">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -228,16 +229,13 @@ export default async function ReceivablesPage() {
                         >
                           {row.customerName}
                         </Link>
-                        <span className="tnum mt-0.5 block text-[11px] text-slate-400 sm:hidden">
-                          {row.customerPhone || "No phone on file"}
-                        </span>
                       </td>
 
-                      <td className="td tnum hidden text-slate-600 sm:table-cell">
+                      <td className="td tnum text-slate-600">
                         {row.customerPhone || "—"}
                       </td>
 
-                      <td className="td tnum hidden text-right text-slate-600 lg:table-cell">
+                      <td className="td tnum text-right text-slate-600">
                         {row.billCount}
                       </td>
 
@@ -254,13 +252,15 @@ export default async function ReceivablesPage() {
                         {money(row.outstanding)}
                       </td>
 
-                      <td className="td text-right">
-                        <Link
-                          href={accountHref}
-                          className="text-xs font-medium text-brand-700 hover:underline"
-                        >
-                          Collect
-                        </Link>
+                      <td className="td col-actions">
+                        <ActionBar>
+                          <ActionIcon
+                            label="Collect payment"
+                            icon="money"
+                            tone="primary"
+                            href={accountHref}
+                          />
+                        </ActionBar>
                       </td>
                     </tr>
                   );

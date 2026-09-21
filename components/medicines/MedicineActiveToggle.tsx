@@ -1,8 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { apiFetch } from "@/lib/client";
+import { ActionIcon } from "@/components/action-icons";
+import { cx } from "@/components/ui";
 
 /**
  * Take a medicine off the till, or put it back, from its row in the list.
@@ -20,6 +22,11 @@ import { apiFetch } from "@/lib/client";
  * It does not touch stock. An inactive medicine keeps every lot it had - the
  * shop has simply stopped selling it - which is why the confirmation says so
  * rather than leaving anybody to wonder whether units just vanished.
+ *
+ * The question and any error float above the row rather than sitting in it.
+ * Now that the actions column is a fixed strip of icons, a sentence rendered
+ * inline would stretch that column back out - and only for whichever single
+ * row happened to be mid-confirmation.
  */
 export function MedicineActiveToggle({
   id,
@@ -61,62 +68,132 @@ export function MedicineActiveToggle({
     router.refresh();
   }
 
-  if (error) {
-    return (
-      <span className="text-xs text-rose-600" role="alert">
-        {error}
-      </span>
-    );
-  }
-
   if (!isActive) {
     return (
-      <button
-        type="button"
-        onClick={() => apply(true)}
-        disabled={busy}
-        className="ml-3 text-xs font-medium text-emerald-700 hover:underline disabled:opacity-50"
-      >
-        {busy ? "Working…" : "Activate"}
-      </button>
-    );
-  }
-
-  if (asking) {
-    return (
-      <span className="ml-3 inline-flex items-center gap-2 whitespace-normal">
-        <span className="text-[11px] text-slate-600">
-          Hide {name} from billing?
-          {stockQuantity > 0
-            ? ` Its ${stockQuantity} unit(s) stay in stock.`
-            : ""}
-        </span>
-        <button
-          type="button"
-          onClick={() => apply(false)}
+      <Popped message={error} onDismiss={() => setError(null)}>
+        <ActionIcon
+          label="Activate"
+          icon="activate"
+          tone="success"
           disabled={busy}
-          className="text-xs font-medium text-rose-600 hover:underline disabled:opacity-50"
-        >
-          {busy ? "Working…" : "Yes"}
-        </button>
-        <button
-          type="button"
-          onClick={() => setAsking(false)}
-          className="text-xs font-medium text-slate-500 hover:underline"
-        >
-          No
-        </button>
-      </span>
+          onClick={() => apply(true)}
+        />
+      </Popped>
     );
   }
 
   return (
-    <button
-      type="button"
-      onClick={() => setAsking(true)}
-      className="ml-3 text-xs font-medium text-slate-500 hover:text-rose-600"
+    <Popped
+      message={error}
+      onDismiss={() => setError(null)}
+      confirm={
+        asking ? (
+          <>
+            <p className="text-sm leading-snug text-slate-600">
+              Hide <span className="font-medium text-slate-900">{name}</span>{" "}
+              from billing?
+              {stockQuantity > 0
+                ? ` Its ${stockQuantity} unit(s) stay in stock.`
+                : ""}
+            </p>
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={() => apply(false)}
+                disabled={busy}
+                className="btn-danger flex-1 py-1.5 text-xs disabled:opacity-50"
+              >
+                {busy ? "Working…" : "Deactivate"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setAsking(false)}
+                className="btn-secondary py-1.5 text-xs"
+              >
+                Cancel
+              </button>
+            </div>
+          </>
+        ) : null
+      }
     >
-      Deactivate
-    </button>
+      <ActionIcon
+        label="Deactivate"
+        icon="deactivate"
+        tone="danger"
+        onClick={() => setAsking(true)}
+      />
+    </Popped>
+  );
+}
+
+/**
+ * The icon, plus whatever has to be said about it.
+ *
+ * The question is asked in a small centred dialog rather than a panel floated
+ * off the row. A floated panel cannot survive here: the table now owns its own
+ * horizontal scrolling, and the moment one axis of an element is not
+ * `visible` the other becomes a scroll container too - so anything taller
+ * than the header row above it is clipped on the first row of every table.
+ * A fixed dialog has no such ancestor, and on a phone it is the better answer
+ * anyway: a 224px panel hanging off a 32px icon was never comfortable to read.
+ */
+function Popped({
+  children,
+  confirm,
+  message,
+  onDismiss,
+}: {
+  children: ReactNode;
+  confirm?: ReactNode;
+  /** A failed write, shown in place of the question. */
+  message?: string | null;
+  onDismiss: () => void;
+}) {
+  const open = Boolean(message) || Boolean(confirm);
+
+  return (
+    <>
+      {children}
+
+      {open ? (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center"
+          role="dialog"
+          aria-modal="true"
+        >
+          <button
+            type="button"
+            aria-label="Cancel"
+            onClick={onDismiss}
+            className="absolute inset-0 bg-slate-900/40"
+          />
+
+          <div
+            className={cx(
+              "relative w-full max-w-sm rounded-xl border p-4 text-left shadow-xl",
+              message
+                ? "border-rose-200 bg-rose-50"
+                : "border-slate-200 bg-white",
+            )}
+          >
+            {message ? (
+              <div role="alert">
+                <p className="text-sm leading-snug text-rose-700">{message}</p>
+                <button
+                  type="button"
+                  onClick={onDismiss}
+                  className="btn-secondary mt-3 w-full py-1.5 text-xs"
+                >
+                  Dismiss
+                </button>
+              </div>
+            ) : (
+              confirm
+            )}
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }

@@ -4,9 +4,9 @@ import { withDbRead } from "@/lib/db";
 import { formatDateTime, integer } from "@/lib/format";
 import { pharmacyFilter } from "@/lib/tenant";
 import { User } from "@/models/User";
-import Link from "next/link";
 import { listBranches } from "@/lib/branches";
 import { assignableRoleOf } from "@/lib/roles";
+import { ActionBar, ActionIcon } from "@/components/action-icons";
 import { StaffFormPanel } from "@/components/staff/StaffFormPanel";
 import { Badge, Card, EmptyState, PageHeader, StatCard, TableWrap } from "@/components/ui";
 import { ModuleTabs } from "@/components/ModuleScaffold";
@@ -74,20 +74,31 @@ export default async function UserStatusPage({
         {rows.length === 0 ? (
           <EmptyState title="No accounts" />
         ) : (
-          <TableWrap>
+          <TableWrap minWidth="32rem" pinFirst pinLast>
             <thead>
               <tr>
                 <th className="th">Name</th>
                 <th className="th">Email</th>
                 <th className="th">Status</th>
-                <th className="th hidden text-right sm:table-cell">Last sign-in</th>
-                <th className="th text-right">Actions</th>
+                <th className="th text-right">Last sign-in</th>
+                <th className="th text-right col-actions">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {rows.map((row) => {
                 const id = String(row._id);
                 const isSelf = String(user.id) === id;
+
+                /*
+                  One control, three meanings. Your own row only ever offers
+                  View - the screen already refuses to let anybody lock
+                  themselves out - so it would be a lie to show it a switch.
+                */
+                const action = isSelf
+                  ? { label: "View details", icon: "view", tone: "primary" } as const
+                  : row.isActive === false
+                    ? { label: "Activate", icon: "activate", tone: "success" } as const
+                    : { label: "Deactivate", icon: "deactivate", tone: "danger" } as const;
 
                 return (
                   <tr key={id} className="hover:bg-slate-50">
@@ -105,18 +116,20 @@ export default async function UserStatusPage({
                         {row.isActive === false ? "Disabled" : "Active"}
                       </Badge>
                     </td>
-                    <td className="td hidden text-right text-slate-500 sm:table-cell">
+                    <td className="td text-right text-slate-500">
                       {row.lastLoginAt
                         ? formatDateTime(row.lastLoginAt as unknown as Date)
                         : "Never"}
                     </td>
-                    <td className="td text-right">
-                      <Link
-                        href={`/staff/status?edit=${id}`}
-                        className="text-xs font-medium text-brand-700 hover:underline"
-                      >
-                        {isSelf ? "View" : row.isActive === false ? "Enable" : "Disable"}
-                      </Link>
+                    <td className="td col-actions">
+                      <ActionBar>
+                        <ActionIcon
+                          href={`/staff/status?edit=${id}`}
+                          label={action.label}
+                          icon={action.icon}
+                          tone={action.tone}
+                        />
+                      </ActionBar>
                     </td>
                   </tr>
                 );

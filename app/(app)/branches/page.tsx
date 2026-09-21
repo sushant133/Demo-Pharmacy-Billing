@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { requirePagePermission } from "@/lib/auth";
 import { withDbRead } from "@/lib/db";
 import { listBranches } from "@/lib/branches";
 import { integer, money } from "@/lib/format";
+import { ActionBar, ActionIcon } from "@/components/action-icons";
 import { BranchFormPanel } from "@/components/branches/BranchFormPanel";
 import {
   Badge,
@@ -65,15 +65,21 @@ export default async function BranchesPage({
             description="Ask MantraMed support to open your first outlet. Existing stock and users will attach to it."
           />
         ) : (
-          <TableWrap>
+          <TableWrap minWidth="36rem" pinFirst pinLast>
             <thead>
+              {/*
+                Lots and staff headcount fold under the branch name on a
+                phone; what is on the shelves and what it is worth keep their
+                columns, because those are the two figures an owner compares
+                between outlets.
+              */}
               <tr>
                 <th className="th">Branch</th>
                 <th className="th text-right">Lots</th>
                 <th className="th text-right">Units</th>
                 <th className="th text-right">Stock value</th>
                 <th className="th text-right">Staff</th>
-                <th className="th" />
+                <th className="th text-right col-actions">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -90,14 +96,27 @@ export default async function BranchesPage({
                       {branch.isActive ? null : <Badge tone="slate">Closed</Badge>}
                     </div>
                   </td>
-                  <td className="td tnum text-right">{integer(branch.lotCount)}</td>
-                  <td className="td tnum text-right">{integer(branch.unitCount)}</td>
-                  <td className="td tnum text-right">{money(branch.stockValue)}</td>
-                  <td className="td tnum text-right">{integer(branch.staffCount)}</td>
-                  <td className="td text-right">
-                    <Link href={`/branches?edit=${branch.id}`} className="text-sm font-medium text-brand-700">
-                      Edit
-                    </Link>
+                  <td className="td tnum text-right">
+                    {integer(branch.lotCount)}
+                  </td>
+                  <td className="td tnum text-right">
+                    {integer(branch.unitCount)}
+                  </td>
+                  <td className="td tnum text-right">
+                    {money(branch.stockValue)}
+                  </td>
+                  <td className="td tnum text-right">
+                    {integer(branch.staffCount)}
+                  </td>
+                  <td className="td col-actions">
+                    <ActionBar>
+                      <ActionIcon
+                        label="Edit"
+                        icon="edit"
+                        tone="primary"
+                        href={`/branches?edit=${branch.id}`}
+                      />
+                    </ActionBar>
                   </td>
                 </tr>
               ))}

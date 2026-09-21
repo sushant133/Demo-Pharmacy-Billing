@@ -9,6 +9,7 @@ import {
   type PaymentMode,
 } from "@/lib/constants";
 import { money } from "@/lib/format";
+import { ActionIcon } from "@/components/action-icons";
 import { Field, SlideOver } from "@/components/SlideOver";
 import { cx } from "@/components/ui";
 
@@ -56,8 +57,11 @@ export function RecordPaymentDialog({
   outstanding: number;
   total: number;
   received: number;
-  /** `link` for a table row; `button` for a detail panel. */
-  variant?: "button" | "link";
+  /**
+   * `icon` for an actions column, `button` for a detail panel. `link` is
+   * the older inline-text form, kept for anywhere outside a table.
+   */
+  variant?: "button" | "link" | "icon";
   label?: string;
 }) {
   const router = useRouter();
@@ -132,17 +136,26 @@ export function RecordPaymentDialog({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={start}
-        className={
-          variant === "button"
-            ? "btn-primary w-full"
-            : "text-xs font-medium text-emerald-700 hover:underline"
-        }
-      >
-        {label}
-      </button>
+      {variant === "icon" ? (
+        <ActionIcon
+          label={label}
+          icon="money"
+          tone="success"
+          onClick={start}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={start}
+          className={
+            variant === "button"
+              ? "btn-primary w-full"
+              : "text-xs font-medium text-emerald-700 hover:underline"
+          }
+        >
+          {label}
+        </button>
+      )}
 
       {open ? (
         <SlideOver

@@ -131,7 +131,14 @@ export default async function PurchaseDetailPage({
             Items received
           </h2>
 
-          <TableWrap>
+          {/*
+            Nine columns, all of them load-bearing: this is the accounting
+            document behind the stock, and a phone that quietly dropped the
+            free quantity or the effective cost would be showing a GRN that
+            does not reconcile. So it scrolls instead of hiding anything, and
+            pins the medicine name so the numbers keep their subject.
+          */}
+          <TableWrap minWidth="52rem" pinFirst>
             <thead className="border-b border-slate-200 bg-slate-50">
               <tr>
                 <th className="th">Medicine</th>

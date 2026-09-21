@@ -183,14 +183,14 @@ export default async function PayablesPage() {
             }
           />
         ) : (
-          <TableWrap>
+          <TableWrap minWidth="42rem" pinFirst>
             <thead>
               <tr>
                 <th className="th">Supplier</th>
-                <th className="th hidden lg:table-cell">Phone</th>
-                <th className="th hidden text-right sm:table-cell">Delivered</th>
-                <th className="th hidden text-right xl:table-cell">Returned</th>
-                <th className="th hidden text-right sm:table-cell">Paid</th>
+                <th className="th">Phone</th>
+                <th className="th text-right">Delivered</th>
+                <th className="th text-right">Returned</th>
+                <th className="th text-right">Paid</th>
                 <th className="th text-right">Outstanding</th>
                 <th className="th text-right">Oldest unpaid</th>
               </tr>
@@ -216,16 +216,16 @@ export default async function PayablesPage() {
                         </span>
                       ) : null}
                     </td>
-                    <td className="td hidden text-slate-500 lg:table-cell">
+                    <td className="td text-slate-500">
                       {row.phone || "—"}
                     </td>
-                    <td className="td tnum hidden text-right text-slate-600 sm:table-cell">
+                    <td className="td tnum text-right text-slate-600">
                       {money(row.purchased)}
                     </td>
-                    <td className="td tnum hidden text-right text-slate-600 xl:table-cell">
+                    <td className="td tnum text-right text-slate-600">
                       {row.returned > 0 ? money(row.returned) : "—"}
                     </td>
-                    <td className="td tnum hidden text-right text-slate-600 sm:table-cell">
+                    <td className="td tnum text-right text-slate-600">
                       {money(row.paid)}
                     </td>
                     <td className="td tnum text-right font-semibold text-slate-900">

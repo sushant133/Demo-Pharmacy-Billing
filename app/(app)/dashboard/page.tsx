@@ -457,9 +457,15 @@ export default async function DashboardPage({
                 description="Bills will appear here as soon as the counter starts ringing them up."
               />
             ) : (
-              <TableWrap>
+              <TableWrap minWidth="36rem" pinFirst>
                 <thead className="border-b border-slate-200 bg-slate-50">
                   <tr>
+                    {/*
+                      The dashboard's bill list sits in the narrower of two columns on a
+                      desktop, so it is squeezed long before the viewport is. Bill, amount
+                      and time are what makes it a "what just happened" list; the rest
+                      folds under the number.
+                    */}
                     <th className="th">Bill</th>
                     <th className="th">Customer</th>
                     <th className="th text-right">Items</th>

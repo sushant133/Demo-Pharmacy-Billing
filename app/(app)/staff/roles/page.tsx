@@ -142,7 +142,7 @@ export default async function RolesPage() {
               <thead>
                 <tr>
                   <th className="th">Capability</th>
-                  <th className="th hidden lg:table-cell">Permission</th>
+                  <th className="th">Permission</th>
                   {ASSIGNABLE_ROLES.map((role) => (
                     <th key={role} className="th text-center whitespace-nowrap">
                       {ROLE_LABELS[role]}
@@ -154,7 +154,7 @@ export default async function RolesPage() {
                 {rows.map((permission) => (
                   <tr key={permission} className="hover:bg-slate-50">
                     <td className="td text-slate-900">{describe(permission)}</td>
-                    <td className="td hidden font-mono text-xs text-slate-500 lg:table-cell">
+                    <td className="td font-mono text-xs text-slate-500">
                       {permission}
                     </td>
                     {ASSIGNABLE_ROLES.map((role) => {

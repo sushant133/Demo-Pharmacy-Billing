@@ -316,7 +316,7 @@ export function AppShell({
   const shopMark = brandLetter(shopName);
 
   const brand = (
-    <div className="flex items-center gap-2.5 border-b border-slate-700/60 px-5 py-4">
+    <div className="flex items-center gap-2.5 border-b border-slate-700/60 px-4 py-4 sm:px-5">
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand-400 to-brand-600 text-base font-bold text-white shadow-sm">
         {shopMark}
       </span>
@@ -327,22 +327,32 @@ export function AppShell({
   );
 
   return (
-    <div className="min-h-dvh lg:flex">
-      {/* Desktop sidebar */}
+    <div className="min-h-dvh md:flex">
+      {/* Persistent sidebar, labelled, from tablet up. */}
       {/*
         `app-sidebar` carries the dark ground and the focus ring that reads
         correctly on it - see app/globals.css. The hairline on the right
         separates the column from the light content area without a shadow.
+
+        Every row shows its name at every width the column appears at. An
+        icon-only rail was tried for the tablet range and is not worth it:
+        a glyph alone is a guess until you have learned the whole set, and
+        this menu holds sixteen rows a pharmacist reaches for by name.
+
+        A tablet in landscape has roughly 1000px, so 240px of menu still
+        leaves a workable page; the column takes its full 256px at `lg`.
+        Below `md` there is no width to spare, so the same labelled menu
+        arrives as a drawer instead.
       */}
-      <aside className="app-sidebar hidden w-64 shrink-0 flex-col border-r border-slate-950/60 lg:sticky lg:top-0 lg:flex lg:h-dvh">
+      <aside className="app-sidebar sticky top-0 hidden h-dvh w-60 shrink-0 flex-col border-r border-slate-950/60 md:flex lg:w-64">
         {brand}
         {navLinks}
         <UserCard user={user} scope={scope} branches={branches} />
       </aside>
 
-      {/* Mobile drawer */}
+      {/* Phone drawer */}
       {drawerOpen ? (
-        <div className="fixed inset-0 z-40 lg:hidden">
+        <div className="fixed inset-0 z-40 md:hidden">
           <button
             type="button"
             aria-label="Close navigation"
@@ -358,8 +368,8 @@ export function AppShell({
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Mobile top bar */}
-        <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 lg:hidden">
+        {/* Phone top bar */}
+        <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 md:hidden">
           <button
             type="button"
             onClick={() => setDrawerOpen(true)}
@@ -548,7 +558,7 @@ function NavLink({
           <span
             title={`${badgeCount} pending alerts`}
             className={cx(
-              "tnum min-w-[1.25rem] rounded-full px-1.5 py-0.5 text-center text-[10px] leading-none font-bold",
+              "tnum min-w-[1.25rem] shrink-0 rounded-full px-1.5 py-0.5 text-center text-[10px] leading-none font-bold",
               filled ? "bg-white text-brand-700" : "bg-rose-500 text-white",
             )}
           >
@@ -560,7 +570,7 @@ function NavLink({
         {item.hint ? (
           <kbd
             className={cx(
-              "rounded px-1.5 py-0.5 text-[10px] font-semibold",
+              "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold",
               filled ? "bg-white/20 text-white" : "bg-white/10 text-slate-300",
             )}
           >
@@ -576,7 +586,7 @@ function NavLink({
           aria-expanded={subOpen}
           aria-label={`${subOpen ? "Hide" : "Show"} ${item.label} sections`}
           className={cx(
-            "mr-1 rounded p-1.5 transition-colors",
+            "mr-1 shrink-0 rounded p-1.5 transition-colors",
             filled ? "hover:bg-white/15" : "text-slate-400 hover:bg-white/5 hover:text-white",
           )}
         >
@@ -770,7 +780,7 @@ function SignOutButton() {
       className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-400 transition-colors hover:bg-white/5 hover:text-white"
     >
       <svg
-        className="h-5 w-5"
+        className="h-5 w-5 shrink-0"
         fill="none"
         viewBox="0 0 24 24"
         stroke="currentColor"

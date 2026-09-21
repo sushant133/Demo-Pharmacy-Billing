@@ -31,7 +31,12 @@ export function ModuleTabs({
   active: string;
 }) {
   return (
-    <Card className="mt-4 mb-4 p-4">
+    <Card className="mt-4 mb-4 p-3 sm:p-4">
+      {/*
+        Wraps rather than scrolls: six short tab labels take two lines on a
+        phone, which is cheaper than a scroll container the user has to
+        discover to find the tab they want.
+      */}
       <div className="flex flex-wrap gap-1.5">
         {tabs.map((tab) => (
           <Link

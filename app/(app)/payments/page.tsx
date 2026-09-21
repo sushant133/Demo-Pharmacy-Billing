@@ -252,15 +252,15 @@ export default async function PaymentsPage({
           />
         ) : (
           <>
-            <TableWrap>
+            <TableWrap minWidth="42rem" pinFirst>
               <thead>
                 <tr>
                   <th className="th">Paid on</th>
                   <th className="th">Supplier</th>
-                  <th className="th hidden sm:table-cell">Against</th>
-                  <th className="th hidden lg:table-cell">Method</th>
-                  <th className="th hidden xl:table-cell">Reference</th>
-                  <th className="th hidden lg:table-cell">Recorded by</th>
+                  <th className="th">Against</th>
+                  <th className="th">Method</th>
+                  <th className="th">Reference</th>
+                  <th className="th">Recorded by</th>
                   <th className="th text-right">Amount</th>
                 </tr>
               </thead>
@@ -277,28 +277,25 @@ export default async function PaymentsPage({
                       >
                         {supplierName.get(String(row.supplierId)) ?? "Supplier"}
                       </Link>
-                      <span className="block text-[11px] text-slate-400 sm:hidden">
-                        {row.grnNo || "On account"}
-                      </span>
                     </td>
-                    <td className="td hidden text-slate-500 sm:table-cell">
+                    <td className="td text-slate-500">
                       {row.grnNo ? (
                         <span className="font-mono text-xs">{row.grnNo}</span>
                       ) : (
                         "On account"
                       )}
                     </td>
-                    <td className="td hidden lg:table-cell">
+                    <td className="td">
                       <Badge tone="slate">
                         {SUPPLIER_PAYMENT_METHOD_LABELS[
                           row.method as SupplierPaymentMethod
                         ] ?? row.method}
                       </Badge>
                     </td>
-                    <td className="td hidden max-w-[10rem] truncate text-slate-500 xl:table-cell">
+                    <td className="td max-w-[10rem] truncate text-slate-500">
                       {row.reference || "—"}
                     </td>
-                    <td className="td hidden text-slate-600 lg:table-cell">
+                    <td className="td text-slate-600">
                       {row.recordedByName || "—"}
                     </td>
                     <td className="td tnum text-right font-semibold text-slate-900">

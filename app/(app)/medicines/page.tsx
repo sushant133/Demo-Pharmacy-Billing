@@ -13,6 +13,7 @@ import { getSettings } from "@/lib/settings";
 import { Batch } from "@/models/Batch";
 import { Medicine } from "@/models/Medicine";
 import { Badge, Card, EmptyState, PageHeader, Pagination, TableWrap } from "@/components/ui";
+import { ActionBar, ActionIcon } from "@/components/action-icons";
 import { MedicineFormPanel } from "@/components/medicines/MedicineFormPanel";
 import { MedicineImportPanel } from "@/components/medicines/MedicineImportPanel";
 import { MedicineActiveToggle } from "@/components/medicines/MedicineActiveToggle";
@@ -105,8 +106,15 @@ export default async function MedicinesPage({
             />
           ) : (
             <>
-              <TableWrap>
+              <TableWrap minWidth="42rem" pinFirst pinLast>
                 <thead className="border-b border-slate-200 bg-slate-50">
+                  {/*
+                    A phone keeps the three that make the decision - what it
+                    is, how little is left, and what to do about it. The
+                    reorder level is folded in beside the quantity it is
+                    being judged against, where it is more use than in a
+                    column of its own anyway.
+                  */}
                   <tr>
                     <th className="th">Medicine</th>
                     <th className="th">Category</th>
@@ -115,7 +123,7 @@ export default async function MedicinesPage({
                     <th className="th text-right">Batches</th>
                     <th className="th">Nearest expiry</th>
                     {can(user.role, "purchase:write") ? (
-                      <th className="th"></th>
+                      <th className="th text-right col-actions">Actions</th>
                     ) : null}
                   </tr>
                 </thead>
@@ -128,7 +136,9 @@ export default async function MedicinesPage({
                           <p className="text-xs text-slate-500">{row.genericName}</p>
                         ) : null}
                       </td>
-                      <td className="td text-slate-600">{row.category}</td>
+                      <td className="td text-slate-600">
+                        {row.category}
+                      </td>
                       <td className="td tnum text-right">
                         <span
                           className={
@@ -153,13 +163,15 @@ export default async function MedicinesPage({
                         {row.nearestExpiry ? formatExpiry(row.nearestExpiry) : "—"}
                       </td>
                       {can(user.role, "purchase:write") ? (
-                        <td className="td text-right">
-                          <Link
-                            href={`/purchases/new?medicineId=${row.medicineId}`}
-                            className="text-xs font-medium text-brand-700 hover:underline"
-                          >
-                            Add stock
-                          </Link>
+                        <td className="td col-actions">
+                          <ActionBar>
+                            <ActionIcon
+                              label="Add stock"
+                              icon="add"
+                              tone="primary"
+                              href={`/purchases/new?medicineId=${row.medicineId}`}
+                            />
+                          </ActionBar>
                         </td>
                       ) : null}
                     </tr>
@@ -432,18 +444,20 @@ export default async function MedicinesPage({
           />
         ) : (
           <>
-            <TableWrap>
+            <TableWrap minWidth="54rem" pinFirst pinLast>
               <thead className="border-b border-slate-200 bg-slate-50">
                 <tr>
                   <th className="th">Medicine</th>
-                  <th className="th hidden lg:table-cell">Manufacturer</th>
-                  <th className="th hidden sm:table-cell">Category</th>
-                  <th className="th hidden xl:table-cell">Unit</th>
+                  <th className="th">Manufacturer</th>
+                  <th className="th">Category</th>
+                  <th className="th">Unit</th>
                   <th className="th text-right">Selling price</th>
                   <th className="th text-right">In stock</th>
                   <th className="th">Status</th>
-                  <th className="th hidden lg:table-cell">Nearest expiry</th>
-                  {editable ? <th className="th"></th> : null}
+                  <th className="th">Nearest expiry</th>
+                  {editable ? (
+                    <th className="th text-right col-actions">Actions</th>
+                  ) : null}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -493,13 +507,13 @@ export default async function MedicinesPage({
                           </p>
                         ) : null}
                       </td>
-                      <td className="td hidden text-slate-600 lg:table-cell">
+                      <td className="td text-slate-600">
                         {medicine.manufacturer || "—"}
                       </td>
-                      <td className="td hidden text-slate-600 sm:table-cell">
+                      <td className="td text-slate-600">
                         {medicine.category}
                       </td>
-                      <td className="td hidden text-slate-600 capitalize xl:table-cell">
+                      <td className="td text-slate-600 capitalize">
                         {medicine.unit}
                       </td>
                       <td className="td tnum text-right">
@@ -544,33 +558,34 @@ export default async function MedicinesPage({
                           <Badge tone="green">Active</Badge>
                         )}
                       </td>
-                      <td className="td hidden text-slate-600 lg:table-cell">
+                      <td className="td text-slate-600">
                         {rowStock?.nearestExpiry
                           ? formatExpiry(rowStock.nearestExpiry)
                           : "—"}
                       </td>
                       {editable ? (
-                        <td className="td text-right whitespace-nowrap">
-                          <Link
-                            href={`/medicines?edit=${String(medicine._id)}${listQuery.toString() ? "&" + listQuery.toString() : ""}`}
-                            className="text-xs font-medium text-brand-700 hover:underline"
-                          >
-                            Edit
-                          </Link>
-                          {can(user.role, "purchase:write") ? (
-                            <Link
-                              href={`/purchases/new?medicineId=${String(medicine._id)}`}
-                              className="ml-3 text-xs font-medium text-slate-500 hover:text-brand-700"
-                            >
-                              Add stock
-                            </Link>
-                          ) : null}
-                          <MedicineActiveToggle
-                            id={String(medicine._id)}
-                            name={medicine.name}
-                            isActive={medicine.isActive !== false}
-                            stockQuantity={quantity}
-                          />
+                        <td className="td col-actions">
+                          <ActionBar>
+                            <ActionIcon
+                              label="Edit"
+                              icon="edit"
+                              tone="primary"
+                              href={`/medicines?edit=${String(medicine._id)}${listQuery.toString() ? "&" + listQuery.toString() : ""}`}
+                            />
+                            {can(user.role, "purchase:write") ? (
+                              <ActionIcon
+                                label="Add stock"
+                                icon="add"
+                                href={`/purchases/new?medicineId=${String(medicine._id)}`}
+                              />
+                            ) : null}
+                            <MedicineActiveToggle
+                              id={String(medicine._id)}
+                              name={medicine.name}
+                              isActive={medicine.isActive !== false}
+                              stockQuantity={quantity}
+                            />
+                          </ActionBar>
                         </td>
                       ) : null}
                     </tr>

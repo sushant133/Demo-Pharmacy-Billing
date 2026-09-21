@@ -7,6 +7,7 @@ import { formatDateTime, initials, integer } from "@/lib/format";
 import { ROLE_LABELS, assignableRoleOf, normalizeRole } from "@/lib/roles";
 import { pharmacyFilter } from "@/lib/tenant";
 import { User } from "@/models/User";
+import { ActionBar, ActionIcon } from "@/components/action-icons";
 import { StaffFormPanel } from "@/components/staff/StaffFormPanel";
 import {
   Badge,
@@ -109,16 +110,16 @@ export default async function StaffPage({
             }
           />
         ) : (
-          <TableWrap>
+          <TableWrap minWidth="42rem" pinFirst pinLast>
             <thead>
               <tr>
                 <th className="th">Name</th>
-                <th className="th hidden sm:table-cell">Email</th>
-                <th className="th hidden sm:table-cell">Role</th>
-                <th className="th hidden lg:table-cell">Branch</th>
+                <th className="th">Email</th>
+                <th className="th">Role</th>
+                <th className="th">Branch</th>
                 <th className="th">Status</th>
-                <th className="th hidden text-right lg:table-cell">Last sign-in</th>
-                <th className="th text-right">Actions</th>
+                <th className="th text-right">Last sign-in</th>
+                <th className="th text-right col-actions">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -143,26 +144,18 @@ export default async function StaffPage({
                               </span>
                             ) : null}
                           </span>
-                          {/* Narrow screens drop the email and role columns,
-                              so both are repeated here - a staff list that
-                              does not say who is a cashier is not a staff
-                              list. */}
-                          <span className="block truncate text-[11px] text-slate-400 sm:hidden">
-                            {row.email}
-                            {role ? ` · ${ROLE_LABELS[role]}` : null}
-                          </span>
                         </span>
                       </div>
                     </td>
-                    <td className="td hidden text-slate-600 sm:table-cell">
+                    <td className="td text-slate-600">
                       {row.email}
                     </td>
-                    <td className="td hidden sm:table-cell">
+                    <td className="td">
                       <Badge tone={role === "admin" ? "brand" : "slate"}>
                         {role ? ROLE_LABELS[role] : String(row.role)}
                       </Badge>
                     </td>
-                    <td className="td hidden text-slate-500 lg:table-cell">
+                    <td className="td text-slate-500">
                       {row.branchId
                         ? (branchName.get(String(row.branchId)) ?? "—")
                         : "All branches"}
@@ -172,18 +165,20 @@ export default async function StaffPage({
                         {row.isActive === false ? "Disabled" : "Active"}
                       </Badge>
                     </td>
-                    <td className="td hidden text-right text-slate-500 lg:table-cell">
+                    <td className="td text-right text-slate-500">
                       {row.lastLoginAt
                         ? formatDateTime(row.lastLoginAt as unknown as Date)
                         : "Never"}
                     </td>
-                    <td className="td text-right">
-                      <Link
-                        href={`/staff?edit=${id}`}
-                        className="text-xs font-medium text-brand-700 hover:underline"
-                      >
-                        Manage
-                      </Link>
+                    <td className="td col-actions">
+                      <ActionBar>
+                        <ActionIcon
+                          label="Edit"
+                          icon="edit"
+                          tone="primary"
+                          href={`/staff?edit=${id}`}
+                        />
+                      </ActionBar>
                     </td>
                   </tr>
                 );

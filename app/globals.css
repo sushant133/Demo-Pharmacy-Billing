@@ -48,9 +48,45 @@
     -webkit-text-size-adjust: 100%;
   }
 
+  /*
+    Nothing may scroll the page sideways.
+    -------------------------------------
+    A single over-wide element - a long unbroken medicine name, a table that
+    did not get its scroll container, a chart drawn at its natural width -
+    used to widen the whole document, and then every screen on the phone
+    could be dragged off-centre, header and all.
+
+    `clip` rather than `hidden`: `hidden` turns the body into a scroll
+    container, which is what `position: sticky` anchors to, and that would
+    silently kill the sticky mobile header and the billing till's footer.
+    `clip` cuts the overflow without creating one.
+  */
+  html,
+  body {
+    overflow-x: clip;
+    max-width: 100%;
+  }
+
   body {
     @apply bg-slate-100 text-slate-900 antialiased;
     font-family: var(--font-sans);
+  }
+
+  /*
+    Long unbroken strings - a pasted reference number, an email, a supplier
+    name with no spaces - are the other way a layout gets pushed open. They
+    wrap at the boundary instead of deciding the width of their column.
+  */
+  h1,
+  h2,
+  h3,
+  p,
+  td,
+  th,
+  li,
+  dd,
+  dt {
+    overflow-wrap: break-word;
   }
 
   /* Numbers in tables must not jitter as they update. */
@@ -186,6 +222,204 @@
   .td {
     @apply px-4 py-2.5 text-sm text-slate-700;
   }
+
+  /*
+    The table scroll container.
+    ---------------------------
+    Every table in the app is wrapped in one of these. Two rules:
+
+      - It always owns its overflow. The previous version handed scrolling
+        back to the page at `md` (`md:overflow-x-visible`), so a table too
+        wide for a laptop either widened the document or - because most of
+        these tables sit in a card with `overflow-hidden` for its corners -
+        had its last column silently clipped. Neither is recoverable by the
+        person reading it.
+      - It does not impose a width. A forced `min-w-[640px]` meant a
+        four-column list scrolled sideways on a phone that could have shown
+        it whole. Tables now size to their content, so the scrollbar appears
+        only when the columns genuinely do not fit.
+
+    `overscroll-behavior-x: contain` keeps a swipe that runs off the end of
+    the table from turning into the browser's back gesture, which on a phone
+    threw away whatever the user had filtered to.
+  */
+  .table-scroll {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /*
+    Edge shading, so a table that scrolls says so.
+    ---------------------------------------------
+    Four layers pinned with `background-attachment: local, local, scroll,
+    scroll`: the two white "caps" travel with the content and the two shadows
+    stay with the box, so a shadow is visible exactly when there is more
+    table in that direction. Pure CSS - no scroll listener, and it works on a
+    server-rendered page with no JavaScript at all.
+  */
+  .table-scroll-shadow {
+    background-image:
+      linear-gradient(to right, var(--color-white), rgb(255 255 255 / 0)),
+      linear-gradient(to left, var(--color-white), rgb(255 255 255 / 0)),
+      linear-gradient(to right, rgb(15 23 42 / 0.13), rgb(15 23 42 / 0)),
+      linear-gradient(to left, rgb(15 23 42 / 0.13), rgb(15 23 42 / 0));
+    background-position:
+      0 0,
+      100% 0,
+      0 0,
+      100% 0;
+    background-repeat: no-repeat;
+    background-size:
+      28px 100%,
+      28px 100%,
+      12px 100%,
+      12px 100%;
+    background-attachment: local, local, scroll, scroll;
+  }
+
+  /*
+    Pinned ends.
+    ------------
+    Every column is present at every width and a table that does not fit
+    scrolls. Scrolling costs the two columns that matter most, though: the
+    one that says *which row this is*, and the one that says *what you can do
+    with it*. Both are pinned, so the middle slides between them and a row is
+    never anonymous and never out of reach.
+
+    `table-pin-first` holds the identifying column against the left edge;
+    `table-pin-last` holds the actions against the right. A table may use
+    either or both.
+
+    The actions column is matched by `.col-actions` rather than
+    `:last-child`, because several of these columns are
+    permission-conditional - a cashier is rendered no actions cell at all -
+    and `:last-child` would then quietly pin whichever data column happened
+    to fall last.
+  */
+  .table-pin-first :is(th, td):first-child,
+  .table-pin-last :is(th, td).col-actions {
+    position: sticky;
+    z-index: 1;
+    background-color: var(--color-white);
+  }
+
+  .table-pin-first :is(th, td):first-child {
+    left: 0;
+  }
+
+  .table-pin-last :is(th, td).col-actions {
+    right: 0;
+  }
+
+  /*
+    The header's pinned cells take the header's own ground, and deliberately
+    share the body's z-index rather than outranking it: a pinned cell forms a
+    stacking context, so a header at `z-index: 2` would paint over the
+    actions tooltip rising out of the first row beneath it. Same index, and
+    document order puts the body above - which is right here, because this
+    header does not scroll vertically and never needs to cover a row.
+  */
+  .table-pin-first thead :is(th, td):first-child,
+  .table-pin-last thead :is(th, td).col-actions {
+    background-color: var(--color-slate-50);
+  }
+
+  /*
+    A pinned cell paints its own background to occlude what scrolls under it,
+    which would otherwise leave it the one cell in the row that ignores the
+    hover. Matched here rather than with `inherit`: a transparent row would
+    make `inherit` transparent too, and the pin would stop working.
+  */
+  .table-pin-first tbody tr:hover :is(th, td):first-child,
+  .table-pin-last tbody tr:hover :is(th, td).col-actions {
+    background-color: color-mix(
+      in oklab,
+      var(--color-slate-50) 60%,
+      var(--color-white)
+    );
+  }
+
+  /* The seam that tells you the pinned column is floating over the rest. */
+  .table-pin-first :is(th, td):first-child::after,
+  .table-pin-last :is(th, td).col-actions::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: -1px;
+    width: 1px;
+    background-color: var(--color-slate-200);
+  }
+
+  .table-pin-first :is(th, td):first-child::after {
+    right: 0;
+  }
+
+  .table-pin-last :is(th, td).col-actions::before {
+    left: 0;
+  }
+
+
+  /*
+    The actions column.
+    -------------------
+    Spelled out in words, this column is the widest one on half these screens
+    and it grows with every permission the signed-in role holds, pushing the
+    figures somebody actually came to read off the edge of a laptop. A square
+    icon button holds it to a fixed width however many controls a row earns,
+    and the name is still there on hover and on keyboard focus.
+
+    32px squares rather than the larger targets used elsewhere: these sit in a
+    40px table row that was deliberately made compact, and a control taller
+    than its row would undo that.
+  */
+  .action-icon {
+    @apply relative inline-flex h-8 w-8 shrink-0 items-center justify-center
+           rounded-lg text-slate-500 transition-colors
+           hover:bg-slate-100 hover:text-brand-700
+           disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  /* The one action a row is mostly opened for. */
+  .action-icon-primary {
+    @apply text-brand-700 hover:bg-brand-50 hover:text-brand-800;
+  }
+
+  .action-icon-success {
+    @apply text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700;
+  }
+
+  .action-icon-danger {
+    @apply hover:bg-rose-50 hover:text-rose-600;
+  }
+
+  /*
+    Anchored to the icon's right edge rather than centred on it. The actions
+    column is the last one on every table in the app, so a tip centred over
+    the rightmost icon would hang past the card and be cut off by the
+    `overflow-hidden` that clips the card's corners.
+  */
+  .action-tip {
+    @apply pointer-events-none absolute right-0 bottom-full z-30 mb-1.5 hidden
+           rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium
+           whitespace-nowrap text-white shadow-lg;
+  }
+
+  .action-icon:focus-visible .action-tip {
+    @apply block;
+  }
+}
+
+/*
+  Hover-capable pointers only. On a touch screen `:hover` latches after a tap
+  and would leave a black label parked on the row until something else is
+  touched; there, focus alone reveals the name.
+*/
+@media (hover: hover) {
+  .action-icon:hover .action-tip {
+    display: block;
+  }
+
 }
 
 /*
@@ -333,6 +567,12 @@
 
 .receipt-toolbar {
   display: flex;
+  /*
+    Aligned to the slip below, whatever paper that is. Clamped to 100%
+    because on a 320px phone both 22rem and an 80mm roll are wider than the
+    page's content box, and the toolbar - Back on the left, the bill number
+    on the right - was being pushed past the edge.
+  */
   max-width: min(100%, max(22rem, var(--receipt-width, 76mm)));
   margin: 0 auto 1rem;
   align-items: center;
@@ -378,6 +618,13 @@
 }
 
 .receipt {
+  /*
+    The template's true paper width, given way on a screen too narrow for it.
+    An 80mm roll is 302px, wider than the content box of a 320px phone once
+    the page's gutter is off, so the slip used to be cut down its right edge
+    on the narrowest screens still in use. The print rule below restores the
+    exact width the printer needs.
+  */
   width: var(--receipt-width, 76mm);
   max-width: 100%;
   margin: 0 auto;

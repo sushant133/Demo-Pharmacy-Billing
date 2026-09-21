@@ -164,7 +164,7 @@ export function SuperAdminShell({
             onClick={() => setDrawerOpen(false)}
             className="absolute inset-0 bg-slate-900/60"
           />
-          <div className="relative flex h-full w-64 max-w-[85vw] flex-col bg-slate-900">
+          <div className="relative flex h-dvh w-64 max-w-[85vw] flex-col bg-slate-900">
             {brand}
             {navLinks}
             {userCard}
@@ -184,7 +184,7 @@ export function SuperAdminShell({
               <path strokeLinecap="round" d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <span className="text-[15px] leading-tight font-semibold text-slate-900">
+          <span className="min-w-0 truncate text-[15px] leading-tight font-semibold text-slate-900">
             MantraMed
             <span className="block text-[11px] font-normal text-slate-500">Platform</span>
           </span>

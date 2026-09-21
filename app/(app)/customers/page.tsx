@@ -16,6 +16,7 @@ import {
   TableWrap,
   cx,
 } from "@/components/ui";
+import { ActionBar, ActionIcon } from "@/components/action-icons";
 
 export const metadata: Metadata = { title: "Customers" };
 export const dynamic = "force-dynamic";
@@ -163,18 +164,18 @@ export default async function CustomersPage({
           />
         ) : (
           <>
-            <TableWrap>
+            <TableWrap minWidth="42rem" pinFirst pinLast>
               <thead>
                 <tr>
                   <th className="th">Name</th>
                   <th className="th">Phone</th>
-                  <th className="th hidden sm:table-cell">PAN</th>
-                  <th className="th hidden lg:table-cell">Address</th>
+                  <th className="th">PAN</th>
+                  <th className="th">Address</th>
                   {canSeeMoney ? (
                     <th className="th text-right">Outstanding</th>
                   ) : null}
                   <th className="th text-right">Last billed</th>
-                  <th className="th text-right">Invoices</th>
+                  <th className="th text-right col-actions">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -198,17 +199,14 @@ export default async function CustomersPage({
                         >
                           {row.name}
                         </Link>
-                        <span className="block text-[11px] text-slate-400 sm:hidden">
-                          {row.panNo ? `PAN ${row.panNo}` : "No PAN on file"}
-                        </span>
                       </td>
                       <td className="td tnum text-slate-600">
                         {row.phone || "—"}
                       </td>
-                      <td className="td tnum hidden text-slate-600 sm:table-cell">
+                      <td className="td tnum text-slate-600">
                         {row.panNo || "—"}
                       </td>
-                      <td className="td hidden max-w-[18rem] truncate text-slate-500 lg:table-cell">
+                      <td className="td max-w-[18rem] truncate text-slate-500">
                         {row.address || "—"}
                       </td>
                       {canSeeMoney ? (
@@ -228,13 +226,15 @@ export default async function CustomersPage({
                       <td className="td text-right text-slate-500">
                         {formatDate(row.updatedAt as unknown as Date)}
                       </td>
-                      <td className="td text-right">
-                        <Link
-                          href={invoicesHref}
-                          className="text-xs font-medium text-brand-700 hover:underline"
-                        >
-                          View
-                        </Link>
+                      <td className="td col-actions">
+                        <ActionBar>
+                          <ActionIcon
+                            label="View invoices"
+                            icon="invoices"
+                            tone="primary"
+                            href={invoicesHref}
+                          />
+                        </ActionBar>
                       </td>
                     </tr>
                   );

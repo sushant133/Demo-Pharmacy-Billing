@@ -11,6 +11,7 @@ import { pharmacyFilter } from "@/lib/tenant";
 import { objectIdSchema } from "@/lib/validation";
 import { Customer } from "@/models/Customer";
 import { Sale } from "@/models/Sale";
+import { ActionBar } from "@/components/action-icons";
 import { RecordPaymentDialog } from "@/components/sales/RecordPaymentDialog";
 import {
   Badge,
@@ -172,16 +173,16 @@ export default async function CustomerAccountPage({
             }
           />
         ) : (
-          <TableWrap>
+          <TableWrap minWidth="42rem" pinFirst pinLast>
             <thead>
               <tr>
                 <th className="th">Bill</th>
                 <th className="th">Date</th>
-                <th className="th hidden sm:table-cell">Age</th>
-                <th className="th hidden lg:table-cell text-right">Total</th>
-                <th className="th hidden lg:table-cell text-right">Received</th>
+                <th className="th">Age</th>
+                <th className="th text-right">Total</th>
+                <th className="th text-right">Received</th>
                 <th className="th text-right">Outstanding</th>
-                <th className="th text-right">Actions</th>
+                <th className="th text-right col-actions">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -196,14 +197,20 @@ export default async function CustomerAccountPage({
                       >
                         {sale.billNo}
                       </Link>
-                      <span className="mt-0.5 block sm:hidden">
+                      {/*
+                        This table has no status column, so the badge sat under
+                        the bill number - but only below `sm`, which meant the
+                        state of a bill was visible on a phone and nowhere
+                        else. It is shown at every width now.
+                      */}
+                      <span className="mt-0.5 block">
                         <Badge tone={state.tone}>{state.label}</Badge>
                       </span>
                     </td>
                     <td className="td tnum whitespace-nowrap text-slate-600">
                       {formatDate(sale.createdAt as unknown as Date)}
                     </td>
-                    <td className="td hidden sm:table-cell">
+                    <td className="td">
                       <span
                         className={cx(
                           "tnum text-sm",
@@ -217,28 +224,30 @@ export default async function CustomerAccountPage({
                         {integer(age)} day{age === 1 ? "" : "s"}
                       </span>
                     </td>
-                    <td className="td tnum hidden text-right text-slate-600 lg:table-cell">
+                    <td className="td tnum text-right text-slate-600">
                       {money(sale.totalAmount)}
                     </td>
-                    <td className="td tnum hidden text-right text-slate-600 lg:table-cell">
+                    <td className="td tnum text-right text-slate-600">
                       {money(received)}
                     </td>
                     <td className="td tnum text-right font-semibold text-amber-700">
                       {money(state.remaining)}
                     </td>
-                    <td className="td text-right">
-                      {canCollect ? (
-                        <RecordPaymentDialog
-                          saleId={id}
-                          billNo={sale.billNo}
-                          customerName={customer.name}
-                          outstanding={state.remaining}
-                          total={sale.totalAmount}
-                          received={received}
-                          variant="link"
-                          label="Collect"
-                        />
-                      ) : null}
+                    <td className="td col-actions">
+                      <ActionBar>
+                        {canCollect ? (
+                          <RecordPaymentDialog
+                            saleId={id}
+                            billNo={sale.billNo}
+                            customerName={customer.name}
+                            outstanding={state.remaining}
+                            total={sale.totalAmount}
+                            received={received}
+                            variant="icon"
+                            label="Collect payment"
+                          />
+                        ) : null}
+                      </ActionBar>
                     </td>
                   </tr>
                 );

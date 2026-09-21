@@ -327,14 +327,14 @@ export default async function PrescriptionsPage({
           />
         ) : (
           <>
-            <TableWrap>
+            <TableWrap minWidth="42rem" pinFirst>
               <thead>
                 <tr>
                   <th className="th">Rx no</th>
                   <th className="th">Patient</th>
-                  <th className="th hidden lg:table-cell">Prescriber</th>
-                  <th className="th hidden sm:table-cell">Written</th>
-                  <th className="th hidden xl:table-cell">Valid until</th>
+                  <th className="th">Prescriber</th>
+                  <th className="th">Written</th>
+                  <th className="th">Valid until</th>
                   <th className="th text-right">Dispensed</th>
                   <th className="th">Status</th>
                 </tr>
@@ -370,7 +370,7 @@ export default async function PrescriptionsPage({
                         ) : null}
                       </td>
 
-                      <td className="td hidden lg:table-cell">
+                      <td className="td">
                         <span className="block max-w-[12rem] truncate text-slate-700">
                           {row.doctorName}
                         </span>
@@ -381,11 +381,11 @@ export default async function PrescriptionsPage({
                         ) : null}
                       </td>
 
-                      <td className="td tnum hidden whitespace-nowrap text-slate-600 sm:table-cell">
+                      <td className="td tnum whitespace-nowrap text-slate-600">
                         {formatDate(row.issuedOn as unknown as Date)}
                       </td>
 
-                      <td className="td tnum hidden whitespace-nowrap text-slate-600 xl:table-cell">
+                      <td className="td tnum whitespace-nowrap text-slate-600">
                         {row.validUntil
                           ? formatDate(row.validUntil as unknown as Date)
                           : "—"}

@@ -65,23 +65,23 @@ export function StockLedger({
 
   return (
     <Card className="overflow-hidden">
-      <TableWrap>
+      <TableWrap minWidth="58rem" pinFirst>
         <thead>
           <tr>
             <th className="th">When</th>
             <th className="th">Movement</th>
             <th className="th">Medicine</th>
-            <th className="th hidden lg:table-cell">Lot & expiry</th>
-            <th className="th hidden 2xl:table-cell">Supplier</th>
+            <th className="th">Lot & expiry</th>
+            <th className="th">Supplier</th>
             <th className="th text-right">Units</th>
             {canSeeMoney ? (
               <>
-                <th className="th hidden text-right xl:table-cell">Unit cost</th>
-                <th className="th hidden text-right sm:table-cell">Value</th>
+                <th className="th text-right">Unit cost</th>
+                <th className="th text-right">Value</th>
               </>
             ) : null}
-            <th className="th hidden xl:table-cell">Reference</th>
-            <th className="th hidden lg:table-cell">By</th>
+            <th className="th">Reference</th>
+            <th className="th">By</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
@@ -141,7 +141,7 @@ export function StockLedger({
                 </span>
               </td>
 
-              <td className="td hidden lg:table-cell">
+              <td className="td">
                 <span className="block font-mono text-xs text-slate-600">
                   {entry.batchNumber || "—"}
                 </span>
@@ -163,7 +163,7 @@ export function StockLedger({
                 ) : null}
               </td>
 
-              <td className="td hidden 2xl:table-cell">
+              <td className="td">
                 <span className="block max-w-[12rem] truncate text-xs text-slate-600">
                   {entry.supplier || (
                     // Blank is meaningful, not missing: a customer return and a
@@ -197,16 +197,16 @@ export function StockLedger({
 
               {canSeeMoney ? (
                 <>
-                  <td className="td tnum hidden text-right text-slate-500 xl:table-cell">
+                  <td className="td tnum text-right text-slate-500">
                     {money(entry.unitCost)}
                   </td>
-                  <td className="td tnum hidden text-right text-slate-700 sm:table-cell">
+                  <td className="td tnum text-right text-slate-700">
                     {money(entry.value)}
                   </td>
                 </>
               ) : null}
 
-              <td className="td hidden xl:table-cell">
+              <td className="td">
                 {entry.reference ? (
                   entry.referenceHref ? (
                     <Link
@@ -225,7 +225,7 @@ export function StockLedger({
                 )}
               </td>
 
-              <td className="td hidden text-slate-600 lg:table-cell">
+              <td className="td text-slate-600">
                 {entry.by || "—"}
               </td>
             </MovementDetail>

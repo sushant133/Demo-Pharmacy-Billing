@@ -26,17 +26,27 @@ export function PageHeader({
   subtitle?: string;
   actions?: ReactNode;
 }) {
+  /*
+    `min-w-0` on the title block, and the actions allowed to wrap onto their
+    own line. Without the first, a long pharmacy or report name sets the
+    flex item's minimum width and shoves the buttons past the right edge -
+    which on a phone is how the whole page ended up draggable sideways.
+  */
   return (
-    <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl">
+    <header className="mb-5 flex flex-wrap items-end justify-between gap-x-3 gap-y-2 sm:mb-6">
+      <div className="min-w-0 flex-1 basis-full sm:basis-auto">
+        <h1 className="text-lg font-semibold tracking-tight text-balance text-slate-900 sm:text-xl lg:text-2xl">
           {title}
         </h1>
         {subtitle ? (
-          <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
+          <p className="mt-1 text-sm text-pretty text-slate-500">{subtitle}</p>
         ) : null}
       </div>
-      {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
+      {actions ? (
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+          {actions}
+        </div>
+      ) : null}
     </header>
   );
 }
@@ -79,13 +89,22 @@ export function StatCard({
         href && "hover:shadow-md",
       )}
     >
-      <p className="text-xs font-medium tracking-wide text-slate-500 uppercase">
+      <p className="text-[11px] font-medium tracking-wide text-slate-500 uppercase sm:text-xs">
         {label}
       </p>
-      <p className="tnum mt-2 text-2xl font-semibold text-slate-900 sm:text-3xl">
+      {/*
+        A four-figure rupee total at `text-3xl` does not fit two-up on a
+        360px phone, and these tiles are always laid out two-up. The figure
+        steps down with the viewport instead of overflowing its tile.
+      */}
+      <p className="tnum mt-1.5 text-xl font-semibold break-words text-slate-900 sm:mt-2 sm:text-2xl lg:text-3xl">
         {value}
       </p>
-      {hint ? <p className="mt-1 text-xs text-slate-500">{hint}</p> : null}
+      {hint ? (
+        <p className="mt-1 text-[11px] text-pretty text-slate-500 sm:text-xs">
+          {hint}
+        </p>
+      ) : null}
     </div>
   );
 
@@ -176,10 +195,53 @@ function rowsFrom(children: ReactNode): ReactNode {
   return children;
 }
 
-export function TableWrap({ children }: { children: ReactNode }) {
+/**
+ * The wrapper every list table uses.
+ *
+ * Every column is shown at every width. A table that does not fit scrolls
+ * sideways inside this box - it is never cut off, and it never widens the
+ * page, which is what the old `md:overflow-x-visible` did: a wide table was
+ * handed back to the document, and since most of these sit in a card with
+ * `overflow-hidden` for its corners, the last column was simply clipped.
+ *
+ * `minWidth` is the width below which the columns stop being readable and
+ * the table should scroll instead of squeezing. Without it a table will
+ * happily compress a date column until it wraps to four lines, which is
+ * technically "fitting" and useless in practice. Roughly 5-6rem per column
+ * is a good starting point; numeric columns need less, names more.
+ *
+ * `pinFirst` and `pinLast` hold the identifying column and the actions
+ * against the two edges while the middle scrolls between them.
+ */
+export function TableWrap({
+  children,
+  minWidth,
+  pinFirst,
+  pinLast,
+  className,
+}: {
+  children: ReactNode;
+  /** e.g. `"44rem"`. The width below which this table should scroll. */
+  minWidth?: string;
+  /** Keeps the first column visible while the rest scrolls under it. */
+  pinFirst?: boolean;
+  /** Keeps the last column - the actions - against the right edge. */
+  pinLast?: boolean;
+  className?: string;
+}) {
   return (
-    <div className="overflow-x-auto md:overflow-x-visible">
-      <table className="w-full min-w-[640px] border-collapse text-sm md:min-w-0">
+    <div
+      className={cx(
+        "table-scroll table-scroll-shadow",
+        pinFirst && "table-pin-first",
+        pinLast && "table-pin-last",
+        className,
+      )}
+    >
+      <table
+        className="w-full border-collapse text-sm"
+        style={minWidth ? { minWidth } : undefined}
+      >
         {rowsFrom(children)}
       </table>
     </div>
@@ -240,13 +302,18 @@ export function Pagination({
       </Link>
     );
 
+  /*
+    The count and the steps sit on one line where there is room and stack
+    where there is not, rather than the count being squeezed to two words per
+    line beside the buttons on a phone.
+  */
   return (
-    <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3">
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-4 py-3">
       <p className="text-xs text-slate-500">
         Page {page} of {totalPages} &middot; {total} record
         {total === 1 ? "" : "s"}
       </p>
-      <div className="flex gap-2">
+      <div className="flex shrink-0 gap-2">
         {step("Previous", page - 1, page <= 1)}
         {step("Next", page + 1, page >= totalPages)}
       </div>

@@ -29,6 +29,7 @@ import {
   type PaymentMode,
 } from "@/models/Sale";
 import { DualDateField } from "@/components/DualDateField";
+import { ActionBar, ActionIcon } from "@/components/action-icons";
 import { SaleRow } from "@/components/sales/SaleRow";
 import { RecordPaymentDialog } from "@/components/sales/RecordPaymentDialog";
 import {
@@ -343,14 +344,14 @@ export default async function InvoicesPage({
         twenty minutes a month they chase what is owed, and the marked-up title
         tile is what tells them at a glance which of the two lists they are on.
       */}
-      <header className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex min-w-0 items-center gap-3.5">
+      <header className="mb-4 flex flex-col gap-3 sm:gap-4 md:flex-row md:items-start md:justify-between">
+        <div className="flex min-w-0 items-center gap-3 sm:gap-3.5">
           <span
             aria-hidden="true"
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-brand-700 text-white shadow-sm shadow-brand-900/20 sm:h-14 sm:w-14"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 text-white shadow-sm shadow-brand-900/20 sm:h-12 sm:w-12 sm:rounded-2xl lg:h-14 lg:w-14"
           >
             <svg
-              className="h-6 w-6 sm:h-7 sm:w-7"
+              className="h-5 w-5 sm:h-6 sm:w-6 lg:h-7 lg:w-7"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -365,16 +366,26 @@ export default async function InvoicesPage({
           </span>
 
           <div className="min-w-0">
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+            <h1 className="text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl lg:text-3xl">
               Invoices
             </h1>
-            <p className="mt-0.5 truncate text-sm text-slate-500">
+            {/*
+              The range wraps rather than truncating. Truncated, a phone showed
+              "Bills from 2026-09-01 · 2083-0…" - the range this list is
+              actually showing was the one thing the subtitle could not say.
+            */}
+            <p className="mt-0.5 text-xs text-pretty text-slate-500 sm:text-sm">
               {rangeSentence(from, to)}
             </p>
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
+        {/*
+          Four controls, and on a phone they wrap onto their own line under
+          the title instead of being pushed off the right edge. `shrink-0`
+          without `flex-wrap` was what made this row overflow the viewport.
+        */}
+        <div className="flex w-full flex-wrap items-center gap-2 md:w-auto md:shrink-0">
           {/*
             Export, in the same <details> menu the sales register uses, so the
             two screens open the same way. It carries whatever range and
@@ -415,7 +426,7 @@ export default async function InvoicesPage({
                 </svg>
               </summary>
 
-              <div className="absolute right-0 z-20 mt-1.5 w-60 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg shadow-slate-900/5">
+              <div className="absolute left-0 z-20 mt-1.5 w-60 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg shadow-slate-900/5 sm:right-0 sm:left-auto">
                 <p className="border-b border-slate-100 px-3 py-2 text-[11px] text-slate-500">
                   Sales register for{" "}
                   <span className="font-medium text-slate-700">
@@ -747,7 +758,7 @@ export default async function InvoicesPage({
           />
         ) : (
           <>
-            <TableWrap>
+            <TableWrap minWidth="48rem" pinFirst pinLast>
               <thead>
                 <tr>
                   <th className="th">Invoice</th>
@@ -758,11 +769,11 @@ export default async function InvoicesPage({
                     invoice, whose, what state, how much" and drop the rest.
                     The table still scrolls, so nothing is unreachable.
                   */}
-                  <th className="th hidden text-right lg:table-cell">Items</th>
-                  <th className="th hidden sm:table-cell">Payment</th>
+                  <th className="th text-right">Items</th>
+                  <th className="th">Payment</th>
                   <th className="th">Status</th>
                   {canSeeMoney ? <th className="th text-right">Total</th> : null}
-                  <th className="th text-right">Actions</th>
+                  <th className="th text-right col-actions">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -795,12 +806,6 @@ export default async function InvoicesPage({
                         >
                           {row.billNo}
                         </Link>
-                        {/* The columns hidden on a phone, folded in under the number. */}
-                        <span className="mt-0.5 block text-[11px] text-slate-400 sm:hidden">
-                          {units} item{units === 1 ? "" : "s"}
-                          <span className="mx-1 text-slate-300">&middot;</span>
-                          {paymentLabel}
-                        </span>
                       </td>
 
                       <td className="td whitespace-nowrap">
@@ -827,11 +832,11 @@ export default async function InvoicesPage({
                         </span>
                       </td>
 
-                      <td className="td tnum hidden text-right lg:table-cell">
+                      <td className="td tnum text-right">
                         {units}
                       </td>
 
-                      <td className="td hidden sm:table-cell">
+                      <td className="td">
                         <Badge tone="slate">{paymentLabel}</Badge>
                       </td>
 
@@ -855,8 +860,8 @@ export default async function InvoicesPage({
                         </td>
                       ) : null}
 
-                      <td className="td">
-                        <div className="flex items-center justify-end gap-3 whitespace-nowrap">
+                      <td className="td col-actions">
+                        <ActionBar>
                           {canCollect && state.remaining > 0 ? (
                             <RecordPaymentDialog
                               saleId={id}
@@ -865,8 +870,8 @@ export default async function InvoicesPage({
                               outstanding={state.remaining}
                               total={row.totalAmount}
                               received={received}
-                              variant="link"
-                              label="Collect"
+                              variant="icon"
+                              label="Collect payment"
                             />
                           ) : null}
 
@@ -877,27 +882,26 @@ export default async function InvoicesPage({
                             Read-only, so fetching it twice does not turn the
                             original into "Copy of Original - 1".
                           */}
-                          <a
+                          <ActionIcon
+                            label="Download PDF"
+                            icon="pdf"
                             href={`/api/sales/${id}/invoice`}
-                            className="text-xs font-medium text-brand-700 hover:underline"
-                          >
-                            PDF
-                          </a>
+                            external
+                          />
 
-                          <Link
+                          <ActionIcon
+                            label="Print"
+                            icon="print"
                             href={`/bills/${id}`}
-                            className="hidden text-xs font-medium text-slate-500 hover:text-brand-700 sm:inline"
-                          >
-                            Print
-                          </Link>
+                          />
 
-                          <Link
+                          <ActionIcon
+                            label="View details"
+                            icon="view"
+                            tone="primary"
                             href={`/sales/${id}`}
-                            className="hidden text-xs font-medium text-slate-500 hover:text-brand-700 lg:inline"
-                          >
-                            View
-                          </Link>
-                        </div>
+                          />
+                        </ActionBar>
                       </td>
                     </SaleRow>
                   );

@@ -167,8 +167,14 @@ export default async function SupplierDetailPage({
               }
             />
           ) : (
-            <TableWrap>
+            <TableWrap minWidth="36rem" pinFirst>
               <thead className="border-b border-slate-200 bg-slate-50">
+                {/*
+                  This ledger is opened to answer "what do we still owe them",
+                  so the GRN, what is outstanding and where it stands keep
+                  their columns. The received and due dates fold under the GRN
+                  number on a phone.
+                */}
                 <tr>
                   <th className="th">GRN</th>
                   <th className="th">Received</th>

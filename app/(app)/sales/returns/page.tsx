@@ -9,6 +9,7 @@ import {
   parseLocalDate,
   toDateInputValue,
 } from "@/lib/dates";
+import { ActionBar, ActionIcon } from "@/components/action-icons";
 import { DualDateField } from "@/components/DualDateField";
 import { formatDateTime, money } from "@/lib/format";
 import { resolveUnitsPerStrip } from "@/lib/pack";
@@ -496,18 +497,24 @@ export default async function SalesReturnsPage({
             the card edge and the two blocks read as one undivided sheet.
           */
           <div className="mx-4 mb-4 overflow-hidden rounded-xl border border-slate-200">
-            <TableWrap>
+            <TableWrap minWidth="54rem" pinFirst pinLast>
               <thead className="border-b border-slate-200 bg-slate-50">
+                {/*
+                  Nine columns in a frame that is already inset from the card,
+                  so it runs out of room earlier than a full-bleed table. The
+                  bill leads on a phone, with when and who folded under it,
+                  and the refund and its receipt keep their place.
+                */}
                 <tr>
                   <th className="th">Returned</th>
                   <th className="th">Bill no</th>
                   <th className="th">Customer</th>
                   <th className="th">Reason</th>
-                  <th className="th hidden lg:table-cell">Refunded as</th>
-                  <th className="th hidden xl:table-cell">By</th>
+                  <th className="th">Refunded as</th>
+                  <th className="th">By</th>
                   <th className="th text-right">Units</th>
                   <th className="th text-right">Refund</th>
-                  <th className="th text-right">Receipt</th>
+                  <th className="th text-right col-actions">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -527,7 +534,9 @@ export default async function SalesReturnsPage({
                         {displayBillNo(row.billNo)}
                       </Link>
                     </td>
-                    <td className="td">{row.customerName || "Walk-in"}</td>
+                    <td className="td">
+                      {row.customerName || "Walk-in"}
+                    </td>
                     <td className="td max-w-[16rem] text-slate-600">
                       <span className="block truncate" title={row.reason}>
                         {row.reason || "—"}
@@ -543,7 +552,7 @@ export default async function SalesReturnsPage({
                         </Badge>
                       ) : null}
                     </td>
-                    <td className="td hidden lg:table-cell">
+                    <td className="td">
                       {isRefundMethod(row.refundMethod) ? (
                         <Badge tone={row.refundMethod === "adjust" ? "slate" : "green"}>
                           {REFUND_METHOD_LABELS[row.refundMethod]}
@@ -552,20 +561,24 @@ export default async function SalesReturnsPage({
                         <span className="text-xs text-slate-400">Not recorded</span>
                       )}
                     </td>
-                    <td className="td hidden text-slate-500 xl:table-cell">
+                    <td className="td text-slate-500">
                       {row.returnedByName || "—"}
                     </td>
-                    <td className="td tnum text-right">{row.units}</td>
+                    <td className="td tnum text-right">
+                      {row.units}
+                    </td>
                     <td className="td tnum text-right font-medium">
                       {money(row.totalAmount)}
                     </td>
-                    <td className="td text-right">
-                      <Link
-                        href={`/returns/${String(row._id)}/${row.returnIndex}`}
-                        className="text-xs font-medium text-brand-700 hover:underline"
-                      >
-                        Receipt
-                      </Link>
+                    <td className="td col-actions">
+                      <ActionBar>
+                        <ActionIcon
+                          label="View receipt"
+                          icon="receipt"
+                          tone="primary"
+                          href={`/returns/${String(row._id)}/${row.returnIndex}`}
+                        />
+                      </ActionBar>
                     </td>
                   </tr>
                 ))}

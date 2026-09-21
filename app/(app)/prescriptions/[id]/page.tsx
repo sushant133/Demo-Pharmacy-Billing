@@ -122,11 +122,11 @@ export default async function PrescriptionDetailPage({
               Prescribed
             </h2>
 
-            <TableWrap>
+            <TableWrap minWidth="32rem" pinFirst>
               <thead>
                 <tr>
                   <th className="th">Medicine</th>
-                  <th className="th hidden sm:table-cell">Dosage</th>
+                  <th className="th">Dosage</th>
                   <th className="th text-right">Prescribed</th>
                   <th className="th text-right">Dispensed</th>
                   <th className="th text-right">Left</th>
@@ -144,11 +144,8 @@ export default async function PrescriptionDetailPage({
                             Rx
                           </Badge>
                         ) : null}
-                        <span className="block text-[11px] text-slate-500 sm:hidden">
-                          {item.dosage || "—"}
-                        </span>
                       </td>
-                      <td className="td hidden text-slate-600 sm:table-cell">
+                      <td className="td text-slate-600">
                         {item.dosage || "—"}
                       </td>
                       <td className="td tnum text-right">

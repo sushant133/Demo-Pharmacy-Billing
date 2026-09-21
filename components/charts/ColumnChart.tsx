@@ -61,7 +61,7 @@ export function ColumnChart({
 
   return (
     <figure className="m-0">
-      <div className="overflow-x-auto">
+      <div className="table-scroll table-scroll-shadow">
         <svg
           viewBox={`0 0 ${width} ${height}`}
           className="h-auto w-full min-w-[360px]"
