@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import bcrypt from "bcryptjs";
@@ -20,6 +21,34 @@ export function hashPassword(plain: string): Promise<string> {
 
 export function verifyPassword(plain: string, hash: string): Promise<boolean> {
   return bcrypt.compare(plain, hash);
+}
+
+/*
+  No 0/O, 1/l/I: this gets read off an email and typed on a phone, sometimes
+  read aloud. Losing six look-alikes still leaves 56 symbols; twelve of them
+  is ~70 bits, which is plenty for something that must be replaced on first
+  use.
+*/
+const TEMP_PASSWORD_ALPHABET =
+  "ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+
+/**
+ * A one-time password for a login the platform creates on somebody's behalf.
+ *
+ * Grouped as xxxx-xxxx-xxxx so it is easy to copy by eye. `randomInt` rather
+ * than `Math.random`: this is a credential. The holder is made to replace it
+ * on first sign-in - see `mustChangePassword` on the User model.
+ */
+export function generateTemporaryPassword(): string {
+  const groups: string[] = [];
+  for (let g = 0; g < 3; g += 1) {
+    let group = "";
+    for (let i = 0; i < 4; i += 1) {
+      group += TEMP_PASSWORD_ALPHABET[randomInt(TEMP_PASSWORD_ALPHABET.length)];
+    }
+    groups.push(group);
+  }
+  return groups.join("-");
 }
 
 /** The signed-in user, or null. Safe to call from any server component. */

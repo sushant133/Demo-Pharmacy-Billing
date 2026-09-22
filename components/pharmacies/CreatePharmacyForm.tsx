@@ -13,8 +13,9 @@ import { createPharmacySchema } from "@/lib/validation";
 /**
  * Opening an account.
  *
- * Four fields are required - the shop's name and the three that make a
- * working login - and everything else is paperwork that can follow. That is
+ * Three fields are required - the shop's name and the owner's name and
+ * email; the password is generated and emailed by the server - and
+ * everything else is paperwork that can follow. That is
  * not laziness: an account is usually opened while the owner is on the phone,
  * and a form that demands a drug licence number before it will save is a form
  * that gets a made-up number typed into it.
@@ -24,6 +25,11 @@ export function CreatePharmacyForm() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [undelivered, setUndelivered] = useState<{
+    id: string;
+    email: string;
+    password: string;
+  } | null>(null);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -45,7 +51,12 @@ export function CreatePharmacyForm() {
     setErrors({});
     setSubmitting(true);
 
-    const result = await apiFetch<{ id: string }>("/api/pharmacies", {
+    const result = await apiFetch<{
+      id: string;
+      ownerEmail: string;
+      credentialsEmailed: boolean;
+      temporaryPassword?: string;
+    }>("/api/pharmacies", {
       method: "POST",
       json: parsed.data,
     });
@@ -56,8 +67,50 @@ export function CreatePharmacyForm() {
       return;
     }
 
+    // The email did not go out: the only copy of the password is this
+    // response, so hold the screen until superadmin has passed it on.
+    if (!result.data.credentialsEmailed && result.data.temporaryPassword) {
+      setUndelivered({
+        id: result.data.id,
+        email: result.data.ownerEmail,
+        password: result.data.temporaryPassword,
+      });
+      return;
+    }
+
     router.push(`/superadmin/pharmacies/${result.data.id}`);
     router.refresh();
+  }
+
+  if (undelivered) {
+    return (
+      <div className="card max-w-2xl space-y-4 p-5 sm:p-6">
+        <h2 className="text-base font-semibold text-slate-900">Pharmacy created</h2>
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3 text-sm text-amber-900">
+          The login details could not be emailed. Pass these to the owner
+          yourself. This password will not be shown again. They will be asked
+          to change it when they first sign in.
+        </div>
+        <dl className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-2 text-sm">
+          <dt className="text-slate-500">Login ID</dt>
+          <dd className="font-medium text-slate-900">{undelivered.email}</dd>
+          <dt className="text-slate-500">Temporary password</dt>
+          <dd className="font-mono font-medium text-slate-900">{undelivered.password}</dd>
+        </dl>
+        <div className="flex justify-end border-t border-slate-100 pt-4">
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => {
+              router.push(`/superadmin/pharmacies/${undelivered.id}`);
+              router.refresh();
+            }}
+          >
+            Continue to pharmacy
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -246,26 +299,11 @@ export function CreatePharmacyForm() {
             <p className="mt-1.5 text-xs text-rose-600">{errors.ownerEmail}</p>
           ) : null}
         </div>
-        <div>
-          <label htmlFor="ownerPassword" className="label">
-            Temporary password
-          </label>
-          <input
-            id="ownerPassword"
-            name="ownerPassword"
-            type="text"
-            required
-            minLength={8}
-            className="input"
-            autoComplete="new-password"
-          />
-          {errors.ownerPassword ? (
-            <p className="mt-1.5 text-xs text-rose-600">{errors.ownerPassword}</p>
-          ) : null}
-          <p className="mt-1.5 text-xs text-slate-500">
-            Give this to the owner in person. They can change it later from their shop.
-          </p>
-        </div>
+        <p className="rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-600">
+          A temporary password is generated automatically and emailed to this
+          address with the login ID. The owner is asked to choose their own
+          password the first time they sign in.
+        </p>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor="ownerPhone" className="label">

@@ -386,6 +386,10 @@ const SAMPLE_PHARMACY = {
   ownerPassword: process.env.SEED_ADMIN_PASSWORD ?? "Admin@123",
 };
 
+const TEST_STAFF: Array<{ name: string; email: string; password: string; role: Role }> = [
+  { name: "Priyanka", email: "prinke.2464@gmail.com", password: "Test@123", role: "pharmacist" },
+];
+
 const CUSTOMERS = [
   { name: "Ram Bahadur Karki", phone: "9841000111", address: "Baneshwor, Kathmandu" },
   { name: "Sita Gurung", phone: "9802345678", address: "Lalitpur" },
@@ -520,6 +524,26 @@ async function main() {
     pharmacy.ownerUserId = owner._id;
     await pharmacy.save();
     console.log(`  + ${SAMPLE_PHARMACY.ownerEmail}`);
+  }
+
+  // --- Test staff -----------------------------------------------------------
+  // A real inbox, so the forgot-password flow can be tried end to end.
+  for (const staff of TEST_STAFF) {
+    const exists = await User.exists({ email: staff.email });
+    if (exists) {
+      console.log(`  staff ${staff.email} already exists`);
+      continue;
+    }
+    await User.create({
+      name: staff.name,
+      email: staff.email,
+      passwordHash: await bcrypt.hash(staff.password, 12),
+      role: staff.role,
+      roleVersion: ROLE_SCHEME_VERSION,
+      pharmacyId,
+      branchId: mainBranch._id,
+    });
+    console.log(`  + staff ${staff.email}`);
   }
 
   // --- Customers ----------------------------------------------------------

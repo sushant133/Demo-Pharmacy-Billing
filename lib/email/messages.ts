@@ -42,13 +42,13 @@ export function sendPharmacyWelcomeEmail(input: {
         {
           label: "Your sign-in details",
           rows: [
-            { name: "Email", value: input.email },
-            { name: "Password", value: input.password },
+            { name: "Login ID", value: input.email },
+            { name: "Temporary password", value: input.password },
           ],
         },
         {
           caution:
-            "Change this password once you are in, from Staff → your account. A password sent by email stays in your mailbox, and anyone who reaches that mailbox can reach your till.",
+            "When you sign in you will be asked to replace this temporary password with one of your own. A password sent by email stays in your mailbox, so it only works until you do.",
         },
       ],
       button: { label: "Sign in to MantraMed", url: signIn },
@@ -95,13 +95,13 @@ export function sendOwnerCredentialsEmail(input: {
         {
           label: "Your sign-in details",
           rows: [
-            { name: "Email", value: input.email },
-            { name: "Password", value: input.password },
+            { name: "Login ID", value: input.email },
+            { name: "Temporary password", value: input.password },
           ],
         },
         {
           caution:
-            "Change this password once you are in, from Staff → your account. A password sent by email stays in your mailbox, and anyone who reaches that mailbox can reach your till.",
+            "When you sign in you will be asked to replace this temporary password with one of your own. A password sent by email stays in your mailbox, so it only works until you do.",
         },
       ],
       button: { label: "Sign in to MantraMed", url: signIn },

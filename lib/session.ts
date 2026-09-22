@@ -42,6 +42,11 @@ export interface SessionUser {
    */
   impersonatorId?: string;
   impersonatorName?: string;
+  /**
+   * Signed in with a temporary password that has not been replaced yet.
+   * Middleware allows nothing but /change-password while this is set.
+   */
+  mustChangePassword?: boolean;
 }
 
 const encoder = new TextEncoder();
@@ -77,6 +82,7 @@ export async function signSession(
     ...(user.impersonatorId
       ? { impBy: user.impersonatorId, impName: user.impersonatorName ?? "" }
       : {}),
+    ...(user.mustChangePassword ? { mcp: true } : {}),
   })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setSubject(user.id)
@@ -120,6 +126,7 @@ export async function verifySession(token: string): Promise<SessionUser | null> 
             impersonatorName: str(payload.impName),
           }
         : {}),
+      ...(payload.mcp === true ? { mustChangePassword: true } : {}),
     };
   } catch {
     return null;

@@ -87,6 +87,8 @@ export const POST = withRoute(async (req) => {
     branchId: branch ? String(branch._id) : "",
     branchCode: branch?.code ?? "",
     branchName: branch?.name ?? "",
+    // A temporary password: middleware holds them on /change-password.
+    ...(user.mustChangePassword ? { mustChangePassword: true } : {}),
   };
 
   const token = await signSession(sessionUser);

@@ -32,6 +32,9 @@ const PUBLIC_PATHS = [
   "/android-app-version.json",
 ];
 
+/** Where a user signed in on a temporary password is held until they replace it. */
+const CHANGE_PASSWORD_PATH = "/change-password";
+
 function isPublic(pathname: string): boolean {
   return PUBLIC_PATHS.some(
     (path) => pathname === path || pathname.startsWith(path + "/"),
@@ -107,6 +110,41 @@ export async function middleware(req: NextRequest) {
     const loginUrl = new URL("/login", req.url);
     if (pathname !== "/") loginUrl.searchParams.set("next", pathname + search);
     return NextResponse.redirect(loginUrl);
+  }
+
+  /*
+    Signed in on a temporary password - the one generated when the pharmacy
+    was opened and emailed to the owner. Until they choose their own, the only
+    things they can reach are the screen that does that, the endpoint behind
+    it, and the way out. The API answers in the usual envelope so a client
+    polling in the background gets something it can read.
+  */
+  if (session.mustChangePassword) {
+    const allowed =
+      pathname === CHANGE_PASSWORD_PATH ||
+      pathname === "/api/auth/change-password" ||
+      pathname === "/api/auth/me";
+    if (!allowed) {
+      if (pathname.startsWith("/api/")) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: {
+              code: "PASSWORD_CHANGE_REQUIRED",
+              message: "Choose a new password before continuing.",
+            },
+          },
+          { status: 403 },
+        );
+      }
+      return NextResponse.redirect(new URL(CHANGE_PASSWORD_PATH, req.url));
+    }
+    return NextResponse.next();
+  }
+
+  // Nothing to change: send anyone who wanders onto the screen back to work.
+  if (pathname === CHANGE_PASSWORD_PATH) {
+    return NextResponse.redirect(new URL(homePath(session.role), req.url));
   }
 
   // Superadmin stays on the platform; pharmacy owners stay in their shop.

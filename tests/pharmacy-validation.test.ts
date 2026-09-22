@@ -12,7 +12,7 @@ import {
  * The platform's intake form.
  *
  * The rule worth protecting here is that an account can be opened with a
- * name, a person and a password and nothing else: every licence, PAN and
+ * name and a person and nothing else (the server generates the password): every licence, PAN and
  * KYC field is optional on purpose, because a form that demands them gets
  * invented values typed into it, and an invented PAN prints on a tax invoice.
  */
@@ -21,11 +21,10 @@ const minimum = {
   name: "Sagarmatha Pharmacy",
   ownerName: "Bimala Shrestha",
   ownerEmail: "Bimala@Example.com ",
-  ownerPassword: "counter-2082",
 };
 
 describe("createPharmacySchema", () => {
-  it("opens an account from a name, a person and a password", () => {
+  it("opens an account from a name and a person - the password is generated", () => {
     const parsed = createPharmacySchema.parse(minimum);
 
     expect(parsed.name).toBe("Sagarmatha Pharmacy");
@@ -85,9 +84,6 @@ describe("createPharmacySchema", () => {
   it("still insists on a working login", () => {
     expect(
       createPharmacySchema.safeParse({ ...minimum, ownerEmail: "nope" }).success,
-    ).toBe(false);
-    expect(
-      createPharmacySchema.safeParse({ ...minimum, ownerPassword: "short12" }).success,
     ).toBe(false);
     expect(createPharmacySchema.safeParse({ ...minimum, name: "S" }).success).toBe(
       false,

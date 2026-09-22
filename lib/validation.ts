@@ -111,6 +111,34 @@ export const resetPasswordSchema = z
   });
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 
+/**
+ * Replacing your own password while signed in - the forced first-login
+ * change, and anything else that wants it later.
+ *
+ * The current password is asked for even though the session proves who this
+ * is: a till left signed in should not be enough to take the account over.
+ * The new one must differ, or a temporary password could be "changed" to
+ * itself and the forced change would mean nothing.
+ */
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, "Enter your current password."),
+    password: z
+      .string()
+      .min(8, "Use at least 8 characters.")
+      .max(72, "Password is too long."),
+    confirm: z.string().min(1, "Type the password again."),
+  })
+  .refine((value) => value.password === value.confirm, {
+    message: "Both passwords must match.",
+    path: ["confirm"],
+  })
+  .refine((value) => value.password !== value.currentPassword, {
+    message: "Choose a password different from the temporary one.",
+    path: ["password"],
+  });
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+
 // ---------------------------------------------------------------------------
 // Medicine
 // ---------------------------------------------------------------------------
@@ -979,10 +1007,8 @@ export const createPharmacySchema = z.object({
     .transform((value) => value || undefined),
   ownerName: z.string().trim().min(2, "Owner name is required.").max(120),
   ownerEmail: z.string().trim().toLowerCase().email("Enter a valid email address."),
-  ownerPassword: z
-    .string()
-    .min(8, "Password must be at least 8 characters.")
-    .max(72, "Password is too long."),
+  // No password: the server generates a temporary one, emails it to
+  // `ownerEmail`, and makes the owner replace it on first sign-in.
   /** The paper on the counter. Changed later from the pharmacy's own page. */
   printTemplate: z.enum(PRINT_TEMPLATE_IDS).default(DEFAULT_PRINT_TEMPLATE),
 });

@@ -1,5 +1,5 @@
 import { created, ok, parseJson, parseQuery, withRoute } from "@/lib/api";
-import { requirePermission } from "@/lib/auth";
+import { generateTemporaryPassword, requirePermission } from "@/lib/auth";
 import { sendPharmacyWelcomeEmail } from "@/lib/email/messages";
 import { createPharmacy, listPharmacies, pharmacyCounts } from "@/lib/pharmacies";
 import { recordPlatformEvent } from "@/lib/platform-events";
@@ -29,23 +29,28 @@ export const GET = withRoute(async (req) => {
 /**
  * POST /api/pharmacies - create a pharmacy and its owner login.
  *
- * The owner is then emailed their credentials. That send happens after the
- * account is durable and cannot undo it: a relay that is down must not cost
- * somebody a half-created pharmacy, and the password is still on the screen
- * in front of whoever typed it. The response says what actually happened to
- * the mail so that screen can say so too.
+ * The owner's password is generated here, never typed by superadmin, and
+ * emailed to the owner's address. They are made to replace it on first
+ * sign-in (`mustChangePassword`).
+ *
+ * The send happens after the account is durable and cannot undo it: a relay
+ * that is down must not cost somebody a half-created pharmacy. In that one
+ * case the temporary password comes back in the response, so the screen can
+ * show it to be passed on by hand. When the mail went out it is left out -
+ * the fewer places it appears, the better.
  */
 export const POST = withRoute(async (req) => {
   const user = await requirePermission("pharmacy:manage");
   const input = await parseJson(req, createPharmacySchema);
-  const pharmacy = await createPharmacy(input, user);
+  const temporaryPassword = generateTemporaryPassword();
+  const pharmacy = await createPharmacy(input, user, temporaryPassword);
 
   const delivery = await sendPharmacyWelcomeEmail({
     to: pharmacy.ownerEmail,
     ownerName: pharmacy.ownerName,
     pharmacyName: pharmacy.name,
     email: pharmacy.ownerEmail,
-    password: input.ownerPassword,
+    password: temporaryPassword,
   });
 
   await recordPlatformEvent(user, "pharmacy.created", {
@@ -62,5 +67,9 @@ export const POST = withRoute(async (req) => {
     ].join(" "),
   });
 
-  return created({ ...pharmacy, credentialsEmailed: delivery.sent });
+  return created({
+    ...pharmacy,
+    credentialsEmailed: delivery.sent,
+    ...(delivery.sent ? {} : { temporaryPassword }),
+  });
 });

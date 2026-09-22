@@ -55,6 +55,14 @@ const userSchema = new Schema(
      * answer on its own. See lib/password-reset.ts.
      */
     passwordChangedAt: { type: Date, default: null },
+    /**
+     * The password was issued by somebody else - generated when the platform
+     * opened the pharmacy, or set by superadmin on a reset - and has been
+     * through a mailbox. Until the owner chooses their own, middleware keeps
+     * them on /change-password. Cleared by any password the user sets
+     * themselves, including through a reset link.
+     */
+    mustChangePassword: { type: Boolean, default: false },
   },
   { timestamps: true },
 );
