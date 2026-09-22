@@ -144,3 +144,43 @@ export function sendPasswordResetEmail(input: {
     },
   });
 }
+
+/**
+ * Confirmation that a reset went through.
+ *
+ * Sent after the new password is saved, not before - this is a receipt, not
+ * part of the flow, and the person who just reset it is already looking at
+ * the sign-in screen. Its real audience is the owner who did *not* do this:
+ * a reset mail can be ignored safely, but a completed one cannot, and this
+ * is the only notice they get that somebody reached their mailbox and spent
+ * the link. So it goes to the registered address rather than to anything the
+ * reset form supplied, and it says plainly what to do about it.
+ *
+ * It carries no password. The new one was chosen in a browser and is stored
+ * only as a bcrypt hash - there is nothing to include even if it were wise -
+ * and a confirmation is the last message that should put one in a mailbox.
+ */
+export function sendPasswordChangedEmail(input: {
+  to: string;
+  name: string;
+}): Promise<EmailOutcome> {
+  const signIn = `${config.appUrl}/login`;
+
+  return sendEmail({
+    to: input.to,
+    subject: "Your MantraMed password has been changed",
+    content: {
+      heading: "Your password has been changed",
+      intro: [
+        `Hello ${input.name},`,
+        "The password for this MantraMed account has just been reset, and the reset link that was used is now spent. Sign in with your new password.",
+      ],
+      button: { label: "Sign in to MantraMed", url: signIn },
+      outro: [
+        `If the button does not work, open ${signIn} in your browser.`,
+        "For your security this email does not contain your password. Nobody at MantraMed can read it back to you - if you forget it again, use Forgot password on the sign-in screen.",
+        "If you did not do this, reply to this email straight away. Someone else has reached this mailbox, and the account should be secured.",
+      ],
+    },
+  });
+}

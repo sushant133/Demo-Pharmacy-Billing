@@ -3,7 +3,10 @@ import { ApiError } from "@/lib/api";
 import { hashPassword } from "@/lib/auth";
 import { config } from "@/lib/config";
 import { connectDB } from "@/lib/db";
-import { sendPasswordResetEmail } from "@/lib/email/messages";
+import {
+  sendPasswordChangedEmail,
+  sendPasswordResetEmail,
+} from "@/lib/email/messages";
 import { PasswordReset } from "@/models/PasswordReset";
 import { User } from "@/models/User";
 
@@ -23,6 +26,10 @@ import { User } from "@/models/User";
  *   - **Using one spends every other outstanding request for that account.**
  *     If somebody asked three times, the third link working should not leave
  *     the first two live in a mailbox.
+ *   - **Completing one is confirmed by email**, to the address on the
+ *     account and carrying no password. An unexpected *request* can be
+ *     safely ignored; an unexpected *completion* is the thing an owner has
+ *     to hear about, and it is the only notice they get.
  *
  * What this deliberately does **not** do is end sessions that are already
  * signed in. Sessions are stateless JWTs - `verifySession` does no database
@@ -139,7 +146,7 @@ export async function completePasswordReset(
     );
   }
 
-  const user = await User.findById(row.userId).select("email isActive");
+  const user = await User.findById(row.userId).select("name email isActive");
   if (!user || user.isActive === false) {
     throw ApiError.badRequest("That account is no longer active.");
   }
@@ -155,6 +162,19 @@ export async function completePasswordReset(
     { userId: row.userId, usedAt: null },
     { $set: { usedAt: new Date() } },
   );
+
+  /*
+    Tell the address on the account that its password changed.
+
+    After the save and the spending, deliberately: the reset has happened
+    either way, and `sendEmail` reports rather than throws, so a relay that is
+    down costs the receipt and not the reset. Whoever did this is already at
+    the sign-in screen - the message is for the owner who did not.
+
+    `user.email` rather than anything the form carried: a notice that somebody
+    spent a reset link is only worth sending if it reaches the real account.
+  */
+  await sendPasswordChangedEmail({ to: user.email, name: user.name });
 
   return { email: user.email };
 }

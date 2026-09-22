@@ -1,12 +1,37 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { config } from "@/lib/config";
 import { forgotPasswordSchema, resetPasswordSchema } from "@/lib/validation";
 import { buildMimeMessage } from "@/lib/email/google";
+import { sendPasswordChangedEmail } from "@/lib/email/messages";
 import {
   escapeHtml,
   renderEmail,
   renderEmailText,
   type EmailContent,
 } from "@/lib/email/layout";
+
+/**
+ * The transport, stubbed.
+ *
+ * Every message in lib/email/messages.ts ends in `sendEmail`, so capturing it
+ * is how the wording gets read back without a relay. What `sendEmail` itself
+ * promises - that it never throws, and logs the message when nothing is
+ * configured - is a separate contract and not what these assertions are about.
+ */
+const sent = vi.hoisted(
+  () => [] as Array<{ to: string; subject: string; content: EmailContent }>,
+);
+
+vi.mock("@/lib/email/send", () => ({
+  sendEmail: async (message: {
+    to: string;
+    subject: string;
+    content: EmailContent;
+  }) => {
+    sent.push(message);
+    return { sent: true, logged: false };
+  },
+}));
 
 /**
  * Password recovery, and the frame its email is sent in.
@@ -190,5 +215,55 @@ describe("buildMimeMessage", () => {
     expect(
       buildMimeMessage({ ...base, replyTo: "support@example.com" }),
     ).toContain("Reply-To: support@example.com");
+  });
+});
+
+/**
+ * The confirmation sent once a reset has actually gone through.
+ *
+ * Worth pinning down rather than leaving to review: this is the message an
+ * owner reads when somebody *else* reset their password, and the one thing it
+ * must never do - carry a credential - is exactly what a later edit could add
+ * by copying a neighbouring message in that file.
+ */
+describe("sendPasswordChangedEmail", () => {
+  async function capture() {
+    sent.length = 0;
+    await sendPasswordChangedEmail({ to: "owner@shop.com", name: "Sita" });
+    const message = sent.at(-1);
+    if (!message) throw new Error("nothing was sent");
+    return message;
+  }
+
+  it("goes to the account address, and says what happened", async () => {
+    const message = await capture();
+    expect(message.to).toBe("owner@shop.com");
+    expect(message.subject).toMatch(/password has been changed/i);
+    expect(message.content.heading).toMatch(/password has been changed/i);
+    expect(renderEmailText(message.content)).toContain("Hello Sita,");
+  });
+
+  it("carries no credential panel", async () => {
+    // The whole point of the message. There is nothing to include even if it
+    // were wise - what was just stored is a bcrypt hash - and a confirmation
+    // is the last mail that should leave a password sitting in a mailbox.
+    const message = await capture();
+    expect(message.content.blocks ?? []).toHaveLength(0);
+    // The monospaced face is only used by the name/value panel, so its
+    // absence is how "no panel was rendered" reads in the HTML.
+    expect(renderEmail(message.content)).not.toContain("Courier New");
+  });
+
+  it("offers a way back in", async () => {
+    // Somebody who has just reset a password is signed in nowhere.
+    const message = await capture();
+    expect(message.content.button?.url).toBe(`${config.appUrl}/login`);
+    // And in the text part too, for a client that will not render a button.
+    expect(renderEmailText(message.content)).toContain(`${config.appUrl}/login`);
+  });
+
+  it("tells the person who did not do this what to do", async () => {
+    const text = renderEmailText((await capture()).content);
+    expect(text).toMatch(/if you did not do this/i);
   });
 });
