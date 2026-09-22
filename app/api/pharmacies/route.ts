@@ -70,6 +70,15 @@ export const POST = withRoute(async (req) => {
   return created({
     ...pharmacy,
     credentialsEmailed: delivery.sent,
-    ...(delivery.sent ? {} : { temporaryPassword }),
+    ...(delivery.sent
+      ? {}
+      : {
+          temporaryPassword,
+          // Superadmin only, so the relay's own words are fine to show - they
+          // are what tells "not configured" apart from "Gmail said no".
+          emailError: delivery.logged
+            ? "No mail server is configured on this deployment. Set SMTP_HOST, SMTP_USER, SMTP_PASSWORD and MAIL_FROM, then redeploy."
+            : delivery.error,
+        }),
   });
 });

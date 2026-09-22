@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Image from "next/image";
+import { DesktopDownloadLink } from "@/components/DesktopDownloadLink";
 import { LoginForm } from "@/components/LoginForm";
 import { cx } from "@/components/ui";
 import { adToBs, formatBs, nepaliFiscalYear } from "@/lib/bs-date";
@@ -147,6 +148,8 @@ export default async function LoginPage({
             counter &mdash; every bill is recorded against the account that
             raised it.
           </p>
+
+          <DesktopDownloadLink />
 
           {/*
             Phones only. On a desktop the same imprint sits at the foot of the

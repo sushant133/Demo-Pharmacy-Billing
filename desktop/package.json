@@ -1,0 +1,57 @@
+{
+  "name": "mantramed-desktop",
+  "productName": "MantraMed",
+  "version": "1.0.0",
+  "description": "MantraMed pharmacy billing for Windows, macOS and Linux.",
+  "author": "Mantrasphere",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "np.com.mantrasphere.pharmacy.desktop",
+    "productName": "MantraMed",
+    "copyright": "Copyright © Mantrasphere",
+    "directories": {
+      "output": "dist",
+      "buildResources": "resources"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "offline.html",
+      "package.json"
+    ],
+    "artifactName": "MantraMed-Setup.${ext}",
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "resources/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "MantraMed"
+    },
+    "mac": {
+      "target": ["dmg"],
+      "category": "public.app-category.business",
+      "icon": "resources/icon.png"
+    },
+    "linux": {
+      "target": ["AppImage"],
+      "category": "Office",
+      "icon": "resources/icon.png"
+    }
+  }
+}

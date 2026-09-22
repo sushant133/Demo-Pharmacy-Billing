@@ -29,6 +29,7 @@ export function CreatePharmacyForm() {
     id: string;
     email: string;
     password: string;
+    reason: string;
   } | null>(null);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -56,6 +57,7 @@ export function CreatePharmacyForm() {
       ownerEmail: string;
       credentialsEmailed: boolean;
       temporaryPassword?: string;
+      emailError?: string;
     }>("/api/pharmacies", {
       method: "POST",
       json: parsed.data,
@@ -74,6 +76,7 @@ export function CreatePharmacyForm() {
         id: result.data.id,
         email: result.data.ownerEmail,
         password: result.data.temporaryPassword,
+        reason: result.data.emailError ?? "",
       });
       return;
     }
@@ -90,6 +93,11 @@ export function CreatePharmacyForm() {
           The login details could not be emailed. Pass these to the owner
           yourself. This password will not be shown again. They will be asked
           to change it when they first sign in.
+          {undelivered.reason ? (
+            <p className="mt-2 break-words text-xs text-amber-800">
+              <span className="font-semibold">Why:</span> {undelivered.reason}
+            </p>
+          ) : null}
         </div>
         <dl className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-2 text-sm">
           <dt className="text-slate-500">Login ID</dt>

@@ -19,6 +19,8 @@ const config = [
       // read. Source under android/ (the app manifest, any Java we add) is
       // still linted; only the build directory is skipped.
       "android/**/build/**",
+      // The Electron shell: plain CommonJS for Node, with its own package.
+      "desktop/**",
     ],
   },
   {

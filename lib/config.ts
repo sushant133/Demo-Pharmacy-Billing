@@ -40,6 +40,39 @@ export function dbNameFromMongoUri(uri: string): string | undefined {
   return name || undefined;
 }
 
+/**
+ * The public origin that goes into emailed links (sign in, password reset).
+ *
+ * In order:
+ *  1. `APP_URL`, when set - except a localhost value on Vercel, which is
+ *     always a local `.env` copied across by mistake and would send every
+ *     owner a link to their own machine.
+ *  2. On Vercel, the address Vercel itself reports: the production domain
+ *     (the custom domain if there is one, e.g. mantramed.tech) for a
+ *     production deploy, the deployment's own URL for a preview.
+ *  3. http://localhost:3000, for local development.
+ *
+ * Deliberately never the request's Host header: a reset email built from
+ * that can be pointed at an attacker's domain by whoever asks for it.
+ */
+export function resolveAppUrl(env: Record<string, string | undefined>): string {
+  const onVercel = Boolean(env.VERCEL);
+  const explicit = unquoteEnv(env.APP_URL);
+  const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/i.test(explicit);
+
+  let url = "";
+  if (explicit && !(onVercel && isLocal)) {
+    url = explicit;
+  } else if (onVercel) {
+    const host =
+      env.VERCEL_ENV === "production"
+        ? unquoteEnv(env.VERCEL_PROJECT_PRODUCTION_URL) || unquoteEnv(env.VERCEL_URL)
+        : unquoteEnv(env.VERCEL_URL);
+    if (host) url = `https://${host}`;
+  }
+  return (url || "http://localhost:3000").replace(/\/+$/, "");
+}
+
 const isProd = process.env.NODE_ENV === "production";
 
 const mongoUri =
@@ -105,10 +138,7 @@ export const config = {
     from: unquoteEnv(process.env.MAIL_FROM) || "MantraMed <no-reply@mantramed.app>",
     replyTo: unquoteEnv(process.env.MAIL_REPLY_TO),
   },
-  appUrl: (unquoteEnv(process.env.APP_URL) || "http://localhost:3000").replace(
-    /\/+$/,
-    "",
-  ),
+  appUrl: resolveAppUrl(process.env),
 } as const;
 
 /** Session cookie name. Kept here so middleware and route handlers agree. */
