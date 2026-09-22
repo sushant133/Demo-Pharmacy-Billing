@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import { LoginForm } from "@/components/LoginForm";
 import { cx } from "@/components/ui";
 import { adToBs, formatBs, nepaliFiscalYear } from "@/lib/bs-date";
@@ -6,6 +7,16 @@ import { config } from "@/lib/config";
 import { localParts } from "@/lib/dates";
 
 export const metadata: Metadata = { title: "Sign in" };
+
+/**
+ * The supplied emblem, and its intrinsic size.
+ *
+ * Declared once so both lockups hand next/image the same aspect ratio: the
+ * dimensions are what reserves the space before the file arrives, and two
+ * copies of them are two chances for one to drift and start shifting the
+ * page on load.
+ */
+const LOGO = { src: "/mantramed-logo.png", width: 1254, height: 1254 } as const;
 
 /**
  * Sign-in screen.
@@ -174,13 +185,36 @@ function BrandPanel() {
         <path d="M38 6h24a6 6 0 016 6v20h20a6 6 0 016 6v24a6 6 0 01-6 6H68v20a6 6 0 01-6 6H38a6 6 0 01-6-6V68H12a6 6 0 01-6-6V38a6 6 0 016-6h20V12a6 6 0 016-6z" />
       </svg>
 
-      <div className="relative flex items-center gap-3">
-        <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-500 text-lg font-bold text-white shadow-lg shadow-brand-500/20">
-          M
+      {/*
+        Emblem, name, descriptor - the ordinary three-part lockup.
+
+        The emblem carries a wordmark of its own, so it is held to a size
+        where that reads as detail inside the mark rather than as a second
+        name competing with the type beside it. Blown up large it does
+        compete, and the eye has to decide which of two "MantraMed"s is the
+        heading.
+
+        It sits on a white disc because it is drawn for light ground: the
+        upper arc and the "Mantra" half of its word are dark navy, which on
+        this near-black panel would leave half the mark invisible. The disc
+        follows the emblem's own circle rather than boxing it.
+      */}
+      <div className="relative flex items-center gap-4">
+        <span className="flex h-28 w-28 shrink-0 items-center justify-center rounded-full bg-white p-2 shadow-xl shadow-brand-950/40 ring-1 ring-white/20">
+          <Image
+            src={LOGO.src}
+            alt=""
+            width={LOGO.width}
+            height={LOGO.height}
+            priority
+            className="h-full w-full object-contain"
+          />
         </span>
-        <span className="text-[15px] leading-tight font-semibold text-white">
-          MantraMed
-          <span className="block text-[11px] font-normal tracking-wide text-slate-400">
+        <span className="min-w-0">
+          <span className="block text-[34px] leading-none font-semibold tracking-tight text-white">
+            MantraMed
+          </span>
+          <span className="mt-2 block text-[11px] font-semibold tracking-[0.2em] text-brand-300 uppercase">
             Pharmacy Suite
           </span>
         </span>
@@ -190,7 +224,12 @@ function BrandPanel() {
         <p className="text-[11px] font-semibold tracking-[0.14em] text-brand-300 uppercase">
           Point of sale &amp; inventory
         </p>
-        <h2 className="mt-3 text-[2rem] leading-[1.15] font-semibold tracking-tight text-white">
+        {/*
+          A step below the wordmark above it. At the same size the two read as
+          rival headings on one panel, and the product name loses - it is the
+          shorter string and it sits further from the eye's landing point.
+        */}
+        <h2 className="mt-3 text-[1.75rem] leading-[1.2] font-semibold tracking-tight text-white">
           Billing that keeps your stock honest.
         </h2>
         <p className="mt-4 text-sm leading-relaxed text-slate-400">
@@ -310,13 +349,23 @@ function PackImprint({ tone }: { tone: "dark" | "light" }) {
 /** Compact lockup for phones, where the brand panel is not rendered at all. */
 function MobileBrand() {
   return (
-    <div className="mb-6 flex items-center gap-3 lg:hidden">
-      <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-600 text-lg font-bold text-white">
-        M
-      </span>
-      <span className="text-[15px] leading-tight font-semibold text-slate-900">
-        MantraMed
-        <span className="block text-[11px] font-normal text-slate-500">
+    // Light ground here, so the emblem needs no disc behind it. Centred above
+    // the card because on a phone it is the first thing on the screen, and
+    // laid out sideways so the lockup costs height the password field wants.
+    <div className="mb-6 flex items-center justify-center gap-3.5 lg:hidden">
+      <Image
+        src={LOGO.src}
+        alt=""
+        width={LOGO.width}
+        height={LOGO.height}
+        priority
+        className="h-[72px] w-[72px] shrink-0 object-contain"
+      />
+      <span className="min-w-0">
+        <span className="block text-[27px] leading-none font-semibold tracking-tight text-slate-900">
+          MantraMed
+        </span>
+        <span className="mt-1.5 block text-[10px] font-semibold tracking-[0.18em] text-brand-700 uppercase">
           Pharmacy Suite
         </span>
       </span>
