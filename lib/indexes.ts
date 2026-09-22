@@ -12,6 +12,7 @@ import { Setting } from "@/models/Setting";
 import { StockMovement } from "@/models/StockMovement";
 import { Supplier } from "@/models/Supplier";
 import { SupplierPayment } from "@/models/SupplierPayment";
+import { PasswordReset } from "@/models/PasswordReset";
 import { User } from "@/models/User";
 
 /**
@@ -40,5 +41,7 @@ export async function syncTenantIndexes(): Promise<void> {
     StockMovement.syncIndexes(),
     Prescription.syncIndexes(),
     Expense.syncIndexes(),
+    // Carries a TTL index, so Mongo sweeps spent reset links itself.
+    PasswordReset.syncIndexes(),
   ]);
 }

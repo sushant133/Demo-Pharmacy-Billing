@@ -66,6 +66,49 @@ export const config = {
     phone: process.env.BUSINESS_PHONE ?? "",
     pan: process.env.BUSINESS_PAN ?? "",
   },
+  /**
+   * Outbound email.
+   *
+   * Plain SMTP, so it works with whatever the deployment already has - a
+   * Google Workspace account, a provider's relay, a mailtrap in staging.
+   * With no host configured the app does not fail: `lib/email/send.ts`
+   * writes the message to the server log instead, which is what a developer
+   * wants locally and what makes a missing configuration loud rather than
+   * silent.
+   *
+   * `appUrl` is the origin that goes into a password-reset link. It has to
+   * be the address the user's browser can actually reach, which the server
+   * cannot infer reliably from behind a proxy.
+   */
+  /**
+   * Sending through a Google account.
+   *
+   * Preferred over SMTP when a refresh token is present - see
+   * lib/email/google.ts for why the Gmail API rather than smtp.gmail.com.
+   * `scripts/google-mail-token.ts` is what mints the refresh token.
+   */
+  googleMail: {
+    clientId: unquoteEnv(process.env.GOOGLE_CLIENT_ID),
+    clientSecret: unquoteEnv(process.env.GOOGLE_CLIENT_SECRET),
+    refreshToken: unquoteEnv(process.env.GOOGLE_MAIL_REFRESH_TOKEN),
+    /** The Gmail address that granted consent. Recorded for error messages. */
+    sender: unquoteEnv(process.env.GOOGLE_MAIL_SENDER),
+  },
+  mail: {
+    host: unquoteEnv(process.env.SMTP_HOST),
+    port: num(process.env.SMTP_PORT, 587),
+    // 465 is implicit TLS; 587 and 25 upgrade with STARTTLS.
+    secure: (process.env.SMTP_SECURE ?? "").toLowerCase() === "true"
+      || num(process.env.SMTP_PORT, 587) === 465,
+    user: unquoteEnv(process.env.SMTP_USER),
+    password: unquoteEnv(process.env.SMTP_PASSWORD),
+    from: unquoteEnv(process.env.MAIL_FROM) || "MantraMed <no-reply@mantramed.app>",
+    replyTo: unquoteEnv(process.env.MAIL_REPLY_TO),
+  },
+  appUrl: (unquoteEnv(process.env.APP_URL) || "http://localhost:3000").replace(
+    /\/+$/,
+    "",
+  ),
 } as const;
 
 /** Session cookie name. Kept here so middleware and route handlers agree. */

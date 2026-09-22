@@ -15,6 +15,17 @@ const PUBLIC_PATHS = [
   "/login",
   "/api/auth/login",
   "/api/auth/logout",
+  /*
+    Password recovery, necessarily. Somebody who has forgotten their password
+    cannot sign in to ask for a reset, so both screens and both endpoints have
+    to be reachable without a session. They are safe to expose: neither says
+    whether an address has an account, and the reset token is the credential.
+    See lib/password-reset.ts.
+  */
+  "/forgot-password",
+  "/reset-password",
+  "/api/auth/forgot-password",
+  "/api/auth/reset-password",
   "/manifest.webmanifest",
   "/icon",
   // Polled by the Android app before anyone has signed in.

@@ -45,6 +45,16 @@ const userSchema = new Schema(
     },
     isActive: { type: Boolean, default: true },
     lastLoginAt: { type: Date },
+    /**
+     * When the password was last changed, by a reset or by the owner.
+     *
+     * Recorded rather than used: sessions are stateless JWTs verified without
+     * a database read, so nothing compares a token's issue time against this
+     * yet. It is here so that check can be added without a migration, and
+     * because "when did this password last change" is worth being able to
+     * answer on its own. See lib/password-reset.ts.
+     */
+    passwordChangedAt: { type: Date, default: null },
   },
   { timestamps: true },
 );

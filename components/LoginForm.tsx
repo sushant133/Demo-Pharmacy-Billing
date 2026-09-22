@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { cx } from "@/components/ui";
 import { loginSchema } from "@/lib/validation";
@@ -155,19 +156,32 @@ export function LoginForm({
       </div>
 
       <div>
-        <div className="flex items-baseline justify-between">
+        <div className="flex items-baseline justify-between gap-3">
           <label htmlFor="password" className="label">
             Password
           </label>
-          <button
-            type="button"
-            onClick={() => setRevealed((current) => !current)}
-            aria-pressed={revealed}
-            aria-controls="password"
-            className="mb-1.5 rounded text-xs font-medium text-slate-500 transition-colors hover:text-brand-700"
-          >
-            {revealed ? "Hide" : "Show"}
-          </button>
+          <div className="mb-1.5 flex items-baseline gap-3 text-xs font-medium">
+            <button
+              type="button"
+              onClick={() => setRevealed((current) => !current)}
+              aria-pressed={revealed}
+              aria-controls="password"
+              className="rounded text-slate-500 transition-colors hover:text-brand-700"
+            >
+              {revealed ? "Hide" : "Show"}
+            </button>
+            {/*
+              Beside the field it belongs to rather than under the button: it
+              is wanted at the moment the password will not come to mind, and
+              that moment is here.
+            */}
+            <Link
+              href="/forgot-password"
+              className="rounded text-brand-700 transition-colors hover:text-brand-800"
+            >
+              Forgot?
+            </Link>
+          </div>
         </div>
         <input
           ref={passwordRef}

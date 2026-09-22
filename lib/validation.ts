@@ -76,6 +76,41 @@ export const loginSchema = z.object({
 });
 export type LoginInput = z.infer<typeof loginSchema>;
 
+/**
+ * Asking for a reset link.
+ *
+ * The address is checked for shape only. Whether an account exists behind it
+ * is never revealed - see lib/password-reset.ts - so there is nothing else
+ * to validate here.
+ */
+export const forgotPasswordSchema = z.object({
+  email: z.string().trim().toLowerCase().email("Enter a valid email address."),
+});
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+
+/**
+ * Choosing the new password.
+ *
+ * The floor matches what superadmin is held to when opening an account, so a
+ * reset cannot be used to slip under the rule the platform sets. The
+ * confirmation is compared here rather than in the component, so the API
+ * enforces it too and the two cannot disagree.
+ */
+export const resetPasswordSchema = z
+  .object({
+    token: z.string().trim().min(1, "This reset link is incomplete."),
+    password: z
+      .string()
+      .min(8, "Use at least 8 characters.")
+      .max(72, "Password is too long."),
+    confirm: z.string().min(1, "Type the password again."),
+  })
+  .refine((value) => value.password === value.confirm, {
+    message: "Both passwords must match.",
+    path: ["confirm"],
+  });
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+
 // ---------------------------------------------------------------------------
 // Medicine
 // ---------------------------------------------------------------------------

@@ -1,0 +1,116 @@
+/**
+ * Build the tab and home-screen icons from the master logo.
+ *
+ *   npx tsx scripts/generate-icons.ts
+ *
+ * Run it again whenever public/mantramed-logo.png changes; the outputs are
+ * committed, so nothing has to rasterise anything at request time.
+ *
+ * Every icon puts the emblem on white. The logo's upper arc and the "Mantra"
+ * half of its word are dark navy on a transparent ground, and a browser tab
+ * strip is light in one theme and near-black in the other - left transparent,
+ * half the mark would disappear for everyone using dark mode. White also
+ * matches the disc the login screen already sits it on.
+ *
+ * Two shapes, because the two jobs differ:
+ *
+ *   - The favicon is a white *circle* on transparent, following the emblem's
+ *     own outline, so the tab shows a badge rather than a white box.
+ *   - The home-screen icons are a full-bleed white *square* with the mark
+ *     inset. Android masks these into a circle or squircle of its choosing
+ *     and iOS composites transparency onto black, so both need opaque corners
+ *     and a safe margin rather than art running to the edge.
+ */
+
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+import sharp from "sharp";
+
+const ROOT = path.resolve(import.meta.dirname, "..");
+const SOURCE = path.join(ROOT, "public", "mantramed-logo.png");
+
+/** A white disc filling the canvas, as an SVG sharp can rasterise. */
+function disc(size: number): Buffer {
+  const r = size / 2;
+  return Buffer.from(
+    `<svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">
+       <circle cx="${r}" cy="${r}" r="${r}" fill="#ffffff"/>
+     </svg>`,
+  );
+}
+
+/**
+ * The emblem, scaled to `inset` of the canvas and centred.
+ *
+ * `fit: "contain"` with a transparent background keeps the square artwork
+ * square: the logo is a circular composition on a square canvas, and letting
+ * it stretch would pull the ring into an oval.
+ */
+async function mark(size: number, inset: number): Promise<Buffer> {
+  const art = Math.round(size * inset);
+  const pad = Math.round((size - art) / 2);
+
+  return sharp(SOURCE)
+    .resize(art, art, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .extend({
+      top: pad,
+      bottom: size - art - pad,
+      left: pad,
+      right: size - art - pad,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
+    .png()
+    .toBuffer();
+}
+
+/** White circle on transparent - for a browser tab. */
+async function roundIcon(size: number, inset: number): Promise<Buffer> {
+  return sharp(disc(size))
+    .composite([{ input: await mark(size, inset), top: 0, left: 0 }])
+    .png()
+    .toBuffer();
+}
+
+/** Opaque white square - for a home screen that will mask or matte it. */
+async function squareIcon(size: number, inset: number): Promise<Buffer> {
+  return sharp({
+    create: {
+      width: size,
+      height: size,
+      channels: 4,
+      background: { r: 255, g: 255, b: 255, alpha: 1 },
+    },
+  })
+    .composite([{ input: await mark(size, inset), top: 0, left: 0 }])
+    .png()
+    .toBuffer();
+}
+
+async function emit(file: string, data: Buffer): Promise<void> {
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, data);
+  console.log(
+    `  ${path.relative(ROOT, file).replace(/\\/g, "/")}  ${(data.length / 1024).toFixed(1)}KB`,
+  );
+}
+
+async function main(): Promise<void> {
+  const meta = await sharp(SOURCE).metadata();
+  console.log(`source ${meta.width}x${meta.height}\n`);
+
+  // Next serves these two by file convention; nothing has to link them.
+  await emit(path.join(ROOT, "app", "icon.png"), await roundIcon(256, 0.86));
+  // iOS draws its own rounded corners, so the art is inset further.
+  await emit(path.join(ROOT, "app", "apple-icon.png"), await squareIcon(180, 0.72));
+
+  // Referenced by app/manifest.ts. 192 and 512 are what Android asks for.
+  await emit(path.join(ROOT, "public", "icon-192.png"), await squareIcon(192, 0.72));
+  await emit(path.join(ROOT, "public", "icon-512.png"), await squareIcon(512, 0.72));
+
+  console.log("\ndone");
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
