@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  jsonToCsv,
   matchColumn,
   parseMedicineCsv,
   splitCsvLine,
@@ -157,5 +158,69 @@ describe("parseMedicineCsv", () => {
     const plan = parseMedicineCsv("Name,MRP");
     expect(plan.rows).toHaveLength(0);
     expect(plan.columns).toContain("name");
+  });
+});
+
+describe("file structure detection", () => {
+  it("reads tab-separated rows pasted from Excel", () => {
+    const plan = parseMedicineCsv("Name\tMRP\nCetzine\t2.50");
+    expect(plan.rows[0]!.value).toMatchObject({ name: "Cetzine", defaultSalePrice: 2.5 });
+  });
+
+  it("reads semicolon-separated CSV", () => {
+    const plan = parseMedicineCsv("Name;Generic\nCetzine;Cetirizine");
+    expect(plan.rows[0]!.value).toMatchObject({ genericName: "Cetirizine" });
+  });
+
+  it("finds the heading row below a title line", () => {
+    const plan = parseMedicineCsv("Shree Pharmacy stock list\nName,MRP\nCetzine,2.50");
+    expect(plan.validCount).toBe(1);
+    expect(plan.rows[0]!.line).toBe(3);
+  });
+
+  it("matches decorated and camelCase headings", () => {
+    expect(matchColumn("MRP (Rs.)")).toBe("defaultSalePrice");
+    expect(matchColumn("genericName")).toBe("genericName");
+    expect(matchColumn("Pack Size:")).toBe("packSize");
+  });
+
+  it("reports how each heading was mapped", () => {
+    const plan = parseMedicineCsv("Medicine Name,Shelf\nCetzine,A1");
+    expect(plan.mapping).toEqual([
+      { header: "Medicine Name", field: "name" },
+      { header: "Shelf", field: null },
+    ]);
+  });
+
+  it("takes a blank or plural unit as the form it means", () => {
+    const plan = parseMedicineCsv("Name,Unit,Category\nCetzine,,\nOmez,Capsules,\nZinc,SYP,");
+    expect(plan.rows.map((row) => row.value?.unit)).toEqual(["tablet", "capsule", "syrup"]);
+    expect(plan.rows[0]!.value?.category).toBe("Other");
+  });
+});
+
+describe("JSON import", () => {
+  it("reads an array of medicine objects", () => {
+    const plan = parseMedicineCsv(
+      JSON.stringify([
+        { name: "Cetzine", genericName: "Cetirizine", mrp: 2.5, rx: false },
+        { name: "Amoxyclav", saltComposition: "Amoxicillin 500mg, Clavulanic Acid 125mg" },
+      ]),
+    );
+    expect(plan.validCount).toBe(2);
+    expect(plan.rows[0]!.value).toMatchObject({ genericName: "Cetirizine", defaultSalePrice: 2.5 });
+    expect(plan.rows[1]!.value).toMatchObject({
+      saltComposition: "Amoxicillin 500mg, Clavulanic Acid 125mg",
+    });
+  });
+
+  it("reads a list wrapped in an object", () => {
+    expect(jsonToCsv(JSON.stringify({ medicines: [{ name: "Cetzine" }] }))).toBe(
+      "name\nCetzine",
+    );
+  });
+
+  it("refuses JSON that is not valid", () => {
+    expect(() => parseMedicineCsv("[{name:")).toThrow(/json/i);
   });
 });

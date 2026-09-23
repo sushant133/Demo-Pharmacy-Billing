@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useRef, useState, type ReactNode } from "react";
 import { apiFetch } from "@/lib/client";
@@ -299,6 +300,21 @@ export function MedicineFormPanel({
           }}
           className="space-y-5"
         >
+          {!isEdit ? (
+            /* Same list query as returnHref, so closing the bulk panel lands in the same place. */
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-brand-100 bg-brand-50/60 px-3 py-2">
+              <p className="text-xs text-slate-600">
+                Adding many at once? Upload a CSV, Excel or JSON file.
+              </p>
+              <Link
+                href={`${returnHref}${returnHref.includes("?") ? "&" : "?"}import=1`}
+                className="btn-secondary shrink-0 text-xs"
+              >
+                Bulk add medicines
+              </Link>
+            </div>
+          ) : null}
+
           {formError ? (
             <div
               role="alert"

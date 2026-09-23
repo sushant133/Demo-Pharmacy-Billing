@@ -2,7 +2,11 @@ import { Types } from "mongoose";
 import { ApiError, ok, parseJson, withRoute } from "@/lib/api";
 import { requirePermission } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
-import { parseMedicineCsv, type ImportRow } from "@/lib/medicine-import";
+import {
+  parseMedicineCsv,
+  type ImportPlan,
+  type ImportRow,
+} from "@/lib/medicine-import";
 import { pharmacyObjectId } from "@/lib/tenant";
 import { medicineImportSchema } from "@/lib/validation";
 import { Medicine } from "@/models/Medicine";
@@ -12,6 +16,9 @@ export const dynamic = "force-dynamic";
 
 /** Rows above this are refused outright rather than half-processed. */
 const MAX_ROWS = 2000;
+
+/** Rows returned for the preview table; the counts always cover the whole file. */
+const PREVIEW_ROWS = 300;
 
 /**
  * POST /api/medicines/import - bring in a catalogue from a spreadsheet.
@@ -37,7 +44,15 @@ export const POST = withRoute(async (req) => {
   const user = await requirePermission("medicine:write");
   const { csv, dryRun } = await parseJson(req, medicineImportSchema);
 
-  const plan = parseMedicineCsv(csv);
+  let plan: ImportPlan;
+  try {
+    plan = parseMedicineCsv(csv);
+  } catch (error) {
+    // Only malformed JSON throws; CSV problems are reported per row.
+    throw ApiError.badRequest(
+      error instanceof Error ? error.message : "That file could not be read.",
+    );
+  }
 
   if (plan.rows.length === 0) {
     throw ApiError.badRequest(
@@ -111,6 +126,7 @@ export const POST = withRoute(async (req) => {
   const summary = {
     total: plan.rows.length,
     columns: plan.columns,
+    mapping: plan.mapping,
     ignored: plan.ignored,
     willCreate: toCreate.length,
     duplicates,
@@ -122,6 +138,19 @@ export const POST = withRoute(async (req) => {
       name: String(row.value.name),
       manufacturer: String(row.value.manufacturer ?? ""),
       category: String(row.value.category ?? ""),
+    })),
+    /** What will be saved, in file order, for the preview table. */
+    preview: toCreate.slice(0, PREVIEW_ROWS).map((row) => ({
+      line: row.line,
+      name: String(row.value.name),
+      genericName: String(row.value.genericName ?? ""),
+      manufacturer: String(row.value.manufacturer ?? ""),
+      category: String(row.value.category ?? ""),
+      unit: String(row.value.unit ?? ""),
+      packSize: String(row.value.packSize ?? ""),
+      defaultCostPrice: (row.value.defaultCostPrice as number | null) ?? null,
+      defaultSalePrice: (row.value.defaultSalePrice as number | null) ?? null,
+      requiresPrescription: Boolean(row.value.requiresPrescription),
     })),
   };
 
