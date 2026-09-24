@@ -13,7 +13,7 @@ export const ANDROID_RELEASE = {
   versionCode: 1,
   versionName: "1.0.0",
   minimumVersionCode: 1,
-  storeUrl: "https://play.google.com/store/apps/details?id=np.com.mantrasphere.pharmacy",
+  storeUrl: "https://play.google.com/store/apps/details?id=tech.mantramed",
   notes: "First release.",
 } as const;
 

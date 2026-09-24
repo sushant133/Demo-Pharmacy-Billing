@@ -1,4 +1,4 @@
-package np.com.mantrasphere.pharmacy;
+package tech.mantramed;
 
 import android.print.PrintAttributes;
 import android.print.PrintDocumentAdapter;

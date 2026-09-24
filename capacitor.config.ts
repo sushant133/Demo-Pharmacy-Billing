@@ -21,10 +21,9 @@ const config: CapacitorConfig = {
   /*
     The application id is the app's identity on the Play Store and cannot be
     changed without publishing a different app that installed copies have no
-    upgrade path to. It carries the company's domain, which is unchanged, so
-    it stays as it is even though the product is now called MantraMed.
+    upgrade path to. It is the product domain, mantramed.tech, reversed.
   */
-  appId: "np.com.mantrasphere.pharmacy",
+  appId: "tech.mantramed",
   appName: "MantraMed",
   webDir: "capacitor-shell",
   server: {

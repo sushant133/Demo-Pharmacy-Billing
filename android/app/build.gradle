@@ -10,10 +10,10 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "np.com.mantrasphere.pharmacy"
+    namespace = "tech.mantramed"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "np.com.mantrasphere.pharmacy"
+        applicationId "tech.mantramed"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         // Bump both for every Play upload, and mirror versionCode in
