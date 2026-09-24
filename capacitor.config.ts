@@ -15,7 +15,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 
 // The deployment the app points at. Override for a staging build with:
 //   CAP_SERVER_URL=https://staging.example.com npx cap sync android
-const SERVER_URL = process.env.CAP_SERVER_URL ?? "https://REPLACE-WITH-YOUR-VERCEL-DOMAIN";
+const SERVER_URL = process.env.CAP_SERVER_URL ?? "https://mantramed.tech";
 
 const config: CapacitorConfig = {
   /*
@@ -45,7 +45,7 @@ const config: CapacitorConfig = {
       launchAutoHide: true,
       launchShowDuration: 3000,
       launchFadeOutDuration: 200,
-      backgroundColor: "#0f766eff",
+      backgroundColor: "#ffffffff",
       androidScaleType: "CENTER_CROP",
       showSpinner: false,
       androidSpinnerStyle: "small",
