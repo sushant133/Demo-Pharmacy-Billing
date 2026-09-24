@@ -24,7 +24,7 @@ export const metadata: Metadata = {
  */
 
 const EFFECTIVE_DATE = "24 September 2026";
-const CONTACT_EMAIL = "privacy@mantramed.tech";
+const CONTACT_EMAIL = "mantrasphere.official@gmail.com";
 const COMPANY = "MantraSphere Innovations Pvt. Ltd.";
 
 export default function PrivacyPage() {
