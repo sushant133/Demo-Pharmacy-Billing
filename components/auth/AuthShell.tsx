@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 /**
@@ -53,6 +54,10 @@ export function AuthShell({
 
         <p className="mt-6 text-center text-[11px] text-slate-400">
           A product of MantraSphere Innovations Pvt. Ltd.
+          <span className="mx-1.5 text-slate-300">&middot;</span>
+          <Link href="/privacy" className="underline underline-offset-2 hover:text-slate-600">
+            Privacy policy
+          </Link>
         </p>
       </div>
     </div>

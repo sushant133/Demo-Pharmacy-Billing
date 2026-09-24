@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Image from "next/image";
+import Link from "next/link";
 import { DesktopDownloadLink } from "@/components/DesktopDownloadLink";
 import { LoginForm } from "@/components/LoginForm";
 import { cx } from "@/components/ui";
@@ -147,6 +148,15 @@ export default async function LoginPage({
             A session lasts {sessionHours} hours. Sign out before you leave the
             counter &mdash; every bill is recorded against the account that
             raised it.
+          </p>
+
+          <p className="mt-3 text-center text-xs">
+            <Link
+              href="/privacy"
+              className="text-slate-500 underline underline-offset-2 hover:text-slate-700"
+            >
+              Privacy policy
+            </Link>
           </p>
 
           <DesktopDownloadLink />

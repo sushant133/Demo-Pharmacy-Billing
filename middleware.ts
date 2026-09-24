@@ -30,6 +30,8 @@ const PUBLIC_PATHS = [
   "/icon",
   // Polled by the Android app before anyone has signed in.
   "/android-app-version.json",
+  // Play Console and anyone deciding whether to use the app read it signed out.
+  "/privacy",
 ];
 
 /** Where a user signed in on a temporary password is held until they replace it. */
