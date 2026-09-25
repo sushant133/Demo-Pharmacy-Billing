@@ -1,4 +1,5 @@
 import { config } from "@/lib/config";
+import { messageIdFor, transactionalHeaders } from "@/lib/email/headers";
 
 /**
  * Sending through a Google account, over the Gmail API.
@@ -106,6 +107,14 @@ function encodeHeader(value: string): string {
   return `=?UTF-8?B?${Buffer.from(value, "utf8").toString("base64")}?=`;
 }
 
+/** An image carried inside the message and referenced as `cid:<cid>`. */
+export interface InlineImage {
+  cid: string;
+  filename: string;
+  contentType: string;
+  content: Buffer;
+}
+
 /**
  * Build the RFC 822 message.
  *
@@ -113,7 +122,12 @@ function encodeHeader(value: string): string {
  * specification's, and it is how a client knows the HTML is the richer
  * version of the same thing rather than a separate attachment.
  *
- * Both parts are base64 so that no line can exceed the 998-character limit
+ * With inline images, the alternative part is wrapped in `multipart/related`
+ * alongside them - the structure that tells a client the images belong to
+ * the HTML, so Gmail draws the logo in place instead of listing it as an
+ * attachment.
+ *
+ * Every part is base64 so that no line can exceed the 998-character limit
  * and nothing has to be quoted-printable-escaped by hand.
  */
 export function buildMimeMessage(input: {
@@ -123,38 +137,81 @@ export function buildMimeMessage(input: {
   text: string;
   html: string;
   replyTo?: string;
+  inline?: InlineImage[];
+  date?: Date;
 }): string {
-  const boundary = `mm_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
-  const b64 = (value: string) =>
-    Buffer.from(value, "utf8")
+  const token = () =>
+    `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  const altBoundary = `mm_alt_${token()}`;
+  const b64 = (value: string | Buffer) =>
+    (typeof value === "string" ? Buffer.from(value, "utf8") : value)
       .toString("base64")
       .replace(/(.{76})/g, "$1\r\n");
+
+  const alternative = [
+    `--${altBoundary}`,
+    'Content-Type: text/plain; charset="UTF-8"',
+    "Content-Transfer-Encoding: base64",
+    "",
+    b64(input.text),
+    "",
+    `--${altBoundary}`,
+    'Content-Type: text/html; charset="UTF-8"',
+    "Content-Transfer-Encoding: base64",
+    "",
+    b64(input.html),
+    "",
+    `--${altBoundary}--`,
+  ];
+
+  const extra = Object.entries(transactionalHeaders()).map(
+    ([name, value]) => `${name}: ${value}`,
+  );
 
   const headers = [
     `From: ${input.from}`,
     `To: ${input.to}`,
     ...(input.replyTo ? [`Reply-To: ${input.replyTo}`] : []),
     `Subject: ${encodeHeader(input.subject)}`,
+    `Date: ${(input.date ?? new Date()).toUTCString().replace(/GMT$/, "+0000")}`,
+    `Message-ID: ${messageIdFor(input.from)}`,
+    ...extra,
     "MIME-Version: 1.0",
-    `Content-Type: multipart/alternative; boundary="${boundary}"`,
   ];
+
+  if (!input.inline?.length) {
+    return [
+      ...headers,
+      `Content-Type: multipart/alternative; boundary="${altBoundary}"`,
+      "",
+      ...alternative,
+      "",
+    ].join("\r\n");
+  }
+
+  const relBoundary = `mm_rel_${token()}`;
+  const images = input.inline.flatMap((image) => [
+    `--${relBoundary}`,
+    `Content-Type: ${image.contentType}; name="${image.filename}"`,
+    "Content-Transfer-Encoding: base64",
+    `Content-ID: <${image.cid}>`,
+    `Content-Disposition: inline; filename="${image.filename}"`,
+    "",
+    b64(image.content),
+    "",
+  ]);
 
   return [
     ...headers,
+    `Content-Type: multipart/related; boundary="${relBoundary}"; type="multipart/alternative"`,
     "",
-    `--${boundary}`,
-    'Content-Type: text/plain; charset="UTF-8"',
-    "Content-Transfer-Encoding: base64",
+    `--${relBoundary}`,
+    `Content-Type: multipart/alternative; boundary="${altBoundary}"`,
     "",
-    b64(input.text),
+    ...alternative,
     "",
-    `--${boundary}`,
-    'Content-Type: text/html; charset="UTF-8"',
-    "Content-Transfer-Encoding: base64",
-    "",
-    b64(input.html),
-    "",
-    `--${boundary}--`,
+    ...images,
+    `--${relBoundary}--`,
     "",
   ].join("\r\n");
 }
@@ -169,6 +226,7 @@ export async function sendViaGmail(input: {
   subject: string;
   text: string;
   html: string;
+  inline?: InlineImage[];
 }): Promise<void> {
   const token = await accessToken();
 
@@ -180,6 +238,7 @@ export async function sendViaGmail(input: {
       text: input.text,
       html: input.html,
       replyTo: config.mail.replyTo || undefined,
+      inline: input.inline,
     }),
     "utf8",
   ).toString("base64url");

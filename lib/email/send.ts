@@ -2,6 +2,17 @@ import nodemailer, { type Transporter } from "nodemailer";
 import { config } from "@/lib/config";
 import { googleMailIsConfigured, sendViaGmail } from "@/lib/email/google";
 import {
+  addressOf,
+  domainOf,
+  messageIdFor,
+  transactionalHeaders,
+} from "@/lib/email/headers";
+import {
+  EMAIL_LOGO_CID,
+  EMAIL_LOGO_FILENAME,
+  emailLogoPng,
+} from "@/lib/email/logo";
+import {
   renderEmail,
   renderEmailText,
   type EmailContent,
@@ -74,6 +85,7 @@ let cached: Transporter | null = null;
 
 function transporter(): Transporter {
   if (cached) return cached;
+  const { dkim } = config.mail;
   cached = nodemailer.createTransport({
     host: config.mail.host,
     port: config.mail.port,
@@ -83,8 +95,51 @@ function transporter(): Transporter {
       : undefined,
     pool: true,
     maxConnections: 3,
+    // Signed here only when configured; most relays sign for a verified
+    // domain themselves. See config.mail.dkim.
+    ...(dkim.domain && dkim.selector && dkim.privateKey
+      ? {
+          dkim: {
+            domainName: dkim.domain,
+            keySelector: dkim.selector,
+            privateKey: dkim.privateKey,
+          },
+        }
+      : {}),
   });
   return cached;
+}
+
+/**
+ * Warn, once per process, when the From domain cannot pass DMARC.
+ *
+ * Mail sent through a Google account is DKIM-signed for that account's
+ * domain. A From on some other domain - MAIL_FROM=no-reply@mantramed.app
+ * sent through someone@gmail.com - is unaligned, fails DMARC, and is exactly
+ * the message Gmail files as spam. Not fatal: a Workspace alias with its own
+ * signing can be legitimate, so this says so and carries on.
+ */
+let warnedAlignment = false;
+
+function warnOnMisalignedFrom(transport: EmailTransport): void {
+  if (warnedAlignment) return;
+  warnedAlignment = true;
+  const fromDomain = domainOf(config.mail.from);
+  if (transport === "google" && config.googleMail.sender) {
+    const senderDomain = domainOf(config.googleMail.sender);
+    if (fromDomain && senderDomain && fromDomain !== senderDomain) {
+      console.warn(
+        `[email] MAIL_FROM (${addressOf(config.mail.from)}) is not on the Google account's domain (${senderDomain}). ` +
+          "Unless that domain is set up to DKIM-sign this mail, it will fail DMARC and land in spam. " +
+          "Send from the account's own domain, or run `npx tsx scripts/check-email-dns.ts`.",
+      );
+    }
+  }
+  if (transport === "smtp" && config.mail.dkim.domain && fromDomain && config.mail.dkim.domain.toLowerCase() !== fromDomain) {
+    console.warn(
+      `[email] DKIM_DOMAIN (${config.mail.dkim.domain}) does not match the MAIL_FROM domain (${fromDomain}); the signature will not align for DMARC.`,
+    );
+  }
 }
 
 /**
@@ -118,9 +173,25 @@ export async function sendEmail(message: EmailMessage): Promise<EmailOutcome> {
     return { sent: false, logged: true };
   }
 
+  warnOnMisalignedFrom(transport);
+
+  // The header logo travels inside the message; see lib/email/logo.ts.
+  const logo = {
+    cid: EMAIL_LOGO_CID,
+    filename: EMAIL_LOGO_FILENAME,
+    contentType: "image/png",
+    content: emailLogoPng(),
+  };
+
   try {
     if (transport === "google") {
-      await sendViaGmail({ to: message.to, subject: message.subject, text, html });
+      await sendViaGmail({
+        to: message.to,
+        subject: message.subject,
+        text,
+        html,
+        inline: [logo],
+      });
     } else {
       await transporter().sendMail({
         from: config.mail.from,
@@ -128,6 +199,9 @@ export async function sendEmail(message: EmailMessage): Promise<EmailOutcome> {
         subject: message.subject,
         text,
         html,
+        messageId: messageIdFor(config.mail.from),
+        headers: transactionalHeaders(),
+        attachments: [{ ...logo, contentDisposition: "inline" }],
         ...(config.mail.replyTo ? { replyTo: config.mail.replyTo } : {}),
       });
     }
