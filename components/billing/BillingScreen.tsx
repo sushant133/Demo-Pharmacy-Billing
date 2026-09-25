@@ -760,7 +760,7 @@ export function BillingScreen({
               <ul
                 id="medicine-results"
                 role="listbox"
-                className="mt-3 max-h-80 space-y-1.5 overflow-y-auto pr-0.5"
+                className="@container mt-3 max-h-[26rem] space-y-1.5 overflow-y-auto overscroll-contain pr-0.5 @lg:max-h-80"
               >
                 {searching && hits.length === 0 ? (
                   <li className="rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-5 text-sm text-slate-500">
@@ -792,10 +792,17 @@ export function BillingScreen({
                         block, the stock verdict and the quick-add each own a
                         corner, so the eye lands in the same three places on
                         every row of the list.
+
+                        Sized by the list's own width, not the screen's: this
+                        column is phone-narrow on a phone and on a laptop with
+                        the payment panel beside it. There, the name takes the
+                        whole first line and the stock and quick-add share the
+                        second - on one line the stock figure never shrinks,
+                        so the name was squeezed to nothing and drawn under it.
                       */}
                       <div
                         className={cx(
-                          "flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors",
+                          "flex w-full flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border px-3 py-2.5 text-left transition-colors @lg:flex-nowrap",
                           index === highlight && !outOfStock
                             ? "border-brand-200 bg-brand-50"
                             : "border-slate-200 bg-white",
@@ -816,7 +823,7 @@ export function BillingScreen({
                           disabled={outOfStock}
                           onClick={() => setPicking(hit)}
                           className={cx(
-                            "flex min-w-0 flex-1 items-center gap-3 text-left",
+                            "flex min-w-0 flex-1 basis-full items-center gap-3 text-left @lg:basis-0",
                             outOfStock && "cursor-not-allowed",
                           )}
                         >
@@ -841,10 +848,7 @@ export function BillingScreen({
                                 </span>
                               ) : null}
                               {hit.requiresPrescription ? (
-                                <Badge
-                                  tone="amber"
-                                  className="hidden shrink-0 sm:inline-flex"
-                                >
+                                <Badge tone="amber" className="shrink-0">
                                   Rx
                                 </Badge>
                               ) : null}
@@ -857,7 +861,7 @@ export function BillingScreen({
                           </div>
                         </button>
 
-                        <div className="shrink-0 text-right">
+                        <div className="min-w-0 flex-1 pl-[3.25rem] text-left @lg:flex-none @lg:pl-0 @lg:text-right">
                           <p
                             className={cx(
                               "tnum text-sm font-semibold",
@@ -883,7 +887,7 @@ export function BillingScreen({
                           <button
                             type="button"
                             onClick={() => quickAdd(hit, 1)}
-                            className="shrink-0 rounded-lg bg-white px-2 py-1.5 text-[10px] font-medium text-brand-800 ring-1 ring-brand-200 ring-inset hover:bg-brand-50"
+                            className="min-h-9 shrink-0 rounded-lg bg-white px-3 py-2 text-xs font-medium text-brand-800 ring-1 ring-brand-200 ring-inset hover:bg-brand-50 @lg:min-h-0 @lg:px-2 @lg:py-1.5 @lg:text-[10px]"
                           >
                             + 1 quick
                           </button>
@@ -954,7 +958,7 @@ export function BillingScreen({
                 </p>
               </div>
             ) : (
-              <ul className="divide-y divide-slate-100">
+              <ul className="@container divide-y divide-slate-100">
                 {cart.map((line, index) => {
                   const planLine = planByKey.get(line.key);
                   const perStrip = line.unitsPerStrip || 1;
@@ -987,12 +991,17 @@ export function BillingScreen({
 
                   return (
                     <li key={line.key} className="px-4 py-3.5">
-                      <div className="flex items-start gap-3">
+                      {/*
+                        On a narrow cart the controls drop to their own line
+                        under the name. Beside it they took ~250px, which on a
+                        phone left the name one letter wide.
+                      */}
+                      <div className="flex flex-wrap items-start gap-x-3 gap-y-2.5 @lg:flex-nowrap">
                         <span className="tnum mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[11px] font-semibold text-slate-500">
                           {index + 1}
                         </span>
 
-                        <div className="min-w-0 flex-1">
+                        <div className="min-w-0 flex-1 basis-[calc(100%-2.25rem)] @lg:basis-0">
                           <p className="text-sm font-medium text-slate-900">
                             {line.name}
                             {line.requiresPrescription ? (
@@ -1039,7 +1048,7 @@ export function BillingScreen({
                           line, gathered into one right-hand column in the order
                           a cashier reaches for them.
                         */}
-                        <div className="flex shrink-0 items-start gap-2">
+                        <div className="flex w-full items-start gap-2 pl-9 @lg:w-auto @lg:shrink-0 @lg:pl-0">
                           <div>
                             <p className="mb-1 text-center text-[10px] font-medium tracking-wide text-slate-400 uppercase">
                               {unitWord(line.unit, 2)}
@@ -1049,7 +1058,7 @@ export function BillingScreen({
                                 type="button"
                                 aria-label={`Decrease ${line.name}`}
                                 onClick={() => setQuantity(line.key, line.quantity - 1)}
-                                className="px-2.5 py-1.5 text-slate-500 hover:text-slate-900"
+                                className="px-3.5 py-2 text-base text-slate-500 hover:text-slate-900 @lg:px-2.5 @lg:py-1.5 @lg:text-sm"
                               >
                                 −
                               </button>
@@ -1078,7 +1087,7 @@ export function BillingScreen({
                                 type="button"
                                 aria-label={`Increase ${line.name}`}
                                 onClick={() => setQuantity(line.key, line.quantity + 1)}
-                                className="px-2.5 py-1.5 text-slate-500 hover:text-slate-900"
+                                className="px-3.5 py-2 text-base text-slate-500 hover:text-slate-900 @lg:px-2.5 @lg:py-1.5 @lg:text-sm"
                               >
                                 +
                               </button>
@@ -1090,14 +1099,14 @@ export function BillingScreen({
                                   setQuantity(line.key, line.quantity + perStrip)
                                 }
                                 disabled={line.quantity + perStrip > line.stockQuantity}
-                                className="mt-1 w-full rounded-md px-1 py-0.5 text-[10px] font-medium text-brand-800 ring-1 ring-brand-200 ring-inset hover:bg-brand-50 disabled:opacity-40"
+                                className="mt-1.5 w-full rounded-md px-1 py-1.5 text-xs font-medium text-brand-800 ring-1 ring-brand-200 ring-inset hover:bg-brand-50 disabled:opacity-40 @lg:mt-1 @lg:py-0.5 @lg:text-[10px]"
                               >
                                 + 1 strip ({perStrip})
                               </button>
                             ) : null}
                           </div>
 
-                          <div className="w-24 shrink-0 pt-4 text-right">
+                          <div className="ml-auto w-24 shrink-0 pt-4 text-right @lg:ml-0">
                             <p className="tnum text-sm font-semibold text-slate-900">
                               {planLine ? money(planLine.lineTotal) : "—"}
                             </p>
@@ -1112,7 +1121,7 @@ export function BillingScreen({
                             type="button"
                             aria-label={`Remove ${line.name}`}
                             onClick={() => removeLine(line.key)}
-                            className="-mr-1 mt-4 rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                            className="-mr-1 mt-3.5 rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 @lg:mt-4 @lg:p-1.5"
                           >
                             <svg
                               className="h-4 w-4"
