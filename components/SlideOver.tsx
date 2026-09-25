@@ -63,7 +63,7 @@ export function SlideOver({
       */}
       <div
         ref={panelRef}
-        className="relative flex h-dvh w-full max-w-md flex-col bg-white shadow-xl"
+        className="relative flex h-dvh w-full max-w-md flex-col bg-white pt-[var(--safe-top)] shadow-xl"
       >
         <header className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-3.5 sm:px-5 sm:py-4">
           <div className="min-w-0">
@@ -103,7 +103,7 @@ export function SlideOver({
           where the bottom 34px of the viewport is not reliably tappable.
         */}
         {footer ? (
-          <footer className="border-t border-slate-200 px-4 py-3.5 pb-[calc(0.875rem+env(safe-area-inset-bottom))] sm:px-5 sm:py-4 sm:pb-4">
+          <footer className="border-t border-slate-200 px-4 py-3.5 pb-[calc(0.875rem+var(--safe-bottom))] sm:px-5 sm:py-4 sm:pb-4">
             {footer}
           </footer>
         ) : null}

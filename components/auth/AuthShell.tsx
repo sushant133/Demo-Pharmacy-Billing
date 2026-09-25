@@ -21,7 +21,7 @@ export function AuthShell({
   children: ReactNode;
 }) {
   return (
-    <div className="login-counter flex min-h-dvh flex-col justify-center px-4 py-10 sm:px-8">
+    <div className="login-counter flex min-h-dvh flex-col justify-center px-4 py-10 pt-[calc(2.5rem+var(--safe-top))] sm:px-8">
       <div className="mx-auto w-full max-w-[26rem]">
         <div className="mb-6 flex items-center justify-center gap-3.5">
           <Image

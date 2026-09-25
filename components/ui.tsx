@@ -5,6 +5,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
+import { TableStackLabels } from "@/components/TableStackLabels";
 
 /**
  * Small presentational primitives shared across screens.
@@ -212,12 +213,17 @@ function rowsFrom(children: ReactNode): ReactNode {
  *
  * `pinFirst` and `pinLast` hold the identifying column and the actions
  * against the two edges while the middle scrolls between them.
+ *
+ * On a phone (below `sm`) the table is laid out as one card per row instead
+ * - see "Phone layout" in globals.css. Pass `stack={false}` for a table that
+ * must stay a grid at every width.
  */
 export function TableWrap({
   children,
   minWidth,
   pinFirst,
   pinLast,
+  stack = true,
   className,
 }: {
   children: ReactNode;
@@ -227,6 +233,8 @@ export function TableWrap({
   pinFirst?: boolean;
   /** Keeps the last column - the actions - against the right edge. */
   pinLast?: boolean;
+  /** One card per row on a phone. On by default. */
+  stack?: boolean;
   className?: string;
 }) {
   return (
@@ -235,6 +243,7 @@ export function TableWrap({
         "table-scroll table-scroll-shadow",
         pinFirst && "table-pin-first",
         pinLast && "table-pin-last",
+        stack && "table-stack",
         className,
       )}
     >
@@ -244,6 +253,7 @@ export function TableWrap({
       >
         {rowsFrom(children)}
       </table>
+      {stack ? <TableStackLabels /> : null}
     </div>
   );
 }

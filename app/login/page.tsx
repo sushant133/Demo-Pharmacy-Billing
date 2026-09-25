@@ -75,7 +75,7 @@ export default async function LoginPage({
       <BrandPanel />
 
       {/* Counter panel */}
-      <div className="login-counter flex flex-col justify-center px-4 py-10 sm:px-8 lg:px-12">
+      <div className="login-counter flex flex-col justify-center px-4 py-10 pt-[calc(2.5rem+var(--safe-top))] sm:px-8 lg:px-12">
         <div className="mx-auto w-full max-w-[26rem]">
           <MobileBrand />
 

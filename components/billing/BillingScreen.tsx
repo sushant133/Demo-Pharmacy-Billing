@@ -1312,7 +1312,7 @@ export function BillingScreen({
                         }}
                         aria-pressed={active}
                         className={cx(
-                          "tnum rounded-lg px-1 py-2 text-xs font-medium ring-1 transition-colors",
+                          "tnum min-h-9 rounded-lg px-1 py-2 text-xs font-medium ring-1 transition-colors lg:min-h-0",
                           active
                             ? "bg-brand-600 text-white ring-brand-600"
                             : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50",
@@ -1451,7 +1451,7 @@ export function BillingScreen({
                     <button
                       type="button"
                       onClick={() => setReceived(total > 0 ? total.toFixed(2) : "")}
-                      className="rounded-lg bg-white px-1 py-1.5 text-[10px] font-medium text-slate-600 ring-1 ring-slate-200 ring-inset hover:bg-slate-50"
+                      className="min-h-9 rounded-lg bg-white px-1 py-2 text-xs font-medium text-slate-600 ring-1 ring-slate-200 ring-inset hover:bg-slate-50 lg:min-h-0 lg:py-1.5 lg:text-[10px]"
                     >
                       Exact
                     </button>
@@ -1462,7 +1462,7 @@ export function BillingScreen({
                         onClick={() =>
                           setReceived(String((Number(received) || 0) + step))
                         }
-                        className="tnum rounded-lg bg-white px-1 py-1.5 text-[10px] font-medium text-slate-600 ring-1 ring-slate-200 ring-inset hover:bg-slate-50"
+                        className="tnum min-h-9 rounded-lg bg-white px-1 py-2 text-xs font-medium text-slate-600 ring-1 ring-slate-200 ring-inset hover:bg-slate-50 lg:min-h-0 lg:py-1.5 lg:text-[10px]"
                       >
                         +{step}
                       </button>
@@ -1660,7 +1660,7 @@ export function BillingScreen({
           </div>
         </aside>
 
-        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur lg:hidden">
+        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 px-3 pt-2 pb-[max(0.75rem,var(--safe-bottom))] backdrop-blur lg:hidden">
           {planError ? (
             <p className="mb-2 line-clamp-2 text-[11px] text-amber-800">{planError}</p>
           ) : null}

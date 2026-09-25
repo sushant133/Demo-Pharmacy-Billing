@@ -243,6 +243,25 @@ export function AppShell({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [router, user.role]);
 
+  // The phone drawer behaves like the other overlays: Escape closes it, and
+  // the page behind it does not scroll under a thumb dragging the menu.
+  useEffect(() => {
+    if (!drawerOpen) return;
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setDrawerOpen(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [drawerOpen]);
+
   // `isActive` is the route the browser is actually on and drives aria-current,
   // which must not lie. `isHighlighted` is allowed to run one click ahead of it.
   const isActive = (href: string) => matches(currentUrl, href);
@@ -359,7 +378,7 @@ export function AppShell({
             onClick={() => setDrawerOpen(false)}
             className="absolute inset-0 bg-slate-950/70 backdrop-blur-[2px]"
           />
-          <div className="app-sidebar relative flex h-full w-[17rem] max-w-[85vw] flex-col shadow-2xl">
+          <div className="app-sidebar relative flex h-full w-[17rem] max-w-[85vw] flex-col pt-[var(--safe-top)] pb-[var(--safe-bottom)] shadow-2xl">
             {brand}
             {navLinks}
             <UserCard user={user} scope={scope} branches={branches} />
@@ -369,7 +388,7 @@ export function AppShell({
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Phone top bar */}
-        <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 md:hidden">
+        <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 pt-[calc(0.75rem+var(--safe-top))] md:hidden">
           <button
             type="button"
             onClick={() => setDrawerOpen(true)}
@@ -408,7 +427,7 @@ export function AppShell({
           className={cx(
             "min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8",
             pathname === "/billing" &&
-              "px-3 py-3 pb-[calc(5.5rem+env(safe-area-inset-bottom))] sm:px-4 lg:px-8 lg:py-6 lg:pb-6",
+              "px-3 py-3 pb-[calc(5.5rem+var(--safe-bottom))] sm:px-4 lg:px-8 lg:py-6 lg:pb-6",
           )}
         >
           {children}

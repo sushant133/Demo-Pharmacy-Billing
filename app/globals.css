@@ -44,6 +44,21 @@
 }
 
 @layer base {
+  /*
+    Safe-area insets.
+    -----------------
+    The viewport is `viewport-fit=cover`, and the Android app targets SDK 36,
+    where the WebView is drawn edge to edge under the status bar and the
+    gesture bar. Capacitor's SystemBars publishes the real insets as
+    `--safe-area-inset-*` (reliable on every WebView version); a browser or an
+    iOS home-screen install only has `env()`. Anything pinned to a screen edge
+    pads by these two, or its top row sits under the clock and camera cutout.
+  */
+  :root {
+    --safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+    --safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  }
+
   html {
     -webkit-text-size-adjust: 100%;
   }
@@ -423,6 +438,126 @@
 }
 
 /*
+  Phone layout: every row becomes a card.
+  ----------------------------------------
+  Below `sm` a phone has ~330px for a table. Pinning the name on the left
+  and the actions on the right used up nearly all of it, and the columns
+  somebody actually came to read scrolled through a sliver in between.
+
+  So on a phone each row is laid out as a card instead: the first cell is
+  the card's title, every other cell is a labelled field in a two-up grid,
+  and the actions sit along the bottom. Nothing scrolls sideways. The field
+  labels are the column headers, stamped onto each cell as `data-label` by
+  `TableStackLabels`. The header row itself is kept for screen readers.
+
+  Unlayered on purpose: utilities on a cell such as `text-right` and `px-4`,
+  and the pinned-column rules, live in cascade layers, and an unlayered rule
+  outranks every layered one.
+*/
+@media (width < 40rem) {
+  .table-stack {
+    overflow-x: visible;
+    background-image: none;
+  }
+
+  .table-stack > table {
+    min-width: 0 !important;
+  }
+
+  .table-stack > table,
+  .table-stack > table > tbody,
+  .table-stack > table > tfoot {
+    display: block;
+  }
+
+  .table-stack > table > thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .table-stack > table > tbody > tr,
+  .table-stack > table > tfoot > tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.625rem 1rem;
+    padding: 0.875rem 1rem;
+    border-bottom: 1px solid var(--color-slate-100);
+  }
+
+  .table-stack > table > tbody > tr:last-child {
+    border-bottom: 0;
+  }
+
+  .table-stack > table > tfoot > tr {
+    background-color: var(--color-slate-50);
+  }
+
+  .table-stack > table > * > tr > :is(td, th) {
+    display: block;
+    min-width: 0;
+    padding: 0;
+    text-align: left;
+    /* Undo the pinned-column treatment; nothing scrolls here. */
+    position: static;
+    background-color: transparent !important;
+  }
+
+  .table-stack > table > * > tr > :is(td, th)::after {
+    content: none !important;
+  }
+
+  /* The field's name, above its value. */
+  .table-stack > table > * > tr > :is(td, th)[data-label]:not(:first-child, .col-actions)::before {
+    content: attr(data-label);
+    position: static;
+    display: block;
+    width: auto;
+    margin-bottom: 0.125rem;
+    background: none;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    letter-spacing: 0.025em;
+    text-transform: uppercase;
+    color: var(--color-slate-400);
+  }
+
+  /* The row's name is the card's title, across the full width. */
+  .table-stack > table > * > tr > :is(td, th):first-child,
+  .table-stack > table > * > tr > :is(td, th)[colspan] {
+    grid-column: 1 / -1;
+  }
+
+  .table-stack > table > * > tr > :is(td, th):first-child::before,
+  .table-stack > table > * > tr > .col-actions::before {
+    content: none !important;
+  }
+
+  /* Actions along the bottom of the card, clear of the fields. */
+  .table-stack > table > * > tr > .col-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 0.125rem;
+    padding-top: 0.5rem;
+    border-top: 1px dashed var(--color-slate-200);
+  }
+
+  .table-stack > table > * > tr > .col-actions > * {
+    justify-content: flex-end;
+  }
+
+  /* A full-width text cell (an empty-list message) keeps its own padding. */
+  .table-stack > table > tbody > tr:only-child > td[colspan] {
+    padding: 0.5rem 0;
+  }
+}
+
+
+/*
   Sign-in screen.
   ---------------
   The one screen a stranger sees, and the screen staff meet at the start of
@@ -562,7 +697,7 @@
 .receipt-page {
   min-height: 100dvh;
   background: #f1f5f9;
-  padding: 1rem 0.75rem 5rem;
+  padding: calc(1rem + var(--safe-top)) 0.75rem calc(5rem + var(--safe-bottom));
 }
 
 .receipt-toolbar {
