@@ -19,7 +19,7 @@ android {
         // Bump both for every Play upload, and mirror versionCode in
         // lib/android-release.ts so installed tills are told to update.
         // Play rejects a versionCode it has already seen.
-        versionCode 4
+        versionCode 5
         versionName "1.0.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
