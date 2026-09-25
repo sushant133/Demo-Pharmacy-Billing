@@ -104,7 +104,7 @@ export default async function ReceivablesPage() {
             <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
               Receivables
             </h1>
-            <p className="mt-0.5 truncate text-sm text-slate-500">
+            <p className="mt-0.5 text-sm text-pretty text-slate-500">
               What customers still owe, largest first.
             </p>
           </div>

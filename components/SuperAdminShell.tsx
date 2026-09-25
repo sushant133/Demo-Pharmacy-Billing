@@ -167,8 +167,8 @@ export function SuperAdminShell({
   );
 
   return (
-    <div className="min-h-dvh lg:flex">
-      <aside className="hidden w-60 shrink-0 flex-col bg-slate-900 lg:sticky lg:top-0 lg:flex lg:h-dvh">
+    <div className="min-h-dvh pr-[var(--safe-right)] pl-[var(--safe-left)] lg:flex lg:pl-0">
+      <aside className="shell-column hidden w-[calc(15rem+var(--safe-left))] shrink-0 flex-col bg-slate-900 pt-[var(--safe-top)] pb-[var(--safe-bottom)] pl-[var(--safe-left)] lg:sticky lg:top-0 lg:flex lg:h-dvh">
         {brand}
         {navLinks}
         {userCard}
@@ -182,7 +182,11 @@ export function SuperAdminShell({
             onClick={() => setDrawerOpen(false)}
             className="absolute inset-0 bg-slate-900/60"
           />
+<<<<<<< HEAD
           <div className="relative flex h-dvh w-64 max-w-[85vw] flex-col bg-slate-900 pt-[var(--safe-top)] pb-[var(--safe-bottom)]">
+=======
+          <div className="shell-column relative flex h-dvh w-[calc(16rem+var(--safe-left))] max-w-[85vw] flex-col bg-slate-900 pt-[var(--safe-top)] pb-[var(--safe-bottom)] pl-[var(--safe-left)]">
+>>>>>>> 2fcdb0319f725eed5de854a6fd243c1442a8b2fe
             {brand}
             {navLinks}
             {userCard}
@@ -191,7 +195,11 @@ export function SuperAdminShell({
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col">
+<<<<<<< HEAD
         <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 pt-[calc(0.75rem+var(--safe-top))] lg:hidden">
+=======
+        <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-slate-200 bg-white px-4 pt-[calc(0.75rem+var(--safe-top))] pb-3 lg:hidden">
+>>>>>>> 2fcdb0319f725eed5de854a6fd243c1442a8b2fe
           <button
             type="button"
             onClick={() => setDrawerOpen(true)}
@@ -207,7 +215,9 @@ export function SuperAdminShell({
             <span className="block text-[11px] font-normal text-slate-500">Platform</span>
           </span>
         </header>
-        <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+        <main className="min-w-0 flex-1 px-4 pt-6 pb-[calc(1.5rem+var(--safe-bottom))] sm:px-6 lg:px-8 lg:pt-[calc(1.5rem+var(--safe-top))]">
+          {children}
+        </main>
       </div>
     </div>
   );

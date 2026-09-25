@@ -177,7 +177,7 @@ export function DualDateField({
     <div
       className={cx(
         "min-w-0",
-        split ? "grid gap-2 sm:grid-cols-2" : "space-y-1.5",
+        split ? "grid grid-cols-1 gap-2 sm:grid-cols-2" : "space-y-1.5",
       )}
     >
       <div className="min-w-0">

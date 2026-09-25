@@ -142,7 +142,7 @@ export default async function SupplierDetailPage({
         />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="overflow-hidden lg:col-span-2">
           <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
             <h2 className="text-sm font-semibold text-slate-900">Purchase history</h2>
@@ -349,8 +349,8 @@ export default async function SupplierDetailPage({
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-3">
-      <dt className="text-slate-600">{label}</dt>
-      <dd className="text-right font-medium text-slate-900">{value}</dd>
+      <dt className="shrink-0 text-slate-600">{label}</dt>
+      <dd className="min-w-0 text-right font-medium break-words text-slate-900">{value}</dd>
     </div>
   );
 }

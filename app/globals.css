@@ -43,6 +43,28 @@
   --color-chart-surface: #ffffff;
 }
 
+/*
+  Safe-area insets.
+  -----------------
+  The page draws edge to edge (`viewport-fit=cover`), so on a phone it runs
+  under the status bar, the gesture or button bar and any camera cutout. Every
+  surface that touches a screen edge pads itself by these instead of by a raw
+  `env()`:
+
+    - Browsers and Chrome 140+ WebViews report `env(safe-area-inset-*)`.
+    - Older Android WebViews report zero there, and the Capacitor shell
+      injects `--safe-area-inset-*` instead (it pads the WebView natively in
+      that case and injects zeros, so the two never add up).
+
+  `max()` takes whichever is real. Off a phone all four are 0 and nothing moves.
+*/
+:root {
+  --safe-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
+  --safe-right: max(env(safe-area-inset-right, 0px), var(--safe-area-inset-right, 0px));
+  --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
+  --safe-left: max(env(safe-area-inset-left, 0px), var(--safe-area-inset-left, 0px));
+}
+
 @layer base {
   /*
     Safe-area insets.
@@ -258,7 +280,14 @@
     the table from turning into the browser's back gesture, which on a phone
     threw away whatever the user had filtered to.
   */
+  /*
+    `relative` makes the scroller the containing block for anything absolute
+    inside the table - chiefly `sr-only` labels, which otherwise anchor to the
+    page and, from a column scrolled far to the right, widened the document
+    by hundreds of pixels.
+  */
   .table-scroll {
+    position: relative;
     overflow-x: auto;
     overscroll-behavior-x: contain;
     -webkit-overflow-scrolling: touch;
@@ -422,6 +451,66 @@
 
   .action-icon:focus-visible .action-tip {
     @apply block;
+  }
+}
+
+/*
+  The figure in a stat tile.
+  --------------------------
+  Tiles sit two-up on a phone, and with Android's larger system text a rupee
+  total no longer fit: it split mid-number ("Rs 39,558.9" / "8"), which reads
+  as a different amount. The figure now takes the smaller of its design size
+  and a share of the tile's own width (the tile is an `@container`), so it
+  shrinks to fit rather than breaking; if it still cannot fit it wraps only at
+  the space after "Rs". On a desktop tile the width share is larger than the
+  design size, so nothing there changes.
+*/
+.stat-figure {
+  --stat-size: 1.25rem;
+  font-size: clamp(1rem, 15cqi, var(--stat-size));
+  line-height: 1.2;
+  overflow-wrap: normal;
+  word-break: keep-all;
+}
+
+@media (min-width: 360px) {
+  .stat-figure-lg {
+    --stat-size: 1.5rem;
+  }
+}
+
+@media (min-width: 640px) {
+  .stat-figure {
+    --stat-size: 1.5rem;
+  }
+
+  .stat-figure-lg {
+    --stat-size: 1.875rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .stat-figure {
+    --stat-size: 1.875rem;
+  }
+}
+
+/*
+  Short screens - a phone on its side is about 360px tall. The menu column
+  normally pins the brand and the user card and scrolls only the menu between
+  them, which there left the menu a sliver two rows tall. Below this height
+  the whole column scrolls instead, so every row is reachable.
+  Unlayered, so it outranks the flex/overflow utilities on the <nav>.
+*/
+@media (max-height: 540px) {
+  .shell-column {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .shell-column > nav {
+    flex: none;
+    overflow: visible;
   }
 }
 
@@ -697,7 +786,20 @@
 .receipt-page {
   min-height: 100dvh;
   background: #f1f5f9;
+<<<<<<< HEAD
   padding: calc(1rem + var(--safe-top)) 0.75rem calc(5rem + var(--safe-bottom));
+=======
+  padding: calc(1rem + var(--safe-top)) calc(0.75rem + var(--safe-right))
+    calc(5rem + var(--safe-bottom)) calc(0.75rem + var(--safe-left));
+}
+
+/*
+  Inside the platform shell, whose bar and gutters already clear the
+  system bars - the insets above would be counted twice.
+*/
+.receipt-page-embedded {
+  padding: 1rem 0.75rem 5rem;
+>>>>>>> 2fcdb0319f725eed5de854a6fd243c1442a8b2fe
 }
 
 .receipt-toolbar {

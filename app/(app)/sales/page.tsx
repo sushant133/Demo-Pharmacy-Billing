@@ -360,7 +360,7 @@ export default async function SalesPage({
         workplace, and putting it in the shared component would have redrawn
         the top of all sixty-odd screens to solve a problem on one of them.
       */}
-      <header className="mb-4 flex flex-col gap-3 sm:gap-4 md:flex-row md:items-start md:justify-between">
+      <header className="mb-4 flex flex-col gap-3 sm:gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex min-w-0 items-center gap-3.5">
           <span
             aria-hidden="true"
@@ -405,7 +405,7 @@ export default async function SalesPage({
           </div>
         </div>
 
-        <div className="flex w-full flex-wrap items-center gap-2 md:w-auto md:shrink-0">
+        <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto lg:shrink-0">
           {/*
             A <details> menu rather than a React dropdown: it opens, closes on
             Escape, and is keyboard-reachable with no JavaScript and no state
@@ -443,7 +443,7 @@ export default async function SalesPage({
                 </svg>
               </summary>
 
-              <div className="absolute right-0 z-20 mt-1.5 w-60 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg shadow-slate-900/5">
+              <div className="absolute left-0 z-20 mt-1.5 w-60 max-w-[calc(100vw-2rem)] overflow-hidden lg:right-0 lg:left-auto rounded-xl border border-slate-200 bg-white shadow-lg shadow-slate-900/5">
                 <p className="border-b border-slate-100 px-3 py-2 text-[11px] text-slate-500">
                   Sales register for{" "}
                   <span className="font-medium text-slate-700">

@@ -344,7 +344,7 @@ export default async function InvoicesPage({
         twenty minutes a month they chase what is owed, and the marked-up title
         tile is what tells them at a glance which of the two lists they are on.
       */}
-      <header className="mb-4 flex flex-col gap-3 sm:gap-4 md:flex-row md:items-start md:justify-between">
+      <header className="mb-4 flex flex-col gap-3 sm:gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex min-w-0 items-center gap-3 sm:gap-3.5">
           <span
             aria-hidden="true"
@@ -385,7 +385,7 @@ export default async function InvoicesPage({
           the title instead of being pushed off the right edge. `shrink-0`
           without `flex-wrap` was what made this row overflow the viewport.
         */}
-        <div className="flex w-full flex-wrap items-center gap-2 md:w-auto md:shrink-0">
+        <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto lg:shrink-0">
           {/*
             Export, in the same <details> menu the sales register uses, so the
             two screens open the same way. It carries whatever range and
@@ -426,7 +426,7 @@ export default async function InvoicesPage({
                 </svg>
               </summary>
 
-              <div className="absolute left-0 z-20 mt-1.5 w-60 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg shadow-slate-900/5 sm:right-0 sm:left-auto">
+              <div className="absolute left-0 z-20 mt-1.5 w-60 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg shadow-slate-900/5 lg:right-0 lg:left-auto">
                 <p className="border-b border-slate-100 px-3 py-2 text-[11px] text-slate-500">
                   Sales register for{" "}
                   <span className="font-medium text-slate-700">
@@ -505,7 +505,7 @@ export default async function InvoicesPage({
       <Card className="mb-4 p-3.5 sm:p-4">
         <form
           method="get"
-          className="grid gap-x-5 gap-y-3.5 lg:grid-cols-[minmax(0,15rem)_minmax(0,15rem)_minmax(0,1fr)]"
+          className="grid grid-cols-1 gap-x-5 gap-y-3.5 lg:grid-cols-[minmax(0,15rem)_minmax(0,15rem)_minmax(0,1fr)]"
         >
           <div className="min-w-0">
             <FilterLabel icon={CALENDAR}>From</FilterLabel>
@@ -582,7 +582,7 @@ export default async function InvoicesPage({
               ) : null}
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[9rem_9rem_minmax(0,1fr)_auto]">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-[9rem_9rem_minmax(0,1fr)_auto]">
               <div className="min-w-0">
                 <FilterLabel icon={FILTER} htmlFor="status">
                   Status

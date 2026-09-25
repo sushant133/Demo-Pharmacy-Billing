@@ -33,6 +33,7 @@
     "@capacitor/app": "^8.1.1",
     "@capacitor/core": "^8.5.2",
     "@capacitor/splash-screen": "^8.0.2",
+    "@capawesome/capacitor-app-update": "^8.0.5",
     "bcryptjs": "^3.0.2",
     "exceljs": "^4.4.0",
     "jose": "^5.9.6",

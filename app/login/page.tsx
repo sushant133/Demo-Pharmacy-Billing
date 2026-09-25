@@ -71,11 +71,15 @@ export default async function LoginPage({
   const sessionHours = Math.max(1, Math.round(config.sessionTtlSeconds / 3600));
 
   return (
-    <div className="grid min-h-dvh lg:grid-cols-[minmax(0,1fr)_minmax(0,30rem)] xl:grid-cols-2">
+    <div className="grid grid-cols-1 min-h-dvh lg:grid-cols-[minmax(0,1fr)_minmax(0,30rem)] xl:grid-cols-2">
       <BrandPanel />
 
       {/* Counter panel */}
+<<<<<<< HEAD
       <div className="login-counter flex flex-col justify-center px-4 py-10 pt-[calc(2.5rem+var(--safe-top))] sm:px-8 lg:px-12">
+=======
+      <div className="login-counter flex flex-col justify-center px-4 pt-[calc(2.5rem+var(--safe-top))] pb-[calc(2.5rem+var(--safe-bottom))] sm:px-8 lg:px-12">
+>>>>>>> 2fcdb0319f725eed5de854a6fd243c1442a8b2fe
         <div className="mx-auto w-full max-w-[26rem]">
           <MobileBrand />
 

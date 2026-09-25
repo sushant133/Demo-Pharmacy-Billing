@@ -222,7 +222,7 @@ export async function MovementScreen({
                   </svg>
                 </summary>
 
-                <div className="absolute right-0 z-20 mt-1.5 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg shadow-slate-900/5">
+                <div className="absolute left-0 z-20 mt-1.5 w-56 max-w-[calc(100vw-2rem)] overflow-hidden sm:right-0 sm:left-auto rounded-xl border border-slate-200 bg-white shadow-lg shadow-slate-900/5">
                   <p className="border-b border-slate-100 px-3 py-2 text-[11px] text-slate-500">
                     {from} – {to}
                   </p>

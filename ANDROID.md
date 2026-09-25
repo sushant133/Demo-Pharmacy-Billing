@@ -103,7 +103,20 @@ model turns out to negotiate a larger MTU, `CHUNK` in
 
 ## Icons and splash
 
-Sources live in `assets/`. To regenerate every density after changing them:
+The launch screen, its full-screen fallback and the adaptive-icon foreground
+are rendered from `public/mantramed-logo.png` at every density:
+
+```
+npx tsx scripts/generate-android-splash.ts
+```
+
+The launch screen is drawn by the AndroidX SplashScreen API from two theme
+attributes in `res/values/styles.xml` - `windowSplashScreenBackground` and
+`windowSplashScreenAnimatedIcon` (`@drawable/splash_icon`). Do not put a
+full-screen bitmap back on the launch theme's `android:background`: it is
+stretched to the window's aspect ratio and distorts the logo.
+
+Other sources live in `assets/`. To regenerate every density after changing them:
 
 ```
 npx capacitor-assets generate --android --iconBackgroundColor "#0f766e" --splashBackgroundColor "#f1f5f9" --splashBackgroundColorDark "#0b1220"

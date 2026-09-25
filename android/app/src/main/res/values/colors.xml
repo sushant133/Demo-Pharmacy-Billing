@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      The launch ground. White in dark mode too: the emblem is dark navy on
+      its upper half, and the web app the splash hands over to is light-only.
+    -->
+    <color name="splash_background">#FFFFFF</color>
+</resources>

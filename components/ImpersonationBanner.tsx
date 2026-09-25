@@ -42,7 +42,7 @@ export function ImpersonationBanner({
   }
 
   return (
-    <div className="sticky top-0 z-50 bg-rose-700 text-white">
+    <div className="sticky top-0 z-50 bg-rose-700 pt-[var(--safe-top)] pr-[var(--safe-right)] pl-[var(--safe-left)] text-white">
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-sm sm:px-6">
         <p>
           <span className="font-semibold">{platformUser}</span> (platform

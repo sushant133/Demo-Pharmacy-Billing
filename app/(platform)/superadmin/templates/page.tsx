@@ -60,7 +60,7 @@ export default async function TemplateGalleryPage() {
         }
       />
 
-      <div className="grid gap-5 lg:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 xl:grid-cols-3">
         {PRINT_TEMPLATE_LIST.map((template) => (
           <TemplateCard
             key={template.id}

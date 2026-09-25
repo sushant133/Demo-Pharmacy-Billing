@@ -1,4 +1,4 @@
-import { config } from "@/lib/config";
+import { EMAIL_LOGO_CID } from "@/lib/email/logo";
 
 /**
  * The frame every MantraMed email is sent in.
@@ -141,14 +141,14 @@ function buttonHtml(button: EmailButton): string {
 /**
  * Wrap content in the MantraMed frame.
  *
- * The logo is referenced by absolute URL rather than embedded: a CID
- * attachment makes the message heavier for every recipient, and an image that
- * fails to load has to be survivable anyway - which is why the header also
- * carries the name as live text, and why nothing below depends on an image
- * appearing.
+ * The logo is a CID inline part carried in the message itself (see
+ * lib/email/logo.ts) - a linked image depended on APP_URL being reachable
+ * from Gmail's image proxy, and too often was not. An image that fails to
+ * load still has to be survivable, which is why the header also carries the
+ * name as live text and nothing below depends on an image appearing.
  */
 export function renderEmail(content: EmailContent): string {
-  const logo = `${config.appUrl}/icon-192.png`;
+  const logo = `cid:${EMAIL_LOGO_CID}`;
 
   const body = [
     ...content.intro.map(paragraph),
@@ -181,7 +181,7 @@ export function renderEmail(content: EmailContent): string {
             <table role="presentation" cellpadding="0" cellspacing="0" border="0">
               <tr>
                 <td style="padding-right:14px;" valign="middle">
-                  <img src="${escapeHtml(logo)}" width="44" height="44" alt="" style="display:block;width:44px;height:44px;border:0;border-radius:10px;background:#ffffff;">
+                  <img src="${escapeHtml(logo)}" width="44" height="44" alt="MantraMed" style="display:block;width:44px;height:44px;border:0;outline:none;text-decoration:none;border-radius:10px;background:#ffffff;">
                 </td>
                 <td valign="middle">
                   <div style="font-size:20px;font-weight:bold;color:#ffffff;font-family:Arial,Helvetica,sans-serif;letter-spacing:-0.2px;">MantraMed</div>

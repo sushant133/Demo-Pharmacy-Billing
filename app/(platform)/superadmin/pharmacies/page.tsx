@@ -61,7 +61,7 @@ export default async function PharmaciesPage({
         }
       />
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-3">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard label="Total" value={String(counts.total)} />
         <StatCard label="Active" value={String(counts.active)} tone="brand" />
         <StatCard label="Suspended" value={String(counts.suspended)} />

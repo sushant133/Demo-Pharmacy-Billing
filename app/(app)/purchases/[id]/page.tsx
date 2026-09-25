@@ -125,7 +125,7 @@ export default async function PurchaseDetailPage({
         </div>
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="overflow-hidden lg:col-span-2">
           <h2 className="border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-900">
             Items received

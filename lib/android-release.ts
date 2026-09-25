@@ -10,11 +10,11 @@
  * it turns the prompt into a wall the cashier cannot dismiss.
  */
 export const ANDROID_RELEASE = {
-  versionCode: 1,
-  versionName: "1.0.0",
+  versionCode: 5,
+  versionName: "1.0.1",
   minimumVersionCode: 1,
   storeUrl: "https://play.google.com/store/apps/details?id=tech.mantramed",
-  notes: "First release.",
+  notes: "Sharper launch screen, faster start-up, and screens that fit every phone.",
 } as const;
 
 export type AndroidRelease = typeof ANDROID_RELEASE;

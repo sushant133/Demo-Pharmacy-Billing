@@ -92,7 +92,7 @@ export default async function PharmacyDetailPage({
         </span>
       </div>
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Bills (30 days)"
           value={integer(stats.billsLast30)}
@@ -106,7 +106,7 @@ export default async function PharmacyDetailPage({
         />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="space-y-6">
           <PharmacyProfileForm
             pharmacyId={pharmacy.id}
@@ -141,7 +141,7 @@ export default async function PharmacyDetailPage({
               Counts only. Reading this shop&rsquo;s actual records means a
               backup file, or signing in as the owner — which is recorded.
             </p>
-            <dl className="mt-4 grid gap-4 sm:grid-cols-3">
+            <dl className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
               <Figure label="Outlets" value={`${stats.activeBranches} / ${stats.branches}`} />
               <Figure label="Medicines" value={integer(stats.medicines)} />
               <Figure label="Lots in stock" value={integer(stats.lots)} />

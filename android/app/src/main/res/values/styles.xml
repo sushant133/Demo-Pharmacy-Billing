@@ -9,14 +9,33 @@
         <item name="colorAccent">@color/colorAccent</item>
     </style>
 
-    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
+    <!--
+      Light, not DayNight: the web app is light-only, and on WebViews older
+      than Chrome 140 Capacitor pads the WebView and paints this window's
+      background behind the status and navigation bars. A dark ground there
+      framed a white page in black bars with the wrong icon colour.
+    -->
+    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.Light.NoActionBar">
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
+        <item name="android:windowBackground">@color/splash_background</item>
     </style>
 
+    <!--
+      The launch screen. Capacitor's splash plugin shows it through the
+      AndroidX SplashScreen API on every Android version, which draws only
+      the two splash attributes below: a flat ground and a centred emblem.
 
+      The emblem is its own density-bucketed bitmap (scripts/
+      generate-android-splash.ts). Left unset, the library falls back to a
+      generic icon, and a full-screen bitmap set as `android:background` is
+      stretched to the window's aspect ratio - which is what distorted the
+      logo on tall phones.
+    -->
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
-        <item name="android:background">@drawable/splash</item>
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
     </style>
 </resources>

@@ -210,6 +210,37 @@ describe("buildMimeMessage", () => {
     expect(raw).not.toContain("Subject: कर बीजक तयार छ");
   });
 
+  it("carries a Date, a Message-ID on the From domain and auto-reply guards", () => {
+    const raw = buildMimeMessage(base);
+    expect(raw).toMatch(/\r\nDate: .+\+0000\r\n/);
+    expect(raw).toMatch(/\r\nMessage-ID: <[^@>]+@example\.com>\r\n/);
+    expect(raw).toContain("Auto-Submitted: auto-generated");
+  });
+
+  it("wraps an inline image in multipart/related with its Content-ID", () => {
+    const raw = buildMimeMessage({
+      ...base,
+      html: '<img src="cid:logo@mantramed">',
+      inline: [
+        {
+          cid: "logo@mantramed",
+          filename: "logo.png",
+          contentType: "image/png",
+          content: Buffer.from("png-bytes"),
+        },
+      ],
+    });
+    const related = raw.match(/multipart\/related; boundary="([^"]+)"/)?.[1];
+    expect(related).toBeTruthy();
+    // Opened for the alternative part and the image, then closed.
+    expect(raw.split(`--${related}\r\n`)).toHaveLength(3);
+    expect(raw).toContain(`--${related}--`);
+    expect(raw).toContain("Content-ID: <logo@mantramed>");
+    expect(raw).toContain("Content-Disposition: inline");
+    expect(raw.indexOf("text/html")).toBeLessThan(raw.indexOf("image/png"));
+    expect(raw.replace(/\r\n/g, "")).not.toContain("\n");
+  });
+
   it("includes Reply-To only when there is one", () => {
     expect(buildMimeMessage(base)).not.toContain("Reply-To:");
     expect(

@@ -179,7 +179,7 @@ export default async function SuppliersPage({
           })}
         </div>
 
-        <form method="get" className="grid gap-3 sm:grid-cols-3">
+        <form method="get" className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {status !== "all" ? <input type="hidden" name="status" value={status} /> : null}
           <div className="sm:col-span-2">
             <label htmlFor="q" className="label">
@@ -193,7 +193,7 @@ export default async function SuppliersPage({
               className="input"
             />
           </div>
-          <div className="flex items-end gap-2">
+          <div className="flex flex-wrap items-end gap-2">
             <button type="submit" className="btn-primary flex-1">
               Search
             </button>

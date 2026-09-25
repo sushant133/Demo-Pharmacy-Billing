@@ -166,7 +166,7 @@ export default async function ActivityPage({
       </div>
 
       <Card className="mb-4 p-3.5 sm:p-4">
-        <form method="get" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <form method="get" className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <div className="min-w-0">
             <label htmlFor="from" className="label">
               From

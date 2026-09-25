@@ -173,7 +173,7 @@ export default async function PrescriptionsPage({
             <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
               Prescriptions
             </h1>
-            <p className="mt-0.5 truncate text-sm text-slate-500">
+            <p className="mt-0.5 text-sm text-pretty text-slate-500">
               What was prescribed, and how much of it is still owed.
             </p>
           </div>
@@ -225,7 +225,7 @@ export default async function PrescriptionsPage({
       </div>
 
       <Card className="mb-4 p-3.5 sm:p-4">
-        <form method="get" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <form method="get" className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <div className="min-w-0 sm:col-span-2">
             <label htmlFor="q" className="label">
               Search

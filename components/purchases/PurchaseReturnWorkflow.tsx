@@ -270,7 +270,7 @@ export function PurchaseReturnWorkflow({
         </Card>
       ) : (
         <Card className="p-4 sm:p-5">
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <div>
               <label
                 htmlFor="pr-reason-code"

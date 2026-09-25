@@ -85,7 +85,7 @@ export function StatCard({
   const body = (
     <div
       className={cx(
-        "card h-full p-4 transition-shadow sm:p-5",
+        "card @container h-full p-4 transition-shadow sm:p-5",
         tones[tone],
         href && "hover:shadow-md",
       )}
@@ -96,9 +96,10 @@ export function StatCard({
       {/*
         A four-figure rupee total at `text-3xl` does not fit two-up on a
         360px phone, and these tiles are always laid out two-up. The figure
-        steps down with the viewport instead of overflowing its tile.
+        steps down with the tile, and never splits mid-number - see
+        `.stat-figure` in app/globals.css.
       */}
-      <p className="tnum mt-1.5 text-xl font-semibold break-words text-slate-900 sm:mt-2 sm:text-2xl lg:text-3xl">
+      <p className="stat-figure tnum mt-1.5 font-semibold text-slate-900 sm:mt-2">
         {value}
       </p>
       {hint ? (

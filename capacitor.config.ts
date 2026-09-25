@@ -46,9 +46,21 @@ const config: CapacitorConfig = {
       launchShowDuration: 3000,
       launchFadeOutDuration: 200,
       backgroundColor: "#ffffffff",
-      androidScaleType: "CENTER_CROP",
+      // Only used by SplashScreen.show() / the pre-AndroidX fallback; the
+      // launch itself draws the theme's splash_icon. FIT_CENTER keeps the
+      // whole emblem at its aspect on any screen shape - CENTER_CROP cut it
+      // on wide screens.
+      androidScaleType: "FIT_CENTER",
       showSpinner: false,
       androidSpinnerStyle: "small",
+    },
+    SystemBars: {
+      // The page draws edge to edge (viewport-fit=cover) and pads itself with
+      // the safe-area insets; saying so up front avoids a first-frame jump.
+      initialViewportFitValueHint: "cover",
+      insetsHandling: "css",
+      // Dark status/navigation icons: every screen under them is light.
+      style: "LIGHT",
     },
   },
 };

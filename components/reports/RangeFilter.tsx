@@ -120,7 +120,11 @@ export function RangeFilter({
         action={basePath}
         className="mt-3 flex flex-wrap items-end gap-3 border-t border-slate-100 pt-3"
       >
-        <div className="min-w-0 flex-1 sm:min-w-[16rem]">
+        {/*
+          Full width each on a phone. Side by side at 360px the two date
+          fields were squeezed to a few characters and the dates were cut.
+        */}
+        <div className="min-w-0 flex-1 basis-full sm:basis-auto sm:min-w-[16rem]">
           <p className="label">From</p>
           <DualDateField
             id="from"
@@ -130,7 +134,7 @@ export function RangeFilter({
             aria-label="From"
           />
         </div>
-        <div className="min-w-0 flex-1 sm:min-w-[16rem]">
+        <div className="min-w-0 flex-1 basis-full sm:basis-auto sm:min-w-[16rem]">
           <p className="label">To</p>
           <DualDateField
             id="to"

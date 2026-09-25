@@ -161,7 +161,7 @@ export function CreatePharmacyForm() {
           All optional. Fill in what you have; the rest can be added from the
           pharmacy&rsquo;s own page when the paperwork arrives.
         </p>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor="pan" className="label">
               PAN <span className="font-normal text-slate-400">(optional)</span>
@@ -199,7 +199,7 @@ export function CreatePharmacyForm() {
 
       <fieldset className="space-y-4 border-t border-slate-100 pt-5">
         <legend className="text-sm font-semibold text-slate-900">Contact</legend>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor="address" className="label">
               Address <span className="font-normal text-slate-400">(optional)</span>
@@ -312,7 +312,7 @@ export function CreatePharmacyForm() {
           address with the login ID. The owner is asked to choose their own
           password the first time they sign in.
         </p>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor="ownerPhone" className="label">
               Owner phone <span className="font-normal text-slate-400">(optional)</span>

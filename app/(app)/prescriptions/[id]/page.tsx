@@ -115,7 +115,7 @@ export default async function PrescriptionDetailPage({
         </div>
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
           <Card className="overflow-hidden">
             <h2 className="border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-900">

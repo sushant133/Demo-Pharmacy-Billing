@@ -135,8 +135,29 @@ export const config = {
       || num(process.env.SMTP_PORT, 587) === 465,
     user: unquoteEnv(process.env.SMTP_USER),
     password: unquoteEnv(process.env.SMTP_PASSWORD),
-    from: unquoteEnv(process.env.MAIL_FROM) || "MantraMed <no-reply@mantramed.app>",
+    /*
+      With no MAIL_FROM, a Google deployment sends as the account that
+      granted consent: that is the only From the account's DKIM signature
+      aligns with, and a From on any other domain fails DMARC - the most
+      common reason these messages were landing in spam.
+    */
+    from:
+      unquoteEnv(process.env.MAIL_FROM) ||
+      (unquoteEnv(process.env.GOOGLE_MAIL_SENDER)
+        ? `MantraMed <${unquoteEnv(process.env.GOOGLE_MAIL_SENDER)}>`
+        : "MantraMed <no-reply@mantramed.app>"),
     replyTo: unquoteEnv(process.env.MAIL_REPLY_TO),
+    /**
+     * DKIM signing for the SMTP transport. Only needed when the relay does
+     * not sign for you (Google Workspace, SES, SendGrid, Postmark all do, once
+     * the domain is verified with them). The key may be given with literal
+     * `\n` escapes, since most hosting dashboards take a single-line value.
+     */
+    dkim: {
+      domain: unquoteEnv(process.env.DKIM_DOMAIN),
+      selector: unquoteEnv(process.env.DKIM_SELECTOR),
+      privateKey: unquoteEnv(process.env.DKIM_PRIVATE_KEY).replace(/\\n/g, "\n"),
+    },
   },
   appUrl: resolveAppUrl(process.env),
 } as const;
