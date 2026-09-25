@@ -29,11 +29,7 @@ const COMPANY = "MantraSphere Innovations Pvt. Ltd.";
 
 export default function PrivacyPage() {
   return (
-<<<<<<< HEAD
-    <div className="login-counter min-h-dvh px-4 py-10 pt-[calc(2.5rem+var(--safe-top))] sm:px-8">
-=======
     <div className="login-counter min-h-dvh px-4 pt-[calc(2.5rem+var(--safe-top))] pb-[calc(2.5rem+var(--safe-bottom))] sm:px-8">
->>>>>>> 2fcdb0319f725eed5de854a6fd243c1442a8b2fe
       <div className="mx-auto w-full max-w-3xl">
         <Link href="/login" className="mb-8 flex items-center gap-3.5">
           <Image

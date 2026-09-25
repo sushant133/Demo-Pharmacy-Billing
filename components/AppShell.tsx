@@ -381,11 +381,7 @@ export function AppShell({
             onClick={() => setDrawerOpen(false)}
             className="absolute inset-0 bg-slate-950/70 backdrop-blur-[2px]"
           />
-<<<<<<< HEAD
-          <div className="app-sidebar relative flex h-full w-[17rem] max-w-[85vw] flex-col pt-[var(--safe-top)] pb-[var(--safe-bottom)] shadow-2xl">
-=======
           <div className="app-sidebar shell-column relative flex h-full w-[calc(17rem+var(--safe-left))] max-w-[85vw] flex-col pt-[var(--safe-top)] pb-[var(--safe-bottom)] pl-[var(--safe-left)] shadow-2xl">
->>>>>>> 2fcdb0319f725eed5de854a6fd243c1442a8b2fe
             {brand}
             {navLinks}
             <UserCard user={user} scope={scope} branches={branches} />
@@ -395,11 +391,7 @@ export function AppShell({
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Phone top bar */}
-<<<<<<< HEAD
-        <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 pt-[calc(0.75rem+var(--safe-top))] md:hidden">
-=======
         <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-slate-200 bg-white px-4 pt-[calc(0.75rem+var(--safe-top))] pb-3 md:hidden">
->>>>>>> 2fcdb0319f725eed5de854a6fd243c1442a8b2fe
           <button
             type="button"
             onClick={() => setDrawerOpen(true)}
@@ -442,16 +434,10 @@ export function AppShell({
         */}
         <main
           className={cx(
-<<<<<<< HEAD
-            "min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8",
-            pathname === "/billing" &&
-              "px-3 py-3 pb-[calc(5.5rem+var(--safe-bottom))] sm:px-4 lg:px-8 lg:py-6 lg:pb-6",
-=======
             "min-w-0 flex-1",
             pathname === "/billing"
               ? "px-3 pt-3 pb-[calc(5.5rem+var(--safe-bottom))] sm:px-4 md:pt-[calc(0.75rem+var(--safe-top))] lg:px-8 lg:pt-[calc(1.5rem+var(--safe-top))] lg:pb-[calc(1.5rem+var(--safe-bottom))]"
               : "px-4 pt-6 pb-[calc(1.5rem+var(--safe-bottom))] sm:px-6 md:pt-[calc(1.5rem+var(--safe-top))] lg:px-8",
->>>>>>> 2fcdb0319f725eed5de854a6fd243c1442a8b2fe
           )}
         >
           {children}

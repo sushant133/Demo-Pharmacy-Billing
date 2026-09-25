@@ -86,11 +86,7 @@ export function ConfirmSale({
         role="dialog"
         aria-modal="true"
         aria-labelledby="confirm-sale-title"
-<<<<<<< HEAD
-        className="relative flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-white pb-[var(--safe-bottom)] shadow-2xl sm:rounded-2xl sm:pb-0"
-=======
         className="relative flex max-h-[calc(92dvh-var(--safe-top))] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-white pb-[var(--safe-bottom)] shadow-2xl sm:rounded-2xl sm:pb-0"
->>>>>>> 2fcdb0319f725eed5de854a6fd243c1442a8b2fe
       >
         <div className="shrink-0 border-b border-slate-100 px-5 py-4">
           <h2 id="confirm-sale-title" className="text-base font-semibold text-slate-900">

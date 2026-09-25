@@ -1669,11 +1669,7 @@ export function BillingScreen({
           </div>
         </aside>
 
-<<<<<<< HEAD
-        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 px-3 pt-2 pb-[max(0.75rem,var(--safe-bottom))] backdrop-blur lg:hidden">
-=======
         <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 pt-2 pr-[calc(0.75rem+var(--safe-right))] pb-[max(0.75rem,var(--safe-bottom))] pl-[calc(0.75rem+var(--safe-left))] backdrop-blur md:left-[calc(15rem+var(--safe-left))] md:pl-3 lg:hidden">
->>>>>>> 2fcdb0319f725eed5de854a6fd243c1442a8b2fe
           {planError ? (
             <p className="mb-2 line-clamp-2 text-[11px] text-amber-800">{planError}</p>
           ) : null}

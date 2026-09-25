@@ -182,11 +182,7 @@ export function SuperAdminShell({
             onClick={() => setDrawerOpen(false)}
             className="absolute inset-0 bg-slate-900/60"
           />
-<<<<<<< HEAD
-          <div className="relative flex h-dvh w-64 max-w-[85vw] flex-col bg-slate-900 pt-[var(--safe-top)] pb-[var(--safe-bottom)]">
-=======
           <div className="shell-column relative flex h-dvh w-[calc(16rem+var(--safe-left))] max-w-[85vw] flex-col bg-slate-900 pt-[var(--safe-top)] pb-[var(--safe-bottom)] pl-[var(--safe-left)]">
->>>>>>> 2fcdb0319f725eed5de854a6fd243c1442a8b2fe
             {brand}
             {navLinks}
             {userCard}
@@ -195,11 +191,7 @@ export function SuperAdminShell({
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col">
-<<<<<<< HEAD
-        <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 pt-[calc(0.75rem+var(--safe-top))] lg:hidden">
-=======
         <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-slate-200 bg-white px-4 pt-[calc(0.75rem+var(--safe-top))] pb-3 lg:hidden">
->>>>>>> 2fcdb0319f725eed5de854a6fd243c1442a8b2fe
           <button
             type="button"
             onClick={() => setDrawerOpen(true)}

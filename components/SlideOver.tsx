@@ -63,11 +63,7 @@ export function SlideOver({
       */}
       <div
         ref={panelRef}
-<<<<<<< HEAD
-        className="relative flex h-dvh w-full max-w-md flex-col bg-white pt-[var(--safe-top)] shadow-xl"
-=======
         className="relative flex h-dvh w-full max-w-md flex-col bg-white pt-[var(--safe-top)] pr-[var(--safe-right)] shadow-xl"
->>>>>>> 2fcdb0319f725eed5de854a6fd243c1442a8b2fe
       >
         <header className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-3.5 sm:px-5 sm:py-4">
           <div className="min-w-0">
@@ -114,11 +110,7 @@ export function SlideOver({
           landscape too, which is wider than `sm`, so the inset is kept there.
         */}
         {footer ? (
-<<<<<<< HEAD
-          <footer className="border-t border-slate-200 px-4 py-3.5 pb-[calc(0.875rem+var(--safe-bottom))] sm:px-5 sm:py-4 sm:pb-4">
-=======
           <footer className="border-t border-slate-200 px-4 pt-3.5 pb-[calc(0.875rem+var(--safe-bottom))] sm:px-5 sm:pt-4 sm:pb-[calc(1rem+var(--safe-bottom))]">
->>>>>>> 2fcdb0319f725eed5de854a6fd243c1442a8b2fe
             {footer}
           </footer>
         ) : null}

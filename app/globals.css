@@ -786,9 +786,6 @@
 .receipt-page {
   min-height: 100dvh;
   background: #f1f5f9;
-<<<<<<< HEAD
-  padding: calc(1rem + var(--safe-top)) 0.75rem calc(5rem + var(--safe-bottom));
-=======
   padding: calc(1rem + var(--safe-top)) calc(0.75rem + var(--safe-right))
     calc(5rem + var(--safe-bottom)) calc(0.75rem + var(--safe-left));
 }
@@ -799,7 +796,6 @@
 */
 .receipt-page-embedded {
   padding: 1rem 0.75rem 5rem;
->>>>>>> 2fcdb0319f725eed5de854a6fd243c1442a8b2fe
 }
 
 .receipt-toolbar {
