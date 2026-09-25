@@ -327,7 +327,10 @@ export function AppShell({
   );
 
   return (
-    <div className="min-h-dvh md:flex">
+    // Below `md` there is no sidebar to sit in a landscape cutout or beside a
+    // side-mounted button bar, so the column itself steps in from them. See
+    // the safe-area note in app/globals.css.
+    <div className="min-h-dvh pr-[var(--safe-right)] pl-[var(--safe-left)] md:flex md:pl-0">
       {/* Persistent sidebar, labelled, from tablet up. */}
       {/*
         `app-sidebar` carries the dark ground and the focus ring that reads
@@ -344,7 +347,7 @@ export function AppShell({
         Below `md` there is no width to spare, so the same labelled menu
         arrives as a drawer instead.
       */}
-      <aside className="app-sidebar sticky top-0 hidden h-dvh w-60 shrink-0 flex-col border-r border-slate-950/60 md:flex lg:w-64">
+      <aside className="app-sidebar shell-column sticky top-0 hidden h-dvh w-[calc(15rem+var(--safe-left))] shrink-0 flex-col border-r border-slate-950/60 pt-[var(--safe-top)] pb-[var(--safe-bottom)] pl-[var(--safe-left)] md:flex lg:w-[calc(16rem+var(--safe-left))]">
         {brand}
         {navLinks}
         <UserCard user={user} scope={scope} branches={branches} />
@@ -359,7 +362,7 @@ export function AppShell({
             onClick={() => setDrawerOpen(false)}
             className="absolute inset-0 bg-slate-950/70 backdrop-blur-[2px]"
           />
-          <div className="app-sidebar relative flex h-full w-[17rem] max-w-[85vw] flex-col shadow-2xl">
+          <div className="app-sidebar shell-column relative flex h-full w-[calc(17rem+var(--safe-left))] max-w-[85vw] flex-col pt-[var(--safe-top)] pb-[var(--safe-bottom)] pl-[var(--safe-left)] shadow-2xl">
             {brand}
             {navLinks}
             <UserCard user={user} scope={scope} branches={branches} />
@@ -369,7 +372,7 @@ export function AppShell({
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Phone top bar */}
-        <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 md:hidden">
+        <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-slate-200 bg-white px-4 pt-[calc(0.75rem+var(--safe-top))] pb-3 md:hidden">
           <button
             type="button"
             onClick={() => setDrawerOpen(true)}
@@ -404,11 +407,18 @@ export function AppShell({
           </span>
         </header>
 
+        {/*
+          From `md` up there is no phone bar above the page, so the page
+          clears the status bar itself. The two variants are whole strings
+          rather than overrides of each other: `cx` only joins, and two
+          conflicting paddings would be decided by stylesheet order.
+        */}
         <main
           className={cx(
-            "min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8",
-            pathname === "/billing" &&
-              "px-3 py-3 pb-[calc(5.5rem+env(safe-area-inset-bottom))] sm:px-4 lg:px-8 lg:py-6 lg:pb-6",
+            "min-w-0 flex-1",
+            pathname === "/billing"
+              ? "px-3 pt-3 pb-[calc(5.5rem+var(--safe-bottom))] sm:px-4 md:pt-[calc(0.75rem+var(--safe-top))] lg:px-8 lg:pt-[calc(1.5rem+var(--safe-top))] lg:pb-[calc(1.5rem+var(--safe-bottom))]"
+              : "px-4 pt-6 pb-[calc(1.5rem+var(--safe-bottom))] sm:px-6 md:pt-[calc(1.5rem+var(--safe-top))] lg:px-8",
           )}
         >
           {children}

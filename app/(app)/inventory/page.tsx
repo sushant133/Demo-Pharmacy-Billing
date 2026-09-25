@@ -316,7 +316,7 @@ export default async function InventoryPage({
 
       <Card className="mb-4 p-4">
         <form
-          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_14rem_auto]"
+          className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_14rem_auto]"
           action="/inventory"
         >
           <div className="min-w-0">

@@ -256,7 +256,7 @@ export default async function PurchasesPage({
 
         <form method="get" className="space-y-3">
           {status !== "all" ? <input type="hidden" name="status" value={status} /> : null}
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label htmlFor="supplierId" className="label">
                 Supplier
@@ -293,7 +293,7 @@ export default async function PurchasesPage({
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="min-w-0">
               <p className="label">From</p>
               <DualDateField

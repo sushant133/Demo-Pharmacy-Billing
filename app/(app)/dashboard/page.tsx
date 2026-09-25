@@ -340,7 +340,7 @@ export default async function DashboardPage({
         under the shorter one. `contents` drops the columns on phones so the
         `order-*` classes keep the old interleaved single-file sequence.
       */}
-      <div className="mt-4 grid items-start gap-4 lg:grid-cols-3">
+      <div className="mt-4 grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
         {showTill || showMoney ? (
         <div className="contents lg:col-span-2 lg:block lg:space-y-4">
           {showTill ? (
@@ -715,7 +715,7 @@ function Kpi({
   };
 
   const body = (
-    <div className={cx("card h-full p-4", tones[tone], href && "transition-shadow hover:shadow-md")}>
+    <div className={cx("card @container h-full p-4", tones[tone], href && "transition-shadow hover:shadow-md")}>
       <div className="flex items-start justify-between gap-2">
         <p className="text-[11px] font-medium tracking-wide text-slate-500 uppercase">{label}</p>
         <span className={cx("flex h-8 w-8 items-center justify-center rounded-lg", iconTone[tone])}>
@@ -725,7 +725,7 @@ function Kpi({
         </span>
       </div>
       <div className="mt-2 flex items-end justify-between gap-2">
-        <p className="tnum text-2xl font-semibold text-slate-900 sm:text-3xl">{value}</p>
+        <p className="stat-figure stat-figure-lg tnum min-w-0 font-semibold text-slate-900">{value}</p>
         {extra}
       </div>
       {hint ? <p className="mt-1 text-[11px] text-slate-500">{hint}</p> : null}

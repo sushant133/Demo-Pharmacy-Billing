@@ -52,7 +52,7 @@ export default async function BranchesPage({
         subtitle="Each outlet has its own stock. Sales and receipts land where the user stands."
       />
 
-      <div className="mb-5 grid gap-3 sm:grid-cols-3">
+      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatCard label="Outlets" value={integer(active.length)} />
         <StatCard label="Closed" value={integer(branches.length - active.length)} />
         <StatCard label="Stock at cost" value={money(stockValue)} />

@@ -642,7 +642,7 @@ export function BillingScreen({
         </div>
       </section>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-start">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-start">
         {/* ---------------- Left: search + cart ---------------- */}
         {/*
           Flat white cards with the heading set inside the padding, rather than
@@ -1660,7 +1660,7 @@ export function BillingScreen({
           </div>
         </aside>
 
-        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur lg:hidden">
+        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 pt-2 pr-[calc(0.75rem+var(--safe-right))] pb-[max(0.75rem,var(--safe-bottom))] pl-[calc(0.75rem+var(--safe-left))] backdrop-blur md:left-[calc(15rem+var(--safe-left))] md:pl-3 lg:hidden">
           {planError ? (
             <p className="mb-2 line-clamp-2 text-[11px] text-amber-800">{planError}</p>
           ) : null}

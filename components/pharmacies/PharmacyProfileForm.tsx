@@ -144,7 +144,7 @@ export function PharmacyProfileForm({
 
       {editing ? (
         <div className="mt-5 space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Text
               id="name"
               label="Trading name"
@@ -297,7 +297,7 @@ export function PharmacyProfileForm({
         </div>
       ) : (
         <>
-          <dl className="mt-5 grid gap-4 sm:grid-cols-2">
+          <dl className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
             {rows.map(([label, value]) => (
               <div key={label}>
                 <dt className="text-xs font-medium tracking-wide text-slate-500 uppercase">

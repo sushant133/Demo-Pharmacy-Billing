@@ -124,7 +124,7 @@ export default async function ReportsPage({
         />
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-3">
+      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="p-4 lg:col-span-2">
           <h2 className="text-sm font-semibold text-slate-900">
             Revenue and profit over time
@@ -194,7 +194,7 @@ export default async function ReportsPage({
         </div>
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-3">
+      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="p-4 lg:col-span-2">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div>
@@ -284,17 +284,22 @@ export default async function ReportsPage({
             Excel keeps numbers numeric and sortable; PDF is fixed for filing.
           </p>
 
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
             {REPORT_KEYS.map((key) => (
               <div
                 key={key}
-                className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2"
+                className="flex flex-col gap-2 rounded-lg border border-slate-200 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:py-2"
               >
+                {/*
+                  Stacked on a phone: side by side, the three buttons left the
+                  description a truncated sliver - with larger system text,
+                  nothing at all.
+                */}
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-slate-900">
+                  <p className="text-sm font-medium text-slate-900 sm:truncate">
                     {REPORT_LABELS[key]}
                   </p>
-                  <p className="truncate text-xs text-slate-500">
+                  <p className="text-xs text-pretty text-slate-500 sm:truncate">
                     {REPORT_DESCRIPTIONS[key]}
                   </p>
                 </div>
@@ -303,7 +308,7 @@ export default async function ReportsPage({
                     <a
                       key={format}
                       href={`/api/export?report=${key}&format=${format}&${exportQuery}`}
-                      className="rounded border border-slate-300 px-2 py-1 text-[11px] font-medium text-slate-600 uppercase hover:bg-slate-50 hover:text-brand-700"
+                      className="rounded border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 uppercase hover:bg-slate-50 hover:text-brand-700 sm:px-2 sm:py-1 sm:text-[11px]"
                     >
                       {format === "xlsx" ? "Excel" : format}
                     </a>

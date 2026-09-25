@@ -156,7 +156,7 @@ export function SettingsForm({
   }
 
   return (
-    <form onSubmit={onSubmit} noValidate className="grid gap-5 lg:grid-cols-[1fr_20rem]">
+    <form onSubmit={onSubmit} noValidate className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_20rem]">
       <div className="space-y-5">
         <div aria-live="polite">
           {formError ? (
@@ -334,7 +334,7 @@ export function SettingsForm({
           />
         </Section>
 
-        <div className="sticky bottom-0 -mx-4 flex flex-wrap items-center gap-3 border-t border-slate-200 bg-slate-100/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
+        <div className="sticky bottom-0 -mx-4 flex flex-wrap items-center gap-3 border-t border-slate-200 bg-slate-100/95 px-4 pt-3 pb-[calc(0.75rem+var(--safe-bottom))] backdrop-blur sm:-mx-6 sm:px-6">
           <button
             type="submit"
             disabled={submitting || !dirty}
@@ -440,7 +440,7 @@ function RegisteredIdentity({ identity }: { identity: PlatformIdentity }) {
         </span>
       </div>
 
-      <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+      <dl className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
         {rows.map((row) => (
           <div key={row.label}>
             <dt className="label mb-0">{row.label}</dt>
@@ -603,7 +603,7 @@ function Section({
     <section className="card p-5">
       <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
       <p className="mt-0.5 text-xs text-slate-500">{description}</p>
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">{children}</div>
+      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">{children}</div>
     </section>
   );
 }

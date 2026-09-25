@@ -37,7 +37,7 @@ export function ErrorScreen({
     <div
       className={
         full
-          ? "flex min-h-dvh items-center justify-center px-4"
+          ? "flex min-h-dvh items-center justify-center px-4 pt-[var(--safe-top)] pb-[var(--safe-bottom)]"
           : "flex min-h-[60vh] items-center justify-center px-4"
       }
     >

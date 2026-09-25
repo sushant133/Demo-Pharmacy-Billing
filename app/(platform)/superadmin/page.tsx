@@ -34,7 +34,7 @@ export default async function SuperAdminHomePage() {
         }
       />
 
-      <div className="mb-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Pharmacies" value={integer(overview.pharmacies)} tone="brand" />
         <StatCard label="Active" value={integer(overview.active)} />
         <StatCard
@@ -49,7 +49,7 @@ export default async function SuperAdminHomePage() {
         />
       </div>
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {/*
           The figure worth watching. An account can be active, paid for and
           completely unused; only a count of shops that actually billed
@@ -67,7 +67,7 @@ export default async function SuperAdminHomePage() {
         />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <Card className="overflow-hidden">
           <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
             <h2 className="text-sm font-semibold text-slate-900">Recent pharmacies</h2>

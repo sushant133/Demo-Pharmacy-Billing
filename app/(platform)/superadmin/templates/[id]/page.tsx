@@ -39,7 +39,7 @@ export default async function TemplateSamplePage({
 
   return (
     <div
-      className="receipt-page -m-4 sm:-m-6"
+      className="receipt-page receipt-page-embedded -m-4 sm:-m-6"
       style={receiptVars(template) as CSSProperties}
     >
       {/*

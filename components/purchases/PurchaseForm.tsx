@@ -419,7 +419,7 @@ export function PurchaseForm({
 
       {/* Invoice header */}
       <div className="card p-4">
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label htmlFor="supplierId" className="label">
               Supplier
@@ -791,9 +791,9 @@ export function PurchaseForm({
       </div>
 
       {/* Charges + totals */}
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="card space-y-3 p-4 lg:col-span-2">
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div>
               <label htmlFor="discount" className="label">
                 Invoice discount (Rs)

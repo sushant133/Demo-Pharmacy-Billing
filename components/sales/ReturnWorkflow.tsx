@@ -429,7 +429,7 @@ export function ReturnWorkflow({
       <div className="p-4 sm:p-5">
         <StepHeading step={4}>Reason and condition</StepHeading>
 
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label htmlFor="reason-code" className="label">
               Reason for return
@@ -519,7 +519,7 @@ export function ReturnWorkflow({
           each needs a line of explanation, and this is the one choice on the
           screen that decides whether cash leaves the drawer.
         */}
-        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
           {methods.map((method) => {
             const active = refundMethod === method.code;
             return (

@@ -19,8 +19,8 @@ android {
         // Bump both for every Play upload, and mirror versionCode in
         // lib/android-release.ts so installed tills are told to update.
         // Play rejects a versionCode it has already seen.
-        versionCode 2
-        versionName "1.0"
+        versionCode 4
+        versionName "1.0.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

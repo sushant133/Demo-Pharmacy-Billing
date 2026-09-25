@@ -144,6 +144,15 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  /*
+    `/` is the app's launch URL. app/page.tsx makes the same redirect, but
+    only after a server render; answering here from the cookie saves that
+    round trip on every cold start of the Android app.
+  */
+  if (pathname === "/") {
+    return NextResponse.redirect(new URL(homePath(session.role), req.url));
+  }
+
   // Nothing to change: send anyone who wanders onto the screen back to work.
   if (pathname === CHANGE_PASSWORD_PATH) {
     return NextResponse.redirect(new URL(homePath(session.role), req.url));

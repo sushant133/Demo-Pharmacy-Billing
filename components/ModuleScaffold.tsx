@@ -100,7 +100,7 @@ export function NotWiredYet({
           <p className="mt-1 max-w-xl text-sm text-slate-500">{description}</p>
 
           {covers?.length ? (
-            <ul className="mt-4 grid gap-1.5 sm:grid-cols-2">
+            <ul className="mt-4 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
               {covers.map((entry) => (
                 <li key={entry} className="flex items-start gap-2 text-sm text-slate-600">
                   <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-300" />
