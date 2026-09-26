@@ -12,6 +12,7 @@ import {
   RETURN_REASONS,
   defaultRefundMethod,
   refundMethodsFor,
+  refundSplit,
   type RefundMethodCode,
   type ReturnReasonCode,
 } from "@/lib/return-eligibility";
@@ -53,6 +54,8 @@ interface ReturnResult {
   returnIndex: number;
   units: number;
   totalAmount: number;
+  /** Handed back; the rest of the value cleared what the customer owed. */
+  refundPaid: number;
   restored: Array<{ batchNumber: string; quantity: number }>;
   unreturned: Array<{ batchNumber: string; quantity: number }>;
 }
@@ -79,8 +82,7 @@ export function ReturnWorkflow({
   const [reasonCode, setReasonCode] = useState<ReturnReasonCode | "">("");
   const [note, setNote] = useState("");
   const [condition, setCondition] = useState(false);
-  const methods = refundMethodsFor(outstanding);
-  const [refundMethod, setRefundMethod] = useState<RefundMethodCode>(
+  const [pickedMethod, setRefundMethod] = useState<RefundMethodCode>(
     defaultRefundMethod(outstanding),
   );
   const [confirming, setConfirming] = useState(false);
@@ -125,6 +127,21 @@ export function ReturnWorkflow({
       total: round(taxable + vat),
     };
   }, [chosen, discountRate, vatRate]);
+
+  // A debt on the bill is cleared before any money goes back, so only the
+  // methods that fit this split are offered: "reduce what they owe" while the
+  // return fits inside the debt, a way of handing money back once it does not.
+  const split = refundSplit(refund.total, outstanding);
+  const methods = refundMethodsFor(outstanding).filter((method) =>
+    method.code === "adjust"
+      ? split.paidOut === 0
+      : !(refund.total > 0 && split.paidOut === 0),
+  );
+  const refundMethod: RefundMethodCode = methods.some(
+    (method) => method.code === pickedMethod,
+  )
+    ? pickedMethod
+    : (methods[0]?.code ?? "cash");
 
   const noteRequired = reasonCode === "other";
   const ready =
@@ -203,7 +220,7 @@ export function ReturnWorkflow({
             <p className="mt-0.5 text-sm text-slate-600">
               {formatUnitCount(done.units, "unit")} back on the shelf ·{" "}
               <span className="tnum font-semibold text-slate-900">
-                {money(done.totalAmount)}
+                {money(done.refundPaid)}
               </span>{" "}
               refunded
             </p>
@@ -582,8 +599,22 @@ export function ReturnWorkflow({
           ) : null}
           <Row label={`VAT (${Math.round(vatRate * 100)}%)`} value={money(refund.vat)} />
           <div className="border-t border-slate-200 pt-1.5">
-            <Row label="Refund due" value={money(refund.total)} strong />
+            <Row
+              label={split.offBalance > 0 ? "Return value" : "Refund due"}
+              value={money(refund.total)}
+              strong={split.offBalance === 0}
+            />
           </div>
+          {split.offBalance > 0 ? (
+            <>
+              <Row
+                label="Taken off what they owe"
+                value={`− ${money(split.offBalance)}`}
+                className="text-slate-600"
+              />
+              <Row label="Hand back" value={money(split.paidOut)} strong />
+            </>
+          ) : null}
         </dl>
 
         {error ? (
@@ -598,7 +629,8 @@ export function ReturnWorkflow({
         {confirming ? (
           <div className="mt-3 rounded-lg border border-brand-200 bg-white p-3">
             <p className="text-sm font-medium text-slate-900">
-              Refund {money(refund.total)} and put{" "}
+              {split.paidOut > 0 ? `Hand back ${money(split.paidOut)}` : `Take ${money(split.offBalance)} off what they owe`}{" "}
+              and put{" "}
               {formatUnitCount(refund.units, "unit")} back on the shelf?
             </p>
 
@@ -680,7 +712,7 @@ export function ReturnWorkflow({
               disabled={!ready}
               className="btn-primary mt-3 w-full py-2.5"
             >
-              Confirm return · {money(refund.total)}
+              Confirm return · {money(split.paidOut > 0 ? split.paidOut : refund.total)}
             </button>
             {!ready ? (
               <p className="mt-1.5 text-center text-[11px] text-slate-500">

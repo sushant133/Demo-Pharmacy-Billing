@@ -232,7 +232,15 @@ export function ConfirmSale({
               disabled={submitting}
               className="btn-primary flex-[2] py-3 text-base"
             >
-              {submitting ? "Completing…" : `Complete Sale · ${money(plan.totalAmount)}`}
+              {submitting ? (
+                "Completing…"
+              ) : (
+                <>
+                  Complete Sale ·{" "}
+                  {/* Kept on one line: "Rs" and the amount must never wrap apart. */}
+                  <span className="whitespace-nowrap">{money(plan.totalAmount)}</span>
+                </>
+              )}
             </button>
           </div>
         </div>

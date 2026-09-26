@@ -17,6 +17,7 @@ import {
 import { branchForWrite } from "@/lib/branches";
 import { can } from "@/lib/roles";
 import { planSaleReturn } from "@/lib/sale-return";
+import { refundSplit } from "@/lib/return-eligibility";
 import { settleSale, type PaymentStatus } from "@/lib/sale-payment";
 import { sessionOption, withTransaction } from "@/lib/transaction";
 import { Batch } from "@/models/Batch";
@@ -786,6 +787,14 @@ export async function returnSaleItems(
       );
     }
 
+    // The return clears any debt on the bill first; only the rest goes back.
+    const split = refundSplit(plan.totalAmount, outstandingBefore);
+    if (refundMethod === "adjust" && split.paidOut > 0) {
+      throw ApiError.badRequest(
+        `Only ${outstandingBefore.toFixed(2)} is owed on ${sale.billNo}, so the other ${split.paidOut.toFixed(2)} has to be handed back. Choose cash or the original payment.`,
+      );
+    }
+
     const restored: StockReturn[] = [];
     const unreturned: StockReturn[] = [];
     const stockMoves = planStockReturn(
@@ -832,6 +841,7 @@ export async function returnSaleItems(
       reason: input.reason,
       conditionConfirmed: input.conditionConfirmed,
       refundMethod,
+      refundPaid: split.paidOut,
       items: plan.items.map((item) => ({
         lineIndex: item.lineIndex,
         medicineId: new Types.ObjectId(item.medicineId),
@@ -886,6 +896,7 @@ export async function returnSaleItems(
       returnIndex: sale.returns.length - 1,
       units: plan.units,
       totalAmount: plan.totalAmount,
+      refundPaid: split.paidOut,
       restored,
       unreturned,
     };

@@ -103,6 +103,12 @@ const saleReturnSchema = new Schema(
      * does not know.
      */
     refundMethod: { type: String, trim: true, default: "" },
+    /**
+     * What was actually handed back. Less than `totalAmount` when the bill was
+     * still owed on: the return cleared that debt first. Absent on returns
+     * recorded before the field existed, which read as the full total.
+     */
+    refundPaid: { type: Number, min: 0 },
     items: {
       type: [saleReturnItemSchema],
       required: true,

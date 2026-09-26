@@ -80,6 +80,12 @@ const purchaseReturnSchema = new Schema(
     creditNoteNo: { type: String, trim: true, default: "", maxlength: 60 },
     items: { type: [purchaseReturnItemSchema], required: true },
     units: { type: Number, required: true, min: 0 },
+    /**
+     * The goods less their share of the invoice discount, and the VAT charged
+     * on them. Absent on returns recorded before VAT was credited back.
+     */
+    taxableAmount: { type: Number, min: 0 },
+    vatAmount: { type: Number, min: 0 },
     /** What the shop is owed for this consignment. */
     totalAmount: { type: Number, required: true, min: 0 },
   },

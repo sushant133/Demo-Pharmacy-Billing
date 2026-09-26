@@ -4,6 +4,7 @@ import {
   PurchaseReturnError,
   isPurchaseReturnReason,
   planPurchaseReturn,
+  purchaseReturnTerms,
   purchaseLineEligibility,
   type PurchaseLineForReturn,
 } from "@/lib/purchase-return";
@@ -134,6 +135,22 @@ describe("planPurchaseReturn", () => {
     ]);
     expect(plan.units).toBe(15);
     expect(plan.totalAmount).toBe(45);
+  });
+
+  it("credits the invoice discount share and VAT with the goods", () => {
+    // 45.00 of goods on an invoice with 10% off and 13% VAT:
+    // 40.50 taxable, 5.27 VAT, 45.77 back.
+    const plan = planPurchaseReturn(
+      purchase,
+      [
+        { lineIndex: 0, quantity: 10 },
+        { lineIndex: 1, quantity: 5 },
+      ],
+      purchaseReturnTerms({ subtotal: 200, discount: 20, vatRate: 0.13 }),
+    );
+    expect(plan.taxableAmount).toBe(40.5);
+    expect(plan.vatAmount).toBe(5.27);
+    expect(plan.totalAmount).toBe(45.77);
   });
 
   it("ignores zero-quantity rows", () => {

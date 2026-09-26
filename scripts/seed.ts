@@ -30,7 +30,7 @@ import { Purchase } from "../models/Purchase";
 import { SupplierPayment } from "../models/SupplierPayment";
 import { DEFAULT_SETTINGS } from "../lib/settings";
 import { createPurchase } from "../lib/purchases";
-import { createSale } from "../lib/sales";
+import { createSale, planSale } from "../lib/sales";
 import { recordPayment } from "../lib/suppliers";
 import type { SessionUser } from "../lib/session";
 import { ROLE_SCHEME_VERSION, type Role } from "../lib/roles";
@@ -755,20 +755,30 @@ async function main() {
 
         const customer = rand() > 0.7 ? customers[Math.floor(rand() * customers.length)] : null;
 
+        // Roughly one bill in seven gets a round percentage off, the way a
+        // counter actually gives one.
+        const discountPercent =
+          rand() > 0.85 ? [5, 10, 15][Math.floor(rand() * 3)] ?? 5 : 0;
+        const paymentMode = modes[Math.floor(rand() * modes.length)] ?? "cash";
+
         try {
+          // Seeded bills are settled in full, as the till records a paid bill:
+          // the amount received is the total. Zero here would file every cash,
+          // card and wallet sale as an unpaid debt.
+          const { totalAmount: total } = await planSale(
+            { items, discount: 0, discountPercent },
+            seller,
+          );
+
           const sale = await createSale(
             {
               items,
               customerId: customer ? String(customer._id) : null,
               customerName: customer?.name ?? "",
               discount: 0,
-              // Roughly one bill in seven gets a round percentage off, the way
-              // a counter actually gives one.
-              discountPercent: rand() > 0.85 ? [5, 10, 15][Math.floor(rand() * 3)] ?? 5 : 0,
-              paymentMode: modes[Math.floor(rand() * modes.length)] ?? "cash",
-              // Seeded bills are settled in full; the till records what was
-              // actually handed over, and there is nobody here to hand less.
-              amountReceived: 0,
+              discountPercent,
+              paymentMode,
+              amountReceived: total,
               note: "",
             },
             seller,
@@ -776,7 +786,13 @@ async function main() {
 
           const when = daysFromNow(-dayOffset);
           when.setHours(9 + Math.floor(rand() * 10), Math.floor(rand() * 60), 0, 0);
-          await Sale.updateOne({ _id: sale.id }, { $set: { createdAt: when } });
+          // Through the driver, not the model: Mongoose treats createdAt as
+          // immutable and silently drops it from an update, which put every
+          // "last 60 days" bill on today.
+          await Sale.collection.updateOne(
+            { _id: new mongoose.Types.ObjectId(sale.id) },
+            { $set: { createdAt: when, "payments.$[].receivedAt": when } },
+          );
           saleCount++;
         } catch {
           // A line can legitimately outrun the stock the seed created; skip it

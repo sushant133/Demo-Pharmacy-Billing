@@ -100,11 +100,15 @@ export interface PurchaseFormValues {
   }>;
 }
 
+// Only lines added after the first render draw from the counter. The lines the
+// form opens with take fixed keys, because the counter is module state: it
+// has a different value on the server than in the browser, and the keys feed
+// input ids that must match between the two renders.
 let lineCounter = 0;
-function blankLine(): LineState {
-  lineCounter += 1;
+function blankLine(key?: string): LineState {
+  if (!key) lineCounter += 1;
   return {
-    key: `line-${lineCounter}`,
+    key: key ?? `line-${lineCounter}`,
     medicineId: "",
     batchNumber: "",
     mfgDate: "",
@@ -175,10 +179,9 @@ export function PurchaseForm({
 
   const [lines, setLines] = useState<LineState[]>(() => {
     if (purchase && purchase.items.length > 0) {
-      return purchase.items.map((item) => {
-        lineCounter += 1;
+      return purchase.items.map((item, index) => {
         return {
-          key: `line-${lineCounter}`,
+          key: `initial-${index}`,
           medicineId: item.medicineId,
           batchNumber: item.batchNumber,
           mfgDate: item.mfgDate,
@@ -193,10 +196,9 @@ export function PurchaseForm({
       });
     }
     if (preset?.medicineId) {
-      lineCounter += 1;
       return [
         {
-          key: `line-${lineCounter}`,
+          key: "initial-0",
           medicineId: preset.medicineId,
           batchNumber: "",
           mfgDate: "",
@@ -212,7 +214,7 @@ export function PurchaseForm({
         },
       ];
     }
-    return [blankLine()];
+    return [blankLine("initial-0")];
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});

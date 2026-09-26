@@ -33,6 +33,8 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Stock/expiry alerts in the notification shade (asked for at runtime on Android 13+). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!--
       Bluetooth ESC/POS roll printing. Android 12 (API 31) split the old

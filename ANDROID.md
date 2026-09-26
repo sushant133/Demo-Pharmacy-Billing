@@ -78,6 +78,7 @@ testing; Play only accepts the `.aab`.
 | Print sheet | `window.print()` | `SystemPrint` plugin → Android PrintManager |
 | 80mm roll | Web Bluetooth | `@capacitor-community/bluetooth-le` |
 | Splash | - | `@capacitor/splash-screen` |
+| Alert notifications | - | `AlertNotify` plugin → WorkManager checks `/api/reports/alerts` every ~15 min and notifies on new expired/expiring/out-of-stock items |
 | Back button | - | walks history, exits only at the root |
 | Update prompt | - | `/android-app-version.json` vs installed build |
 

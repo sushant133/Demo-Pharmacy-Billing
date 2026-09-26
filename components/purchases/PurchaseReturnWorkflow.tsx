@@ -6,7 +6,9 @@ import { apiFetch } from "@/lib/client";
 import { money } from "@/lib/format";
 import {
   PURCHASE_RETURN_REASONS,
+  creditForGoods,
   type PurchaseIneligibleReason,
+  type PurchaseReturnTerms,
 } from "@/lib/purchase-return";
 import { Badge, Card, cx } from "@/components/ui";
 
@@ -48,12 +50,15 @@ export function PurchaseReturnWorkflow({
   supplierName,
   lines,
   canRecord,
+  terms,
 }: {
   purchaseId: string;
   grnNo: string;
   supplierName: string;
   lines: ReturnablePurchaseLine[];
   canRecord: boolean;
+  /** The GRN's invoice discount and VAT, which the credit carries too. */
+  terms: PurchaseReturnTerms;
 }) {
   const router = useRouter();
 
@@ -77,13 +82,18 @@ export function PurchaseReturnWorkflow({
     [lines, quantities],
   );
 
+  // The same arithmetic the server redoes: goods at net line cost, less their
+  // share of the invoice discount, plus the VAT that was charged on them.
   const credit = useMemo(
     () =>
-      selected.reduce(
-        (sum, row) => sum + row.quantity * row.line.unitCost,
-        0,
-      ),
-    [selected],
+      creditForGoods(
+        selected.reduce(
+          (sum, row) => sum + row.quantity * row.line.unitCost,
+          0,
+        ),
+        terms,
+      ).totalAmount,
+    [selected, terms],
   );
 
   const units = selected.reduce((sum, row) => sum + row.quantity, 0);

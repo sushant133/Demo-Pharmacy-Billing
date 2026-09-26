@@ -12,6 +12,7 @@ import { formatDateTime, formatExpiry, money } from "@/lib/format";
 import { amountInWords } from "@/lib/money-words";
 import { formatUnitCount } from "@/lib/pack";
 import { pageRule, receiptVars } from "@/lib/print-templates";
+import { round2 } from "@/lib/sale-payment";
 import { getPrintTemplate, getSettings, printedIssuer } from "@/lib/settings";
 import { displayBillNo } from "@/models/Counter";
 import { Sale } from "@/models/Sale";
@@ -110,7 +111,18 @@ export default async function ReturnReceiptPage({
       : []),
     { label: "Taxable", value: money(entry.taxableAmount) },
     { label: `VAT ${vatPct}%`, value: money(entry.vatAmount) },
-    { label: "Refunded", value: money(entry.totalAmount), grand: true },
+    // Part of the value cleared what was still owed on the bill; only the
+    // rest was handed back. Older returns carry no split and read as before.
+    ...(entry.refundPaid != null && entry.refundPaid < entry.totalAmount
+      ? [
+          { label: "Return value", value: money(entry.totalAmount) },
+          {
+            label: "Off balance owed",
+            value: `− ${money(round2(entry.totalAmount - entry.refundPaid))}`,
+          },
+          { label: "Refunded", value: money(entry.refundPaid), grand: true },
+        ]
+      : [{ label: "Refunded", value: money(entry.totalAmount), grand: true }]),
   ];
 
   return (
@@ -163,7 +175,7 @@ export default async function ReturnReceiptPage({
           };
         })}
         totals={totals}
-        words={amountInWords(entry.totalAmount)}
+        words={amountInWords(entry.refundPaid ?? entry.totalAmount)}
         /*
           The attestation, printed. It is the counter's record that the goods
           were checked before they went back on a shelf, and the customer's

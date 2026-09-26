@@ -22,6 +22,7 @@ import { formatGrnNo, nextSequence } from "@/models/Counter";
 import {
   PurchaseReturnError,
   planPurchaseReturn,
+  purchaseReturnTerms,
 } from "@/lib/purchase-return";
 import type { PurchaseInput, PurchaseReturnInput } from "@/lib/validation";
 import type { SessionUser } from "@/lib/session";
@@ -870,6 +871,7 @@ export async function returnPurchaseItems(
           })),
         },
         input.items,
+        purchaseReturnTerms(purchase),
       );
     } catch (error) {
       if (error instanceof PurchaseReturnError) {
@@ -925,6 +927,8 @@ export async function returnPurchaseItems(
         lineTotal: item.lineTotal,
       })),
       units: plan.units,
+      taxableAmount: plan.taxableAmount,
+      vatAmount: plan.vatAmount,
       totalAmount: plan.totalAmount,
     });
 

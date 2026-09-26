@@ -158,8 +158,47 @@ export interface PlannedPurchaseReturnLine {
 export interface PlannedPurchaseReturn {
   items: PlannedPurchaseReturnLine[];
   units: number;
+  /** Goods value less this slice's share of the invoice discount. */
+  taxableAmount: number;
+  /** VAT the supplier charged on these goods, which comes back with them. */
+  vatAmount: number;
   /** Total credit this return is worth. */
   totalAmount: number;
+}
+
+/**
+ * The invoice-level terms a return inherits.
+ *
+ * The GRN total the supplier is owed has had the invoice discount taken off
+ * and VAT added. A return is subtracted from that total, so it has to be
+ * measured the same way - otherwise sending goods back on a VAT invoice
+ * credits the goods but leaves the VAT paid on them owing.
+ */
+export interface PurchaseReturnTerms {
+  /** Invoice discount as a share of the line subtotal, 0-1. */
+  discountRate: number;
+  vatRate: number;
+}
+
+/** Terms from a GRN's own stored totals. */
+export function purchaseReturnTerms(purchase: {
+  subtotal?: number;
+  discount?: number;
+  vatRate?: number;
+}): PurchaseReturnTerms {
+  const subtotal = purchase.subtotal ?? 0;
+  const discount = purchase.discount ?? 0;
+  return {
+    discountRate: subtotal > 0 ? Math.min(1, Math.max(0, discount / subtotal)) : 0,
+    vatRate: Math.max(0, purchase.vatRate ?? 0),
+  };
+}
+
+/** Value a slice of goods (at net line cost) the way the GRN total was built. */
+export function creditForGoods(goodsValue: number, terms: PurchaseReturnTerms) {
+  const taxableAmount = round2(goodsValue * (1 - terms.discountRate));
+  const vatAmount = round2(taxableAmount * terms.vatRate);
+  return { taxableAmount, vatAmount, totalAmount: round2(taxableAmount + vatAmount) };
 }
 
 export interface PurchaseForReturn {
@@ -176,6 +215,8 @@ export interface PurchaseForReturn {
 export function planPurchaseReturn(
   purchase: PurchaseForReturn,
   requests: readonly PurchaseReturnRequest[],
+  // Default: no invoice discount, no VAT - the credit is the goods value.
+  terms: PurchaseReturnTerms = { discountRate: 0, vatRate: 0 },
 ): PlannedPurchaseReturn {
   const wanted = requests.filter((request) => request.quantity > 0);
   if (wanted.length === 0) {
@@ -197,7 +238,7 @@ export function planPurchaseReturn(
 
   const items: PlannedPurchaseReturnLine[] = [];
   let units = 0;
-  let totalAmount = 0;
+  let goodsValue = 0;
 
   for (const [lineIndex, quantity] of merged) {
     const line = purchase.items[lineIndex];
@@ -240,11 +281,11 @@ export function planPurchaseReturn(
     });
 
     units += quantity;
-    totalAmount = round2(totalAmount + lineTotal);
+    goodsValue = round2(goodsValue + lineTotal);
   }
 
   // Stable order, so a credit note lists lines as the GRN does.
   items.sort((a, b) => a.lineIndex - b.lineIndex);
 
-  return { items, units, totalAmount: round2(totalAmount) };
+  return { items, units, ...creditForGoods(goodsValue, terms) };
 }

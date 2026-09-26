@@ -7,6 +7,7 @@ import { cx } from "@/components/ui";
 import { NAV_SECTIONS, type NavChild, type NavItem } from "@/components/nav-items";
 import { brandLetter, initials } from "@/lib/format";
 import { ROLE_LABELS, can, type Role } from "@/lib/roles";
+import { disableAlertNotifications } from "@/components/native/AlertNotifications";
 
 /**
  * Application chrome: sidebar, mobile drawer and user menu.
@@ -803,6 +804,7 @@ function SignOutButton() {
     <button
       type="button"
       onClick={async () => {
+        await disableAlertNotifications();
         await fetch("/api/auth/logout", { method: "POST" });
         window.location.href = "/login";
       }}

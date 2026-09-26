@@ -7,6 +7,7 @@ import {
   isRefundMethod,
   isReturnReason,
   refundMethodsFor,
+  refundSplit,
   remainingUnits,
   returnEligibility,
 } from "@/lib/return-eligibility";
@@ -214,5 +215,20 @@ describe("isRefundMethod", () => {
       expect(method.label.length).toBeGreaterThan(3);
       expect(method.hint.length).toBeGreaterThan(10);
     }
+  });
+});
+
+describe("refundSplit", () => {
+  it("hands the whole value back on a settled bill", () => {
+    expect(refundSplit(1.53, 0)).toEqual({ offBalance: 0, paidOut: 1.53 });
+  });
+
+  it("clears the debt before any money goes back", () => {
+    // Owed 0.76, returned 1.53: the debt goes, 0.77 is handed over.
+    expect(refundSplit(1.53, 0.76)).toEqual({ offBalance: 0.76, paidOut: 0.77 });
+  });
+
+  it("hands nothing back when the return is smaller than the debt", () => {
+    expect(refundSplit(100, 250)).toEqual({ offBalance: 100, paidOut: 0 });
   });
 });

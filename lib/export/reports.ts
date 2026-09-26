@@ -594,6 +594,7 @@ async function salesReturns({
     taxableAmount: number;
     vatAmount: number;
     totalAmount: number;
+    refundPaid?: number;
     totalCost: number;
   }>([
     { $match: { ...branchFilter(scope), voidedAt: null, "returns.0": { $exists: true } } },
@@ -615,6 +616,7 @@ async function salesReturns({
         taxableAmount: "$returns.taxableAmount",
         vatAmount: "$returns.vatAmount",
         totalAmount: "$returns.totalAmount",
+        refundPaid: "$returns.refundPaid",
         totalCost: "$returns.totalCost",
       },
     },
@@ -643,6 +645,7 @@ async function salesReturns({
       { key: "taxable", header: "Taxable", type: "money", total: true },
       { key: "vat", header: "VAT", type: "money", total: true },
       { key: "total", header: "Refund", type: "money", total: true },
+      { key: "paidOut", header: "Handed back", type: "money", total: true },
       { key: "cost", header: "Cost returned", type: "money", total: true },
       { key: "checked", header: "Condition checked", type: "text" },
       { key: "by", header: "By", type: "text", width: 18 },
@@ -663,6 +666,11 @@ async function salesReturns({
       taxable: round2(row.taxableAmount ?? 0),
       vat: round2(row.vatAmount ?? 0),
       total: round2(row.totalAmount ?? 0),
+      // What left the drawer or went back to the card. Older returns carry no
+      // split: anything but "reduce what they owe" was handed back in full.
+      paidOut: round2(
+        row.refundPaid ?? (row.refundMethod === "adjust" ? 0 : row.totalAmount ?? 0),
+      ),
       cost: round2(row.totalCost ?? 0),
       checked: row.conditionConfirmed ? "Yes" : "No",
       by: row.returnedByName || "",

@@ -98,6 +98,30 @@ export function refundMethodsFor(
   );
 }
 
+export interface RefundSplit {
+  /** Taken off what the customer still owed on the bill. */
+  offBalance: number;
+  /** Actually handed back, by the chosen method. */
+  paidOut: number;
+}
+
+/**
+ * How a return's value divides between the customer's debt and money handed
+ * back.
+ *
+ * A customer who still owes on a bill is not paid cash for goods they have not
+ * paid for: the return clears the debt first, and only what is left over goes
+ * back. It is the same figure `settleSale` arrives at - once returns exceed
+ * what is owed, the excess is money received above the total - so the drawer
+ * and the ledger agree.
+ */
+export function refundSplit(returnTotal: number, outstanding: number): RefundSplit {
+  const round = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+  const total = Math.max(0, returnTotal);
+  const offBalance = round(Math.min(total, Math.max(0, outstanding)));
+  return { offBalance, paidOut: round(total - offBalance) };
+}
+
 /** The method to preselect: reduce a debt where there is one, else cash. */
 export function defaultRefundMethod(outstanding: number): RefundMethodCode {
   return outstanding > 0 ? "adjust" : "cash";

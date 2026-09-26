@@ -357,7 +357,9 @@ export async function cancelPrescription(
   await connectDB();
 
   const updated = await Prescription.findOneAndUpdate(
-    { _id: id, ...pharmacyFilter(user), cancelledAt: null },
+    // Nothing left to supply means the prescription is complete, not open:
+    // cancelling it would relabel dispensed medicine as never handed over.
+    { _id: id, ...pharmacyFilter(user), cancelledAt: null, outstandingUnits: { $gt: 0 } },
     {
       $set: {
         cancelledAt: new Date(),
@@ -370,10 +372,15 @@ export async function cancelPrescription(
   ).lean();
 
   if (!updated) {
-    const exists = await Prescription.exists({ _id: id, ...pharmacyFilter(user) });
-    throw exists
-      ? ApiError.conflict("That prescription has already been cancelled.")
-      : ApiError.notFound("That prescription no longer exists.");
+    const existing = await Prescription.findOne({ _id: id, ...pharmacyFilter(user) })
+      .select("cancelledAt")
+      .lean();
+    if (!existing) throw ApiError.notFound("That prescription no longer exists.");
+    throw ApiError.conflict(
+      existing.cancelledAt
+        ? "That prescription has already been cancelled."
+        : "That prescription has been dispensed in full, so there is nothing left to cancel.",
+    );
   }
 
   return summarise(updated);

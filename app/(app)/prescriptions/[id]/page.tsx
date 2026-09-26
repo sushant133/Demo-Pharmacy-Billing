@@ -58,7 +58,12 @@ export default async function PrescriptionDetailPage({
 
   const state = prescriptionStatus(script);
   const canDispense = can(user.role, "sale:create") && state.dispensable;
-  const canCancel = can(user.role, "sale:void") && !script.cancelledAt;
+  // A fully dispensed prescription is complete; cancelling it would relabel
+  // medicine that was handed over as never supplied.
+  const canCancel =
+    can(user.role, "sale:void") &&
+    !script.cancelledAt &&
+    (script.outstandingUnits ?? 1) > 0;
   const dispenses = script.dispenses ?? [];
   const lapsed = isExpiredOn(script.validUntil);
 

@@ -6,6 +6,8 @@ import { resolveViewScope, switchableBranches } from "@/lib/branch-scope";
 import { withDbRead } from "@/lib/db";
 import { getSettings } from "@/lib/settings";
 import { getAlertOverview } from "@/lib/alerts";
+import { can } from "@/lib/roles";
+import { AlertNotifications } from "@/components/native/AlertNotifications";
 
 /**
  * Layout for every authenticated screen.
@@ -60,6 +62,8 @@ export default async function AppLayout({
           pharmacyName={pharmacyName}
         />
       ) : null}
+      {/* Android app only: the background check reads the same alert roll-up. */}
+      {can(user.role, "report:read") ? <AlertNotifications /> : null}
       <AppShell
         user={{
           name: user.name,

@@ -7,6 +7,7 @@ import { formatDate, money } from "@/lib/format";
 import {
   PURCHASE_INELIGIBLE_LABELS,
   purchaseLineEligibility,
+  purchaseReturnTerms,
 } from "@/lib/purchase-return";
 import { can } from "@/lib/roles";
 import { pharmacyFilter } from "@/lib/tenant";
@@ -216,6 +217,7 @@ export default async function PurchaseReturnsPage({
             supplierName={purchase.supplierName}
             lines={lines}
             canRecord={canRecord}
+            terms={purchaseReturnTerms(purchase)}
           />
 
           {previous.length > 0 ? (

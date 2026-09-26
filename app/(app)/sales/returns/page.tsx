@@ -167,6 +167,7 @@ export default async function SalesReturnsPage({
     refundMethod: string;
     units: number;
     totalAmount: number;
+    refundPaid?: number;
     conditionConfirmed: boolean;
   }>([
     { $match: { ...tenant, "returns.0": { $exists: true } } },
@@ -184,6 +185,7 @@ export default async function SalesReturnsPage({
         refundMethod: "$returns.refundMethod",
         units: "$returns.units",
         totalAmount: "$returns.totalAmount",
+        refundPaid: "$returns.refundPaid",
         conditionConfirmed: "$returns.conditionConfirmed",
       },
     },
@@ -569,6 +571,13 @@ export default async function SalesReturnsPage({
                     </td>
                     <td className="td tnum text-right font-medium">
                       {money(row.totalAmount)}
+                      {row.refundMethod !== "adjust" &&
+                      row.refundPaid != null &&
+                      row.refundPaid < row.totalAmount ? (
+                        <span className="block text-[11px] font-normal text-slate-400">
+                          {money(row.refundPaid)} handed back
+                        </span>
+                      ) : null}
                     </td>
                     <td className="td col-actions">
                       <ActionBar>
