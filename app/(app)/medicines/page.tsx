@@ -17,6 +17,7 @@ import { ActionBar, ActionIcon } from "@/components/action-icons";
 import { MedicineFormPanel } from "@/components/medicines/MedicineFormPanel";
 import { MedicineImportPanel } from "@/components/medicines/MedicineImportPanel";
 import { MedicineActiveToggle } from "@/components/medicines/MedicineActiveToggle";
+import { CategoryFilter } from "@/components/medicines/CategoryFilter";
 
 export const metadata: Metadata = { title: "Medicines" };
 export const dynamic = "force-dynamic";
@@ -384,19 +385,7 @@ export default async function MedicinesPage({
             <label htmlFor="category" className="label">
               Category
             </label>
-            <select
-              id="category"
-              name="category"
-              defaultValue={params.category ?? ""}
-              className="input"
-            >
-              <option value="">All categories</option>
-              {categories.map((category) => (
-                <option key={category} value={category}>
-                  {category}
-                </option>
-              ))}
-            </select>
+            <CategoryFilter categories={categories} defaultValue={params.category ?? ""} />
           </div>
           <div>
             <label htmlFor="status" className="label">

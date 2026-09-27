@@ -113,6 +113,8 @@ export function MedicineImportPanel({
 
   const [fileName, setFileName] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
+  /** Set when the rows came from a photo; holds anything the reader flagged. */
+  const [photo, setPhoto] = useState<{ note: string } | null>(null);
 
   /** Any supported file into the textarea as CSV, whatever it arrived as. */
   async function readFile(file: File) {
@@ -120,6 +122,7 @@ export function MedicineImportPanel({
     setError(null);
     // The file may not match what was previewed a moment ago.
     setReport(null);
+    setPhoto(null);
 
     if (extension === "xls") {
       setError(
@@ -162,6 +165,45 @@ export function MedicineImportPanel({
         setCsv(text);
       }
       setFileName(file.name);
+    } finally {
+      setReading(false);
+    }
+  }
+
+
+  /** A photo of a list, read on the server into the same rows a file gives. */
+  async function readPhoto(file: File) {
+    setError(null);
+    setReport(null);
+    setPhoto(null);
+    setReading(true);
+    try {
+      let image: Blob;
+      try {
+        image = await shrinkPhoto(file);
+      } catch {
+        setError("That photo could not be opened. Use a JPG or PNG image.");
+        return;
+      }
+      const result = await apiFetch<{ csv: string; count: number; note: string }>(
+        "/api/medicines/import/image",
+        {
+          method: "POST",
+          headers: { "Content-Type": image.type },
+          body: image,
+        },
+      );
+      if (!result.ok) {
+        setError(result.message);
+        return;
+      }
+      if (result.data.count === 0) {
+        setError(result.data.note || "No medicines could be read from that photo.");
+        return;
+      }
+      setCsv(result.data.csv);
+      setFileName(`${file.name} · ${result.data.count} medicine${result.data.count === 1 ? "" : "s"} read`);
+      setPhoto({ note: result.data.note });
     } finally {
       setReading(false);
     }
@@ -261,6 +303,7 @@ export function MedicineImportPanel({
                   setCsv(event.target.value);
                   setReport(null);
                   setFileName(null);
+                  setPhoto(null);
                 }}
                 rows={8}
                 spellCheck={false}
@@ -283,6 +326,21 @@ export function MedicineImportPanel({
                     }}
                   />
                 </label>
+                <label className="cursor-pointer text-xs font-medium text-brand-700 hover:underline">
+                  {reading ? "Reading…" : "Read from a photo"}
+                  <input
+                    type="file"
+                    // On a phone this offers the camera as well as the gallery.
+                    accept="image/jpeg,image/png,image/webp,image/*"
+                    className="hidden"
+                    disabled={reading}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      event.target.value = "";
+                      if (file) void readPhoto(file);
+                    }}
+                  />
+                </label>
                 <a
                   href={`data:text/csv;charset=utf-8,${encodeURIComponent(IMPORT_TEMPLATE_HEADER + "\n")}`}
                   download="medicines-template.csv"
@@ -296,6 +354,17 @@ export function MedicineImportPanel({
                   Loaded <span className="font-medium">{fileName}</span>
                 </p>
               ) : null}
+              {photo ? (
+                <p className="mt-1 rounded-md bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">
+                  Read from a photo - check names and prices in the rows above,
+                  then Preview before importing.
+                  {photo.note ? ` ${photo.note}` : ""}
+                </p>
+              ) : null}
+              <p className="mt-1 text-[11px] text-slate-500">
+                A photo of a supplier bill or a printed or handwritten list is
+                read into rows here. Nothing is saved until you import.
+              </p>
               <p className="mt-1.5 text-[11px] text-slate-500">
                 The first line is the column headings. Only Name is required;
                 common spellings such as &ldquo;MRP&rdquo;, &ldquo;Purchase
@@ -492,4 +561,38 @@ function Note({
       <p className="mt-0.5 text-xs opacity-90">{children}</p>
     </div>
   );
+}
+
+/** Longest side sent for reading: plenty for print, far smaller than a phone photo. */
+const PHOTO_MAX_SIDE = 2000;
+
+/**
+ * Shrink a photo to a JPEG the server can take.
+ *
+ * Phone cameras produce 5-12 MB images; the text on a bill is just as legible
+ * at 2000px, and the smaller upload is quicker on a shop's connection and
+ * stays under the host's request limit.
+ */
+async function shrinkPhoto(file: File): Promise<Blob> {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, PHOTO_MAX_SIDE / Math.max(bitmap.width, bitmap.height));
+  const width = Math.round(bitmap.width * scale);
+  const height = Math.round(bitmap.height * scale);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("No canvas");
+  // White first, so a transparent PNG does not turn black as a JPEG.
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, width, height);
+  context.drawImage(bitmap, 0, 0, width, height);
+  bitmap.close();
+
+  const blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob(resolve, "image/jpeg", 0.85),
+  );
+  if (!blob) throw new Error("Could not encode");
+  return blob;
 }
