@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { BrandLoading } from "@/components/BrandLoading";
-import { alertNotifyPlugin } from "@/components/native/AlertNotifications";
+import { alertNotifyPlugin, listen } from "@/components/native/AlertNotifications";
 
 /**
  * Opens the screen a tapped notification points at.
@@ -40,7 +40,8 @@ export function NotificationOpener() {
 
   useEffect(() => {
     const plugin = alertNotifyPlugin();
-    if (!plugin?.addListener || !plugin.consumePendingOpen) return;
+    // An older APK has neither; it opens the screen itself with a reload.
+    if (typeof plugin?.consumePendingOpen !== "function") return;
 
     let cancelled = false;
     let handle: { remove: () => Promise<void> } | null = null;
@@ -57,10 +58,9 @@ export function NotificationOpener() {
     }
 
     // Listen first, then collect: a tap landing between the two is still caught.
-    void plugin
-      .addListener("open", (data) => open(data.path))
+    void listen(plugin, "open", (data) => open(data.path))
       .then((h) => {
-        if (cancelled) void h.remove();
+        if (h && cancelled) void h.remove();
         else handle = h;
         return plugin.consumePendingOpen?.();
       })

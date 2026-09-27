@@ -31,10 +31,32 @@ interface AlertNotifyPlugin {
   disable: () => Promise<void>;
   checkNow?: () => Promise<void>;
   consumePendingOpen?: () => Promise<{ path?: string | null }>;
+  /**
+   * Read straight off `window.Capacitor.Plugins`, this is the native bridge's
+   * own addListener, which returns the handle itself - not a promise, as the
+   * `@capacitor/core` wrapper does. Always go through `listen()`.
+   */
   addListener?: (
     event: "alerts" | "open",
     handler: (data: AlertsEvent & { path: string }) => void,
-  ) => Promise<PluginListenerHandle>;
+  ) => PluginListenerHandle | Promise<PluginListenerHandle>;
+}
+
+/**
+ * Subscribe to a plugin event whichever shape addListener returns. Never
+ * throws: a notification listener must not be able to take a screen down.
+ */
+export function listen(
+  plugin: AlertNotifyPlugin,
+  event: "alerts" | "open",
+  handler: (data: AlertsEvent & { path: string }) => void,
+): Promise<PluginListenerHandle | null> {
+  try {
+    if (!plugin.addListener) return Promise.resolve(null);
+    return Promise.resolve(plugin.addListener(event, handler)).catch(() => null);
+  } catch {
+    return Promise.resolve(null);
+  }
 }
 
 export function alertNotifyPlugin(): AlertNotifyPlugin | undefined {
@@ -69,24 +91,25 @@ export function AlertNotifications({ accountKey }: { accountKey: string }) {
     let cancelled = false;
     const cleanups: Array<() => void> = [];
 
-    void plugin.enable({ accountKey }).catch(() => {
-      // Notifications are a convenience; the Alerts screen still works without them.
+    // Notifications are a convenience; the Alerts screen still works without them.
+    void Promise.resolve()
+      .then(() => plugin.enable({ accountKey }))
+      .catch(() => {});
+
+    // An older APK never sends this event; enable() alone keeps its 15-minute schedule.
+    void listen(plugin, "alerts", (data) => setPopup(data)).then((handle) => {
+      if (!handle) return;
+      if (cancelled) void handle.remove();
+      else cleanups.push(() => void handle.remove());
     });
 
-    // Older APKs lack these; enable() alone keeps the 15-minute schedule.
-    if (plugin.addListener) {
-      void plugin
-        .addListener("alerts", (data) => setPopup(data))
-        .then((handle) => {
-          if (cancelled) void handle.remove();
-          else cleanups.push(() => void handle.remove());
-        })
-        .catch(() => {});
-    }
-
-    if (plugin.checkNow) {
+    // Older APKs have no checkNow at all.
+    if (typeof plugin.checkNow === "function") {
       const check = () => {
-        if (document.visibilityState === "visible") void plugin.checkNow?.().catch(() => {});
+        if (document.visibilityState !== "visible") return;
+        void Promise.resolve()
+          .then(() => plugin.checkNow?.())
+          .catch(() => {});
       };
       const timer = window.setInterval(check, FOREGROUND_CHECK_MS);
       document.addEventListener("visibilitychange", check);
