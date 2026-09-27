@@ -2,13 +2,25 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
+    // A stable identity, so a later start_url change is an update to the
+    // installed app rather than a second install beside it.
+    id: "/",
     name: "MantraMed",
     short_name: "MantraMed",
-    description: "Sales and thermal bills on a phone or till.",
+    description:
+      "Pharmacy billing, stock and expiry tracking for the counter - on a phone, tablet or till.",
+    lang: "en",
+    dir: "ltr",
+    // Middleware sends a signed-out visitor to /login and brings them back.
     start_url: "/billing",
+    scope: "/",
     display: "standalone",
-    background_color: "#f1f5f9",
+    display_override: ["standalone", "minimal-ui"],
+    orientation: "any",
+    background_color: "#ffffff",
     theme_color: "#0f766e",
+    categories: ["business", "medical", "productivity"],
+    prefer_related_applications: false,
     /*
       Built from the master logo by scripts/generate-icons.ts. Opaque white
       squares with the mark inset, because Android masks a home-screen icon

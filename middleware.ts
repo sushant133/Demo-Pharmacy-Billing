@@ -28,6 +28,10 @@ const PUBLIC_PATHS = [
   "/api/auth/reset-password",
   "/manifest.webmanifest",
   "/icon",
+  // The PWA worker and its offline page: fetched before anyone signs in, and
+  // a redirect to /login in their place makes the site uninstallable.
+  "/sw.js",
+  "/offline.html",
   // Polled by the Android app before anyone has signed in.
   "/android-app-version.json",
   // Play Console and anyone deciding whether to use the app read it signed out.

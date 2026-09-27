@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0f766e" />
+<title>Offline | MantraMed</title>
+<style>
+  :root { color-scheme: light; }
+  body {
+    margin: 0; min-height: 100dvh;
+    display: flex; align-items: center; justify-content: center;
+    background: #f1f5f9; color: #0f172a;
+    font: 16px/1.5 ui-sans-serif, system-ui, sans-serif;
+    padding: 24px; text-align: center; box-sizing: border-box;
+  }
+  .card { max-width: 22rem; }
+  .mark { display: block; width: 96px; height: 96px; margin: 0 auto 20px; }
+  h1 { font-size: 1.15rem; margin: 0 0 8px; }
+  p { margin: 0 0 20px; color: #475569; font-size: 0.9rem; }
+  button {
+    border: 0; border-radius: 10px; padding: 12px 24px;
+    background: #0f766e; color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<!-- Shown by public/sw.js when a page load cannot reach the server. -->
+<div class="card">
+  <img class="mark" src="/mantramed-logo.png" alt="MantraMed" />
+  <h1>Can&rsquo;t reach MantraMed</h1>
+  <p>The till needs an internet connection to load sales, stock and batches. Check the connection and try again.</p>
+  <button type="button" onclick="location.reload()">Try again</button>
+</div>
+<script>
+  // Back online: carry on without anyone having to press the button.
+  window.addEventListener("online", function () { location.reload(); });
+</script>
+</body>
+</html>

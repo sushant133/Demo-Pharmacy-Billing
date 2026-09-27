@@ -4,6 +4,7 @@ import { getSettings } from "@/lib/settings";
 import { Suspense } from "react";
 import { CapacitorBoot } from "@/components/native/CapacitorBoot";
 import { NotificationOpener } from "@/components/native/NotificationOpener";
+import { PwaRegister } from "@/components/PwaRegister";
 import "./globals.css";
 
 /**
@@ -65,6 +66,21 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
+      {/*
+        Written here, not left to metadata: `generateMetadata` above is async
+        (it reads the session), and Next 15.5 streams async metadata into
+        <body>. Chrome only looks for the manifest in <head>, so a streamed
+        link left the site with no "Install app" at all. These never vary by
+        tenant; the per-shop title still comes from generateMetadata.
+      */}
+      <head>
+        <link rel="manifest" href="/manifest.webmanifest" />
+        <link rel="icon" href="/icon.png" type="image/png" sizes="256x256" />
+        <link rel="apple-touch-icon" href="/apple-icon.png" sizes="180x180" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="application-name" content="MantraMed" />
+      </head>
       <body className="min-h-dvh">
         {children}
         {/*
@@ -87,6 +103,7 @@ export default function RootLayout({
         {/* After the page, so the frame it waits for has the page in it. */}
         <script dangerouslySetInnerHTML={{ __html: EARLY_SPLASH_HIDE }} />
         <CapacitorBoot />
+        <PwaRegister />
         {/* Reads the URL, so it needs its own boundary to keep pages static. */}
         <Suspense fallback={null}>
           <NotificationOpener />
