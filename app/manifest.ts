@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { config } from "@/lib/config";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
@@ -21,6 +22,12 @@ export default function manifest(): MetadataRoute.Manifest {
     theme_color: "#0f766e",
     categories: ["business", "medical", "productivity"],
     prefer_related_applications: false,
+    // Itself, so the sign-in page can ask `getInstalledRelatedApps()` whether
+    // this computer already has MantraMed installed and say so instead of
+    // offering to install it again.
+    related_applications: [
+      { platform: "webapp", url: `${config.appUrl.replace(/\/+$/, "")}/manifest.webmanifest` },
+    ],
     /*
       Built from the master logo by scripts/generate-icons.ts. Opaque white
       squares with the mark inset, because Android masks a home-screen icon

@@ -2,6 +2,9 @@
 
 import { useEffect } from "react";
 import { isNativeApp } from "@/lib/native";
+// Side effect: starts listening for the browser's install prompt on every
+// page, so the sign-in page's install button has it however early it fired.
+import "@/lib/pwa-install";
 
 /**
  * Registers the service worker (public/sw.js) that makes the site installable.
