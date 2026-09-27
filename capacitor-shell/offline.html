@@ -26,3 +26,7 @@
   <p>The till needs an internet connection to load sales, stock and batches. Check the connection and try again.</p>
   <button onclick="location.reload()">Try again</button>
 </div>
+<script>
+  // Nothing on this page hides the launch splash otherwise; lift it now.
+  try { window.Capacitor.Plugins.SplashScreen.hide(); } catch (e) {}
+</script>

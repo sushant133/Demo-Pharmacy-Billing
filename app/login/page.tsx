@@ -112,12 +112,9 @@ export default async function LoginPage({
                       ? null
                       : [
                           {
-                            label: "Pharmacy owner",
-                            email:
-                              process.env.SEED_ADMIN_EMAIL ??
-                              "admin@mantrapharma.local",
-                            password:
-                              process.env.SEED_ADMIN_PASSWORD ?? "Admin@123",
+                            label: "Demo pharmacy",
+                            email: "demo@mantrasphere.com.np",
+                            password: "Demo@123",
                           },
                           {
                             label: "Superadmin",

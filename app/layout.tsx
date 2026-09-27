@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { getSession } from "@/lib/auth";
 import { getSettings } from "@/lib/settings";
+import { Suspense } from "react";
 import { CapacitorBoot } from "@/components/native/CapacitorBoot";
+import { NotificationOpener } from "@/components/native/NotificationOpener";
 import "./globals.css";
 
 /**
@@ -85,6 +87,10 @@ export default function RootLayout({
         {/* After the page, so the frame it waits for has the page in it. */}
         <script dangerouslySetInnerHTML={{ __html: EARLY_SPLASH_HIDE }} />
         <CapacitorBoot />
+        {/* Reads the URL, so it needs its own boundary to keep pages static. */}
+        <Suspense fallback={null}>
+          <NotificationOpener />
+        </Suspense>
       </body>
     </html>
   );

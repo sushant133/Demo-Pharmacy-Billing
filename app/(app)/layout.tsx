@@ -5,7 +5,7 @@ import { requirePageSession } from "@/lib/auth";
 import { resolveViewScope, switchableBranches } from "@/lib/branch-scope";
 import { withDbRead } from "@/lib/db";
 import { getSettings } from "@/lib/settings";
-import { getAlertOverview } from "@/lib/alerts";
+import { alertAccountKey, getAlertOverview } from "@/lib/alerts";
 import { can } from "@/lib/roles";
 import { AlertNotifications } from "@/components/native/AlertNotifications";
 
@@ -62,8 +62,14 @@ export default async function AppLayout({
           pharmacyName={pharmacyName}
         />
       ) : null}
-      {/* Android app only: the background check reads the same alert roll-up. */}
-      {can(user.role, "report:read") ? <AlertNotifications /> : null}
+      {/*
+        Android app only: the background check reads the same alert roll-up.
+        Bound to this pharmacy + user, and not switched on while a platform
+        administrator is acting as someone - their phone is not the shop's.
+      */}
+      {can(user.role, "report:read") && !user.impersonatorId ? (
+        <AlertNotifications accountKey={alertAccountKey(user)} />
+      ) : null}
       <AppShell
         user={{
           name: user.name,

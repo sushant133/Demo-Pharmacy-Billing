@@ -41,9 +41,10 @@ const config: CapacitorConfig = {
   plugins: {
     SplashScreen: {
       // Hidden by CapacitorBoot as soon as the remote page mounts; the
-      // duration is only the ceiling for a slow or offline start.
+      // duration is only the ceiling for a slow start. Long enough that a slow
+      // server never uncovers a blank WebView; offline.html hides it itself.
       launchAutoHide: true,
-      launchShowDuration: 3000,
+      launchShowDuration: 8000,
       launchFadeOutDuration: 200,
       backgroundColor: "#ffffffff",
       // Only used by SplashScreen.show() / the pre-AndroidX fallback; the

@@ -387,3 +387,13 @@ export async function getAlertOverview(scope?: BranchScope): Promise<AlertOvervi
   };
   });
 }
+
+/**
+ * Which account a device's alert notifications belong to: the pharmacy and
+ * the user signed in on it. The Android app is enabled with this and the
+ * background check gets it back from POST /api/reports/alerts; a mismatch
+ * means another account is signed in and nothing is shown.
+ */
+export function alertAccountKey(user: { pharmacyId: string; id: string }): string {
+  return `${user.pharmacyId}:${user.id}`;
+}

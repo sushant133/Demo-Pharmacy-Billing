@@ -39,6 +39,12 @@ import java.util.List;
  *
  * Signed out (401/403) means the till has changed hands: the notification is
  * cleared and the schedule cancelled until the next sign-in enables it again.
+ *
+ * Account-bound: `enable()` records which pharmacy + user this device was
+ * switched on for, and the server echoes the account behind the cookie. If
+ * they differ - another account signed in on the same phone - nothing is
+ * posted and the old account's notification is withdrawn, so a device only
+ * ever shows alerts for the account signed in on it.
  */
 public class AlertCheckWorker extends Worker {
 
@@ -46,6 +52,7 @@ public class AlertCheckWorker extends Worker {
     static final String EXTRA_OPEN_PATH = "tech.mantramed.OPEN_PATH";
     static final String PREFS = "alert-notify";
     static final String PREF_ORIGIN = "origin";
+    static final String PREF_ACCOUNT = "account";
 
     private static final int NOTIFICATION_ID = 4101;
     private static final String PREF_LAST = "last-counts";
@@ -104,6 +111,14 @@ public class AlertCheckWorker extends Worker {
             }
 
             JSONObject data = new JSONObject(text.toString()).getJSONObject("data");
+            String expected = prefs.getString(PREF_ACCOUNT, null);
+            String actual = data.optString("accountKey", "");
+            if (expected != null && !actual.isEmpty() && !expected.equals(actual)) {
+                // The cookie now belongs to someone else. Their own sign-in
+                // re-enables notifications under their key; until then, stay quiet.
+                NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID);
+                return Result.success();
+            }
             handle(context, prefs, data);
             return Result.success();
         } catch (Exception error) {
@@ -141,14 +156,28 @@ public class AlertCheckWorker extends Worker {
         boolean remind = System.currentTimeMillis() - lastNotifiedAt >= REMIND_AFTER_MS;
 
         if (grew || remind) {
-            if (show(context, total, expired, expiring, out, runningOut)) {
+            List<String> parts = new ArrayList<>();
+            if (expired > 0) parts.add(expired + " expired");
+            if (expiring > 0) parts.add(expiring + " expiring soon");
+            if (out > 0) parts.add(out + " out of stock");
+            if (runningOut > 0) parts.add(runningOut + " running out");
+            String body = parts.isEmpty() ? "Open Alerts to review." : String.join(" · ", parts);
+            String title = total == 1 ? "1 alert needs action" : total + " alerts need action";
+            // Land on the tab the news is about: expiry first, it costs money soonest.
+            String path = expired + expiring > 0 ? "/alerts?tab=expiry" : "/alerts?tab=stock";
+
+            // In the foreground the page shows its own popup, so the shade entry
+            // goes in quietly rather than dropping a second banner over it.
+            boolean foreground = MainActivity.isInForeground();
+            if (show(context, total, title, body, path, foreground)) {
                 editor.putLong(PREF_LAST_NOTIFIED_AT, System.currentTimeMillis());
             }
+            if (foreground) AlertNotifyPlugin.emitAlerts(total, title, body, path);
         }
         editor.apply();
     }
 
-    private boolean show(Context context, int total, int expired, int expiring, int out, int runningOut) {
+    private boolean show(Context context, int total, String title, String body, String path, boolean silent) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
             && ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED) {
@@ -156,17 +185,9 @@ public class AlertCheckWorker extends Worker {
         }
         ensureChannel(context);
 
-        List<String> parts = new ArrayList<>();
-        if (expired > 0) parts.add(expired + " expired");
-        if (expiring > 0) parts.add(expiring + " expiring soon");
-        if (out > 0) parts.add(out + " out of stock");
-        if (runningOut > 0) parts.add(runningOut + " running out");
-        String body = parts.isEmpty() ? "Open Alerts to review." : String.join(" · ", parts);
-        String title = total == 1 ? "1 alert needs action" : total + " alerts need action";
-
         Intent open = new Intent(context, MainActivity.class)
             .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            .putExtra(EXTRA_OPEN_PATH, "/alerts");
+            .putExtra(EXTRA_OPEN_PATH, path);
         PendingIntent tap = PendingIntent.getActivity(
             context,
             NOTIFICATION_ID,
@@ -183,6 +204,7 @@ public class AlertCheckWorker extends Worker {
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setNumber(total)
             .setAutoCancel(true)
+            .setSilent(silent)
             .setContentIntent(tap);
 
         try {
@@ -207,15 +229,21 @@ public class AlertCheckWorker extends Worker {
         manager.createNotificationChannel(channel);
     }
 
-    /** Signed out or disabled: drop the notification, the baseline and the schedule. */
+    /** Signed out or disabled: drop the notification, the baseline, the account and the schedule. */
     static void clear(Context context) {
+        resetBaseline(context);
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(PREF_ACCOUNT).apply();
+        AlertNotifyPlugin.cancelSchedule(context);
+    }
+
+    /** A different account: its first check starts from nothing, not from the last one's counts. */
+    static void resetBaseline(Context context) {
         NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID);
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .remove(PREF_LAST)
             .remove(PREF_LAST_NOTIFIED_AT)
             .apply();
-        AlertNotifyPlugin.cancelSchedule(context);
     }
 
     private static int[] parse(String value) {

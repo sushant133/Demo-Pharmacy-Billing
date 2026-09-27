@@ -1,6 +1,11 @@
 import { ok, parseQuery, withRoute } from "@/lib/api";
 import { requirePermission } from "@/lib/auth";
-import { getAlertOverview, getExpiryAlerts, getStockAlerts } from "@/lib/alerts";
+import {
+  alertAccountKey,
+  getAlertOverview,
+  getExpiryAlerts,
+  getStockAlerts,
+} from "@/lib/alerts";
 import { resolveRequestScope, resolveViewScope } from "@/lib/branch-scope";
 import {
   EXPIRY_SEVERITIES,
@@ -70,9 +75,16 @@ export const GET = withRoute(async (req) => {
   });
 });
 
-/** HEAD is used by the nav badge; it only needs the roll-up counts. */
+/**
+ * HEAD is used by the nav badge; it only needs the roll-up counts.
+ *
+ * `accountKey` is who the cookie belongs to. The Android background check
+ * compares it with the account the device was enabled for, so a phone never
+ * notifies one account about another's stock.
+ */
 export const POST = withRoute(async () => {
   const user = await requirePermission("report:read");
   const scope = await resolveViewScope(user);
-  return ok(await getAlertOverview(scope));
+  const overview = await getAlertOverview(scope);
+  return ok({ ...overview, accountKey: alertAccountKey(user) });
 });
