@@ -372,3 +372,73 @@ export function parseMedicineCsv(text: string): ImportPlan {
 /** The header a shop can download, fill in and paste back. */
 export const IMPORT_TEMPLATE_HEADER =
   "Name,Generic,Manufacturer,Category,Unit,Pack size,SKU,Barcode,Units per strip,Purchase price,MRP,Reorder level,Rx";
+
+// ---------------------------------------------------------------------------
+// Rows read from a photo
+// ---------------------------------------------------------------------------
+
+/** One medicine as read from a photo of a list, or as corrected in the review table. */
+export interface PhotoImportRow {
+  name: string;
+  generic: string;
+  manufacturer: string;
+  category: string;
+  unit: string;
+  packSize: string;
+  purchasePrice: string | number | null;
+  mrp: string | number | null;
+}
+
+/** Header names the parser above already recognises. */
+const PHOTO_IMPORT_HEADER = [
+  "Name",
+  "Generic",
+  "Manufacturer",
+  "Category",
+  "Unit",
+  "Pack size",
+  "Purchase price",
+  "MRP",
+];
+
+/**
+ * A price as typed or read: "Rs. 1,250.50" → "1250.50". The currency label goes
+ * first, so the dot in "Rs." is never taken for a decimal point.
+ */
+export function cleanPrice(value: string | number | null): string {
+  if (value === null) return "";
+  return typedPrice(String(value).replace(/(?:npr|rs)\.?/gi, ""));
+}
+
+/**
+ * Digits and one decimal point, as a price is typed key by key: stray dots and
+ * letters are dropped, and a leading "." reads as "0.".
+ */
+export function typedPrice(value: string): string {
+  const [whole = "", ...rest] = value.replace(/[^\d.]/g, "").split(".");
+  if (rest.length === 0) return whole;
+  return `${whole || "0"}.${rest.join("")}`;
+}
+
+/**
+ * Photo rows as import text, so they go through exactly the same checks as a
+ * spreadsheet. Rows with no name are dropped; a blank price stays blank.
+ */
+export function photoRowsToCsv(rows: readonly PhotoImportRow[]): { csv: string; count: number } {
+  const price = cleanPrice;
+  const kept = rows.filter((row) => row.name.trim() !== "");
+  const csv = rowsToCsv([
+    PHOTO_IMPORT_HEADER,
+    ...kept.map((row) => [
+      row.name.trim(),
+      row.generic.trim(),
+      row.manufacturer.trim(),
+      row.category.trim(),
+      row.unit.trim().toLowerCase(),
+      row.packSize.trim(),
+      price(row.purchasePrice),
+      price(row.mrp),
+    ]),
+  ]);
+  return { csv, count: kept.length };
+}

@@ -68,6 +68,8 @@ export default async function MedicinesPage({
     new?: string;
     edit?: string;
     import?: string;
+    /** "Upload medicine list image": open the import panel photo-first. */
+    photo?: string;
     branch?: string;
   }>;
 }) {
@@ -635,7 +637,7 @@ export default async function MedicinesPage({
       ) : null}
 
       {editable && params.import === "1" ? (
-        <MedicineImportPanel returnHref={listHref} />
+        <MedicineImportPanel returnHref={listHref} startWithPhoto={params.photo === "1"} />
       ) : null}
     </>
   );

@@ -3,8 +3,20 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
 import { apiFetch } from "@/lib/client";
+import { shrinkPhoto } from "@/lib/photo";
 import { amount } from "@/lib/format";
-import { IMPORT_TEMPLATE_HEADER, jsonToCsv } from "@/lib/medicine-import";
+import {
+  IMPORT_TEMPLATE_HEADER,
+  jsonToCsv,
+  photoRowsToCsv,
+  type PhotoImportRow,
+} from "@/lib/medicine-import";
+import {
+  PhotoReviewTable,
+  reviewRowsFrom,
+  type ReviewRow,
+  type RowStatus,
+} from "@/components/medicines/PhotoReviewTable";
 import { SlideOver } from "@/components/SlideOver";
 import { Badge } from "@/components/ui";
 
@@ -73,8 +85,11 @@ interface ImportReport {
 
 export function MedicineImportPanel({
   returnHref = "/medicines",
+  startWithPhoto = false,
 }: {
   returnHref?: string;
+  /** Opened from "Upload medicine list image": lead with the photo upload. */
+  startWithPhoto?: boolean;
 }) {
   const router = useRouter();
   const [csv, setCsv] = useState("");
@@ -115,6 +130,32 @@ export function MedicineImportPanel({
   const [reading, setReading] = useState(false);
   /** Set when the rows came from a photo; holds anything the reader flagged. */
   const [photo, setPhoto] = useState<{ note: string } | null>(null);
+  /** The photo's rows, editable. While set, they are the source of the import text. */
+  const [photoRows, setPhotoRows] = useState<ReviewRow[] | null>(null);
+
+  /** Any edit rebuilds the import text and asks for a fresh Preview. */
+  function changePhotoRows(next: ReviewRow[]) {
+    setPhotoRows(next);
+    setCsv(photoRowsToCsv(next.filter((row) => row.include)).csv);
+    setReport(null);
+  }
+
+  /**
+   * The last Preview, row by row. Lines count from the header (line 1), over
+   * the ticked rows that have a name - exactly the rows the text was built from.
+   */
+  function statusOf(key: string): RowStatus {
+    if (!report || !photoRows) return undefined;
+    const sent = photoRows.filter((row) => row.include && row.name.trim() !== "");
+    const index = sent.findIndex((row) => row.key === key);
+    if (index < 0) return undefined;
+    const line = index + 2;
+    const failed = report.errors.find((entry) => entry.line === line);
+    if (failed) return { tone: "error", message: failed.error };
+    const duplicate = report.duplicates.find((entry) => entry.line === line);
+    if (duplicate) return { tone: "skip", message: `Skipped: ${duplicate.reason}` };
+    return { tone: "ok", message: "Ready to add" };
+  }
 
   /** Any supported file into the textarea as CSV, whatever it arrived as. */
   async function readFile(file: File) {
@@ -123,6 +164,7 @@ export function MedicineImportPanel({
     // The file may not match what was previewed a moment ago.
     setReport(null);
     setPhoto(null);
+    setPhotoRows(null);
 
     if (extension === "xls") {
       setError(
@@ -185,7 +227,12 @@ export function MedicineImportPanel({
         setError("That photo could not be opened. Use a JPG or PNG image.");
         return;
       }
-      const result = await apiFetch<{ csv: string; count: number; note: string }>(
+      const result = await apiFetch<{
+        csv: string;
+        count: number;
+        rows: PhotoImportRow[];
+        note: string;
+      }>(
         "/api/medicines/import/image",
         {
           method: "POST",
@@ -204,6 +251,7 @@ export function MedicineImportPanel({
       setCsv(result.data.csv);
       setFileName(`${file.name} · ${result.data.count} medicine${result.data.count === 1 ? "" : "s"} read`);
       setPhoto({ note: result.data.note });
+      setPhotoRows(reviewRowsFrom(result.data.rows));
     } finally {
       setReading(false);
     }
@@ -292,7 +340,46 @@ export function MedicineImportPanel({
           </div>
         ) : (
           <>
+            {startWithPhoto && !photoRows && csv.trim() === "" ? (
+              <label
+                className={`flex cursor-pointer flex-col items-center gap-1.5 rounded-xl border-2 border-dashed border-brand-200 bg-brand-50/50 px-4 py-6 text-center hover:border-brand-400 ${reading ? "pointer-events-none opacity-60" : ""}`}
+              >
+                <span className="text-sm font-semibold text-brand-800">
+                  {reading ? "Reading the list…" : "Upload medicine list image"}
+                </span>
+                <span className="text-xs text-slate-600">
+                  A clear photo of a supplier bill or a printed or handwritten
+                  list. The medicines are shown below for you to check and
+                  correct before anything is saved.
+                </span>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/*"
+                  className="hidden"
+                  disabled={reading}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    if (file) void readPhoto(file);
+                  }}
+                />
+              </label>
+            ) : null}
+
             <div>
+              {photoRows ? (
+                <>
+                  <PhotoReviewTable rows={photoRows} onChange={changePhotoRows} statusOf={statusOf} />
+                  <button
+                    type="button"
+                    onClick={() => setPhotoRows(null)}
+                    className="mt-1.5 text-xs font-medium text-slate-500 hover:text-brand-700 hover:underline"
+                  >
+                    Edit as text instead
+                  </button>
+                </>
+              ) : (
+                <>
               <label htmlFor="import-csv" className="label">
                 Rows
               </label>
@@ -310,6 +397,8 @@ export function MedicineImportPanel({
                 placeholder={`${IMPORT_TEMPLATE_HEADER}\nCetzine 10mg,Cetirizine,Deurali-Janta,Antihistamine,tablet,10x10,,,10,1.20,2.50,100,No`}
                 className="input font-mono text-[11px] leading-relaxed"
               />
+                </>
+              )}
               <div className="mt-1.5 flex flex-wrap items-center gap-3">
                 <label className="cursor-pointer text-xs font-medium text-brand-700 hover:underline">
                   {reading ? "Reading the file…" : "Upload CSV, Excel or JSON"}
@@ -356,8 +445,8 @@ export function MedicineImportPanel({
               ) : null}
               {photo ? (
                 <p className="mt-1 rounded-md bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">
-                  Read from a photo - check names and prices in the rows above,
-                  then Preview before importing.
+                  Read from a photo - check every name and price above, untick
+                  anything wrong you cannot fix, then Preview and Save.
                   {photo.note ? ` ${photo.note}` : ""}
                 </p>
               ) : null}
@@ -427,7 +516,7 @@ export function MedicineImportPanel({
                   </p>
                 ) : null}
 
-                {report.preview && report.preview.length > 0 ? (
+                {photoRows ? null : report.preview && report.preview.length > 0 ? (
                   <div className="rounded-lg border border-slate-200">
                     <p className="border-b border-slate-100 px-3 py-1.5 text-[11px] font-medium text-slate-500">
                       Preview — will be added in this order
@@ -563,36 +652,3 @@ function Note({
   );
 }
 
-/** Longest side sent for reading: plenty for print, far smaller than a phone photo. */
-const PHOTO_MAX_SIDE = 2000;
-
-/**
- * Shrink a photo to a JPEG the server can take.
- *
- * Phone cameras produce 5-12 MB images; the text on a bill is just as legible
- * at 2000px, and the smaller upload is quicker on a shop's connection and
- * stays under the host's request limit.
- */
-async function shrinkPhoto(file: File): Promise<Blob> {
-  const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, PHOTO_MAX_SIDE / Math.max(bitmap.width, bitmap.height));
-  const width = Math.round(bitmap.width * scale);
-  const height = Math.round(bitmap.height * scale);
-
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("No canvas");
-  // White first, so a transparent PNG does not turn black as a JPEG.
-  context.fillStyle = "#ffffff";
-  context.fillRect(0, 0, width, height);
-  context.drawImage(bitmap, 0, 0, width, height);
-  bitmap.close();
-
-  const blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob(resolve, "image/jpeg", 0.85),
-  );
-  if (!blob) throw new Error("Could not encode");
-  return blob;
-}

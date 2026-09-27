@@ -9,6 +9,8 @@ import { Field, SlideOver } from "@/components/SlideOver";
 import { medicineSchema } from "@/lib/validation";
 import { MEDICINE_UNITS, mergeMedicineCategories } from "@/lib/constants";
 import { canSellLoose, resolveUnitsPerStrip, unitWord } from "@/lib/pack";
+import { shrinkPhoto } from "@/lib/photo";
+import type { PackFill } from "@/lib/medicine-image-import";
 
 /**
  * Add / edit a catalogue entry.
@@ -142,8 +144,84 @@ export function MedicineFormPanel({
     router.refresh();
   }, [router, returnHref]);
 
+  /*
+    Filled from a pack photo. Every field the reader set is marked until the
+    user touches it, and nothing is saved until they press Save - a photo
+    reading is a draft for a person to check, never a record on its own.
+  */
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [scan, setScan] = useState<{ note: string; mrpNote: string } | null>(null);
+  const [filled, setFilled] = useState<ReadonlySet<string>>(new Set());
+
+  async function scanPack(file: File) {
+    setScanError(null);
+    setScanning(true);
+    try {
+      let image: Blob;
+      try {
+        image = await shrinkPhoto(file);
+      } catch {
+        setScanError("That photo could not be opened. Use a JPG or PNG image.");
+        return;
+      }
+      const result = await apiFetch<PackFill>("/api/medicines/import/pack", {
+        method: "POST",
+        headers: { "Content-Type": image.type },
+        body: image,
+      });
+      if (!result.ok) {
+        setScanError(result.message);
+        return;
+      }
+      const read = result.data;
+      const patch: Partial<typeof values> = {};
+      const text = [
+        "name",
+        "genericName",
+        "saltComposition",
+        "manufacturer",
+        "category",
+        "unit",
+        "packSize",
+        "barcode",
+      ] as const;
+      for (const key of text) {
+        if (read[key]) patch[key] = read[key];
+      }
+      if (read.unitsPerStrip != null) patch.unitsPerStrip = String(read.unitsPerStrip);
+      if (read.defaultSalePrice != null) patch.defaultSalePrice = String(read.defaultSalePrice);
+
+      const keys = Object.keys(patch);
+      if (keys.length === 0) {
+        setScanError(read.note || "Nothing could be read from that photo. Try a closer, sharper one.");
+        return;
+      }
+      setValues((current) => ({ ...current, ...patch }));
+      setErrors({});
+      setFilled(new Set(keys));
+      setScan({ note: read.note, mrpNote: read.mrpNote });
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  function unmark(key: string) {
+    setFilled((current) => {
+      if (!current.has(key)) return current;
+      const next = new Set(current);
+      next.delete(key);
+      return next;
+    });
+  }
+
+  /** Marks a field the photo filled, until someone edits it. */
+  const fromPhoto = (key: string) =>
+    filled.has(key) ? "ring-2 ring-amber-300 bg-amber-50/50" : "";
+
   function set<K extends keyof typeof values>(key: K, value: (typeof values)[K]) {
     setValues((current) => ({ ...current, [key]: value }));
+    unmark(key as string);
     // A message that stays put while the field it complains about is being
     // corrected reads as though the correction did not register.
     setErrors((current) => {
@@ -155,6 +233,7 @@ export function MedicineFormPanel({
   }
 
   function setPackSize(packSize: string) {
+    unmark("packSize");
     setValues((current) => {
       const guessed = resolveUnitsPerStrip(current.unit, packSize, null);
       const stripEmpty = current.unitsPerStrip.trim() === "";
@@ -316,17 +395,73 @@ export function MedicineFormPanel({
           className="space-y-5"
         >
           {!isEdit ? (
-            /* Same list query as returnHref, so closing the bulk panel lands in the same place. */
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-brand-100 bg-brand-50/60 px-3 py-2">
-              <p className="text-xs text-slate-600">
-                Adding many at once? Upload a CSV, Excel or JSON file.
-              </p>
-              <Link
-                href={`${returnHref}${returnHref.includes("?") ? "&" : "?"}import=1`}
-                className="btn-secondary shrink-0 text-xs"
-              >
-                Bulk add medicines
-              </Link>
+            <div className="space-y-2 rounded-lg border border-brand-100 bg-brand-50/60 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-800">Upload medicine image</p>
+                  <p className="text-xs text-slate-600">
+                    Photograph the front of the box or strip and the fields below are filled in
+                    for you to check.
+                  </p>
+                </div>
+                <label
+                  className={`btn-primary shrink-0 cursor-pointer text-xs ${scanning ? "pointer-events-none opacity-60" : ""}`}
+                >
+                  {scanning ? "Reading the pack…" : "Upload or take photo"}
+                  <input
+                    type="file"
+                    // On a phone this offers the camera as well as the gallery.
+                    accept="image/jpeg,image/png,image/webp,image/*"
+                    className="hidden"
+                    disabled={scanning}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      // Cleared so the same photo can be chosen again.
+                      event.target.value = "";
+                      if (file) void scanPack(file);
+                    }}
+                  />
+                </label>
+              </div>
+
+              {scanError ? (
+                <p role="alert" className="text-xs text-rose-600">
+                  {scanError}
+                </p>
+              ) : null}
+
+              {scan ? (
+                <div
+                  role="status"
+                  className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900"
+                >
+                  <p className="font-medium">
+                    Filled from the photo - check every highlighted field before saving.
+                  </p>
+                  {scan.mrpNote ? <p className="mt-0.5">{scan.mrpNote}</p> : null}
+                  {scan.note ? <p className="mt-0.5">{scan.note}</p> : null}
+                  <p className="mt-0.5 text-amber-800">
+                    Nothing is saved until you press Add medicine.
+                  </p>
+                </div>
+              ) : null}
+
+              {/* Same list query as returnHref, so closing the bulk panel lands in the same place. */}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-brand-100 pt-2 text-xs">
+                <span className="text-slate-600">Adding many at once?</span>
+                <Link
+                  href={`${returnHref}${returnHref.includes("?") ? "&" : "?"}import=1&photo=1`}
+                  className="font-medium text-brand-700 hover:underline"
+                >
+                  Upload medicine list image
+                </Link>
+                <Link
+                  href={`${returnHref}${returnHref.includes("?") ? "&" : "?"}import=1`}
+                  className="font-medium text-brand-700 hover:underline"
+                >
+                  Bulk add from CSV / Excel
+                </Link>
+              </div>
             </div>
           ) : null}
 
@@ -396,7 +531,7 @@ export function MedicineFormPanel({
                 value={values.name}
                 onChange={(event) => set("name", event.target.value)}
                 placeholder="e.g. Cetzine 10mg"
-                className="input"
+                className={`input ${fromPhoto("name")}`}
                 required
               />
             </Field>
@@ -411,7 +546,7 @@ export function MedicineFormPanel({
                 value={values.genericName}
                 onChange={(event) => set("genericName", event.target.value)}
                 placeholder="e.g. Cetirizine"
-                className="input"
+                className={`input ${fromPhoto("genericName")}`}
               />
             </Field>
 
@@ -426,7 +561,7 @@ export function MedicineFormPanel({
                 value={values.saltComposition}
                 onChange={(event) => set("saltComposition", event.target.value)}
                 placeholder="e.g. Cetirizine Hydrochloride 10mg"
-                className="input"
+                className={`input ${fromPhoto("saltComposition")}`}
               />
             </Field>
 
@@ -441,7 +576,7 @@ export function MedicineFormPanel({
                 value={values.manufacturer}
                 onChange={(event) => set("manufacturer", event.target.value)}
                 placeholder="e.g. Deurali-Janta"
-                className="input"
+                className={`input ${fromPhoto("manufacturer")}`}
               />
             </Field>
 
@@ -460,6 +595,7 @@ export function MedicineFormPanel({
                   options={categoryOptions}
                   placeholder="e.g. Analgesic"
                   invalid={Boolean(errors.category)}
+                  inputClassName={fromPhoto("category")}
                   addLabel={(text) => `Add new category “${text}”`}
                 />
               </Field>
@@ -480,12 +616,13 @@ export function MedicineFormPanel({
                     // The strip count is kept while typing and dropped on save if the
                     // unit turns out to be one sold whole.
                     setValues((current) => ({ ...current, unit }));
+                    unmark("unit");
                     setErrors(({ unit: _cleared, ...rest }) => rest);
                   }}
                   options={unitOptions}
                   placeholder="e.g. tablet"
                   invalid={Boolean(errors.unit)}
-                  inputClassName="capitalize"
+                  inputClassName={`capitalize ${fromPhoto("unit")}`}
                   addLabel={(text) => `Add new unit “${text.toLowerCase()}”`}
                 />
               </Field>
@@ -505,7 +642,7 @@ export function MedicineFormPanel({
                   value={values.packSize}
                   onChange={(event) => setPackSize(event.target.value)}
                   placeholder="1x10"
-                  className="input"
+                  className={`input ${fromPhoto("packSize")}`}
                 />
               </Field>
 
@@ -528,7 +665,7 @@ export function MedicineFormPanel({
                   autoCapitalize="none"
                   autoCorrect="off"
                   placeholder="Scan or type"
-                  className="input tnum"
+                  className={`input tnum ${fromPhoto("barcode")}`}
                 />
               </Field>
             </div>
@@ -548,7 +685,7 @@ export function MedicineFormPanel({
                   value={values.unitsPerStrip}
                   onChange={(event) => set("unitsPerStrip", event.target.value)}
                   placeholder="10"
-                  className="input tnum"
+                  className={`input tnum ${fromPhoto("unitsPerStrip")}`}
                 />
               </Field>
             ) : null}
@@ -609,7 +746,7 @@ export function MedicineFormPanel({
                   value={values.defaultSalePrice}
                   onChange={(event) => set("defaultSalePrice", event.target.value)}
                   placeholder="Not set"
-                  className="input tnum"
+                  className={`input tnum ${fromPhoto("defaultSalePrice")}`}
                 />
               </Field>
             </div>
