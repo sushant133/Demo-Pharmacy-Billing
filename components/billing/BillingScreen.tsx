@@ -1192,7 +1192,7 @@ export function BillingScreen({
           <div className="shrink-0 px-4 pt-4 pb-1">
             <h2 className="text-sm font-semibold text-slate-900">Checkout</h2>
             <p className="text-[11px] text-slate-500">
-              Walk-in is fine. Name is required above Rs{" "}
+              Walk-in is fine. Name is required above Rs.{" "}
               {IRD_BUYER_DETAIL_THRESHOLD.toLocaleString("en-NP")}.
             </p>
           </div>
@@ -1360,7 +1360,7 @@ export function BillingScreen({
                       htmlFor="discount"
                       className="mb-1 block text-[11px] text-slate-500"
                     >
-                      Or Rs
+                      Or Rs.
                     </label>
                     <input
                       id="discount"
@@ -1636,7 +1636,7 @@ export function BillingScreen({
                   className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
                 >
                   IRD requires the buyer&apos;s name (and PAN if they have one) on
-                  bills of Rs {IRD_BUYER_DETAIL_THRESHOLD.toLocaleString("en-NP")}{" "}
+                  bills of Rs. {IRD_BUYER_DETAIL_THRESHOLD.toLocaleString("en-NP")}{" "}
                   or more. Add them above before completing.
                 </div>
               ) : null}

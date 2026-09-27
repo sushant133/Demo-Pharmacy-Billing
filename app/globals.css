@@ -86,6 +86,38 @@
   }
 
   /*
+    Hand cursor on everything clickable.
+    ------------------------------------
+    Tailwind v4's reset gives buttons the arrow cursor, so buttons, action
+    icons, tabs and toggles read as dead text on a desktop till. One rule here
+    rather than `cursor-pointer` on hundreds of elements; a disabled control
+    says so instead.
+  */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="tab"],
+  [role="option"],
+  [role="menuitem"],
+  a[href],
+  summary,
+  label:has(> input[type="checkbox"]:not(:disabled)),
+  label:has(> input[type="radio"]:not(:disabled)),
+  select:not(:disabled),
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled),
+  input[type="file"]:not(:disabled),
+  input[type="date"]:not(:disabled),
+  input[type="submit"]:not(:disabled),
+  input[type="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  button:disabled,
+  select:disabled,
+  input:disabled {
+    cursor: not-allowed;
+  }
+
+  /*
     Nothing may scroll the page sideways.
     -------------------------------------
     A single over-wide element - a long unbroken medicine name, a table that

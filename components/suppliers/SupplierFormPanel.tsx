@@ -8,6 +8,15 @@ import { supplierSchema } from "@/lib/validation";
 
 /** Add / edit a supplier, validated with the same schema the API enforces. */
 
+/** Keep only digits, capped at `max`. A pasted +977 country code is dropped. */
+function digitsOnly(value: string, max: number): string {
+  // A +977 country code in front (typed or pasted) is dropped once the full
+  // number is there, which is when it can be told apart from the number.
+  let digits = value.replace(/\D/g, "");
+  if (max === 10 && digits.length > 10 && digits.startsWith("977")) digits = digits.slice(3);
+  return digits.slice(0, max);
+}
+
 export interface SupplierFormValues {
   id: string;
   name: string;
@@ -58,6 +67,17 @@ export function SupplierFormPanel({
 
   function set<K extends keyof typeof values>(key: K, value: (typeof values)[K]) {
     setValues((current) => ({ ...current, [key]: value }));
+    // Fixing a field clears its message; blur checks it again.
+    if (errors[key]) setErrors(({ [key]: _cleared, ...rest }) => rest);
+  }
+
+  /** Check one field against the API's own rule as soon as it is left. */
+  function check(key: "phone" | "email" | "panNo") {
+    const result = supplierSchema.shape[key].safeParse(values[key]);
+    setErrors((current) => {
+      const { [key]: _old, ...rest } = current;
+      return result.success ? rest : { ...rest, [key]: result.error.issues[0]?.message ?? "Invalid value." };
+    });
   }
 
   async function save() {
@@ -167,13 +187,24 @@ export function SupplierFormPanel({
             />
           </Field>
 
-          <Field label="Phone" htmlFor="phone" error={errors.phone}>
+          <Field
+            label="Phone"
+            htmlFor="phone"
+            error={errors.phone}
+            hint={errors.phone ? undefined : "10 digits, numbers only."}
+          >
             <input
               id="phone"
+              type="tel"
+              inputMode="numeric"
+              autoComplete="tel"
               value={values.phone}
-              onChange={(event) => set("phone", event.target.value)}
-              placeholder="98…"
-              className="input"
+              // Digits only, however it is typed or pasted (spaces, dashes, +977 dropped).
+              onChange={(event) => set("phone", digitsOnly(event.target.value, 10))}
+              onBlur={() => check("phone")}
+              placeholder="9841234567"
+              aria-invalid={Boolean(errors.phone)}
+              className="input tnum"
             />
           </Field>
         </div>
@@ -182,8 +213,13 @@ export function SupplierFormPanel({
           <input
             id="email"
             type="email"
+            inputMode="email"
+            autoComplete="email"
             value={values.email}
             onChange={(event) => set("email", event.target.value)}
+            onBlur={() => check("email")}
+            placeholder="orders@supplier.com.np"
+            aria-invalid={Boolean(errors.email)}
             className="input"
           />
         </Field>
@@ -199,15 +235,19 @@ export function SupplierFormPanel({
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field
-            label="PAN / VAT no"
+            label="PAN / VAT No."
             htmlFor="panNo"
             error={errors.panNo}
-            hint="Needed on the purchase register."
+            hint={errors.panNo ? undefined : "9 digits. Needed on the purchase register."}
           >
             <input
               id="panNo"
+              inputMode="numeric"
               value={values.panNo}
-              onChange={(event) => set("panNo", event.target.value)}
+              onChange={(event) => set("panNo", digitsOnly(event.target.value, 9))}
+              onBlur={() => check("panNo")}
+              placeholder="301234567"
+              aria-invalid={Boolean(errors.panNo)}
               className="input font-mono"
             />
           </Field>
@@ -230,7 +270,7 @@ export function SupplierFormPanel({
         </div>
 
         <Field
-          label="Opening balance (Rs)"
+          label="Opening balance (Rs.)"
           htmlFor="openingBalance"
           error={errors.openingBalance}
           hint="What you already owed them before using this system."

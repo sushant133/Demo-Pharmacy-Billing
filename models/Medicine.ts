@@ -38,7 +38,8 @@ const medicineSchema = new Schema(
     saltComposition: { type: String, trim: true, default: "", maxlength: 300 },
     manufacturer: { type: String, trim: true, default: "", maxlength: 200 },
     category: { type: String, trim: true, default: "Other", maxlength: 80 },
-    unit: { type: String, enum: MEDICINE_UNITS, default: "tablet" },
+    /** Dosage form. Free text; MEDICINE_UNITS are only the suggested ones. */
+    unit: { type: String, trim: true, lowercase: true, default: "tablet", maxlength: 40 },
     /** Units per strip/bottle - shown on the POS so staff know what "1" means. */
     packSize: { type: String, trim: true, default: "" },
     /**

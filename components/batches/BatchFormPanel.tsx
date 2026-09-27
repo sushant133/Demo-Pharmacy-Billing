@@ -218,7 +218,7 @@ export function BatchFormPanel({
         </Field>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Cost price (Rs)" htmlFor="costPrice" error={errors.costPrice}>
+          <Field label="Cost price (Rs.)" htmlFor="costPrice" error={errors.costPrice}>
             <input
               id="costPrice"
               type="number"
@@ -231,7 +231,7 @@ export function BatchFormPanel({
             />
           </Field>
 
-          <Field label="Sale price (Rs)" htmlFor="salePrice" error={errors.salePrice}>
+          <Field label="Sale price (Rs.)" htmlFor="salePrice" error={errors.salePrice}>
             <input
               id="salePrice"
               type="number"

@@ -464,7 +464,7 @@ function renderSheet(
   y += 2;
   doc.moveTo(labelX, y).lineTo(right, y).lineWidth(0.8).strokeColor(RULE).stroke();
   y += 6;
-  totalRow("Grand total", `Rs ${rs(invoice.totalAmount)}`, true);
+  totalRow("Grand total", `Rs. ${rs(invoice.totalAmount)}`, true);
 
   if (invoice.amountReceived > 0) {
     totalRow("Received", rs(invoice.amountReceived));
@@ -638,7 +638,7 @@ function renderRoll(
   }
   pair("Taxable", rs(invoice.taxableAmount));
   pair(`VAT ${Math.round(invoice.vatRate * 100)}%`, rs(invoice.vatAmount));
-  pair("TOTAL", `Rs ${rs(invoice.totalAmount)}`, true);
+  pair("TOTAL", `Rs. ${rs(invoice.totalAmount)}`, true);
 
   if (invoice.amountReceived > 0) {
     pair("Received", rs(invoice.amountReceived));

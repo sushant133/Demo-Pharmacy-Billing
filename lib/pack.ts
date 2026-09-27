@@ -29,8 +29,19 @@ export function canSellLoose(unit: string): boolean {
 
 /** "tablet" / "tablets" — what staff say at the till, not the catalogue enum. */
 export function unitWord(unit: string, count = 1): string {
-  const words = UNIT_WORDS[unit] ?? { one: "unit", many: "units" };
+  const words = UNIT_WORDS[unit] ?? customUnitWords(unit);
   return Math.abs(count) === 1 ? words.one : words.many;
+}
+
+/**
+ * A unit the shop added itself ("strip", "bottle", "kit"): its own name,
+ * with a plain English plural. Blank still reads as "unit".
+ */
+function customUnitWords(unit: string): { one: string; many: string } {
+  const one = unit.trim().toLowerCase();
+  if (!one) return { one: "unit", many: "units" };
+  if (/(s|x|z|ch|sh)$/.test(one)) return { one, many: one.endsWith("s") ? one : `${one}es` };
+  return { one, many: `${one}s` };
 }
 
 export function formatUnitCount(count: number, unit: string): string {

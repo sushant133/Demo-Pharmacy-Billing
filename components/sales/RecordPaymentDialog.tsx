@@ -228,7 +228,7 @@ export function RecordPaymentDialog({
                 hint={`Up to ${money(outstanding)}. A part payment is fine - the balance stays on the invoice.`}
                 error={
                   amount.trim() !== "" && !valid
-                    ? `Enter an amount between Rs 0.01 and ${money(outstanding)}.`
+                    ? `Enter an amount between Rs. 0.01 and ${money(outstanding)}.`
                     : undefined
                 }
               >

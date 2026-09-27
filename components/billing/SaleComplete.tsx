@@ -253,7 +253,7 @@ export function SaleComplete({
           Offered only while something is actually owed, because a button that
           can only be refused is worse than no button. Settling here updates
           this panel in place - the cashier is mid-queue, and sending them to
-          another screen to take Rs 500 is how the next customer waits.
+          another screen to take Rs. 500 is how the next customer waits.
         */}
         {settled.remaining > 0.004 && canReceivePayment ? (
           <div className="border-t border-slate-100 px-4 py-4">

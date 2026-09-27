@@ -164,7 +164,7 @@ export function PaymentFormPanel({
           </select>
         </Field>
 
-        <Field label="Amount (Rs)" htmlFor="amount">
+        <Field label="Amount (Rs.)" htmlFor="amount">
           <input
             id="amount"
             type="number"

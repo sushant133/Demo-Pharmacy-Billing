@@ -237,7 +237,7 @@ export function ConfirmSale({
               ) : (
                 <>
                   Complete Sale ·{" "}
-                  {/* Kept on one line: "Rs" and the amount must never wrap apart. */}
+                  {/* Kept on one line: "Rs." and the amount must never wrap apart. */}
                   <span className="whitespace-nowrap">{money(plan.totalAmount)}</span>
                 </>
               )}

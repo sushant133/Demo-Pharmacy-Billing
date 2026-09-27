@@ -15,6 +15,7 @@ import {
   SUPPLIER_PAYMENT_METHODS,
   SUPPLIER_PAYMENT_METHOD_LABELS,
 } from "@/lib/constants";
+import { Combobox, type ComboOption } from "@/components/Combobox";
 import { DualDateField } from "@/components/DualDateField";
 import { cx } from "@/components/ui";
 
@@ -154,6 +155,30 @@ export function PurchaseForm({
   const medicineById = useMemo(
     () => new Map(medicines.map((medicine) => [medicine.id, medicine])),
     [medicines],
+  );
+  // Searchable by name, generic name and manufacturer; the second line tells
+  // two strengths or two makers of the same drug apart.
+  const medicineOptions = useMemo<ComboOption[]>(
+    () =>
+      medicines.map((medicine) => ({
+        value: medicine.id,
+        label: medicine.name,
+        detail:
+          [medicine.manufacturer, medicine.packSize, medicine.unit].filter(Boolean).join(" · ") ||
+          undefined,
+        keywords: medicine.genericName,
+      })),
+    [medicines],
+  );
+  const supplierOptions = useMemo<ComboOption[]>(
+    () =>
+      suppliers.map((supplier) => ({
+        value: supplier.id,
+        label: supplier.name,
+        detail:
+          supplier.paymentTermsDays > 0 ? `${supplier.paymentTermsDays}-day credit` : "Cash terms",
+      })),
+    [suppliers],
   );
 
   const [supplierId, setSupplierId] = useState(
@@ -426,20 +451,16 @@ export function PurchaseForm({
             <label htmlFor="supplierId" className="label">
               Supplier
             </label>
-            <select
+            <Combobox
               id="supplierId"
+              mode="select"
               value={supplierId}
-              onChange={(event) => setSupplierId(event.target.value)}
-              className="input"
-              required
-            >
-              <option value="">Select a supplier…</option>
-              {suppliers.map((supplier) => (
-                <option key={supplier.id} value={supplier.id}>
-                  {supplier.name}
-                </option>
-              ))}
-            </select>
+              onChange={setSupplierId}
+              options={supplierOptions}
+              placeholder="Search suppliers…"
+              invalid={Boolean(errors.supplierId)}
+              emptyText="No supplier matches. Add them under Suppliers first."
+            />
             {errors.supplierId ? (
               <p className="mt-1 text-xs text-rose-600">{errors.supplierId}</p>
             ) : null}
@@ -483,7 +504,7 @@ export function PurchaseForm({
       </div>
 
       {/* Line items */}
-      <div className="card overflow-hidden">
+      <div className="card">
         {preset && !isEdit ? (
           <div className="border-b border-brand-100 bg-brand-50 px-4 py-3 text-sm text-brand-900">
             <p>
@@ -528,267 +549,297 @@ export function PurchaseForm({
         </div>
 
         {/*
-          A data-entry grid, not a report: eleven live inputs per line. It
-          keeps its width and scrolls, with the medicine column pinned so the
-          line being typed into never loses its name.
+          One card per invoice line rather than an eleven-column grid: the
+          medicine's full name sits on its own row and is never cut off, the
+          fields follow in the order the distributor's bill prints them, and
+          every line spells out its own arithmetic.
         */}
-        <div className="table-scroll table-scroll-shadow table-pin-first">
-          <table className="w-full min-w-[1180px] border-collapse">
-            <thead className="border-b border-slate-200 bg-slate-50">
-              <tr>
-                <th className="th w-[22%]">Medicine</th>
-                <th className="th">Batch no</th>
-                <th className="th">Mfg</th>
-                <th className="th">Expiry</th>
-                <th className="th text-right">Qty (pieces)</th>
-                <th className="th text-right">Free</th>
-                <th className="th text-right">Cost</th>
-                <th className="th text-right">Disc</th>
-                <th className="th text-right">MRP</th>
-                <th className="th text-right">Line</th>
-                <th className="th"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {lines.map((line, index) => {
-                const quantity = Math.trunc(num(line.quantity));
-                const free = Math.trunc(num(line.freeQuantity));
-                const received = quantity + free;
-                const net = Math.max(
-                  0,
-                  quantity * num(line.costPrice) - num(line.discount),
-                );
-                const effectiveCost = received > 0 ? net / received : 0;
-                const margin =
-                  num(line.salePrice) > 0 && effectiveCost > 0
-                    ? unitMargin(effectiveCost, num(line.salePrice))
-                    : null;
+        <ol className="divide-y divide-slate-100">
+          {lines.map((line, index) => {
+            const medicine = medicineById.get(line.medicineId);
+            const unit = medicine?.unit ?? "unit";
+            const quantity = Math.trunc(num(line.quantity));
+            const free = Math.trunc(num(line.freeQuantity));
+            const received = quantity + free;
+            const cost = num(line.costPrice);
+            const lineDiscount = num(line.discount);
+            const gross = quantity * cost;
+            const net = Math.max(0, gross - lineDiscount);
+            const effectiveCost = received > 0 ? net / received : 0;
+            const margin =
+              num(line.salePrice) > 0 && effectiveCost > 0
+                ? unitMargin(effectiveCost, num(line.salePrice))
+                : null;
+            const quantityHint = describePurchaseQuantity(
+              quantity,
+              medicine?.unitsPerStrip ?? 1,
+              unit,
+            );
+            const lastSale = medicine?.lastSalePrice ?? null;
+            const typedSale = num(line.salePrice);
+            const fieldError = (field: string) => errors[`items.${index}.${field}`];
+            const n = index + 1;
+            const medicineMeta = medicine
+              ? [medicine.genericName, medicine.manufacturer, medicine.packSize].filter(Boolean)
+              : [];
 
-                return (
-                  <tr key={line.key} className="align-top hover:bg-slate-50/60">
-                    <td className="px-2 py-2">
-                      <select
-                        aria-label={`Medicine for line ${index + 1}`}
-                        value={line.medicineId}
-                        onChange={(event) =>
-                          selectMedicine(line.key, event.target.value)
-                        }
-                        className="input py-1.5 text-xs"
+            return (
+              <li key={line.key} className="p-4">
+                <div className="flex items-start gap-3">
+                  <span
+                    aria-hidden="true"
+                    className="mt-6 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs font-semibold text-brand-700"
+                  >
+                    {n}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <label htmlFor={`${line.key}-medicine`} className="label">
+                      Medicine
+                    </label>
+                    <Combobox
+                      id={`${line.key}-medicine`}
+                      mode="select"
+                      value={line.medicineId}
+                      onChange={(medicineId) => selectMedicine(line.key, medicineId)}
+                      options={medicineOptions}
+                      ariaLabel={`Medicine for line ${n}`}
+                      placeholder="Search by name, generic name or manufacturer…"
+                      invalid={Boolean(fieldError("medicineId"))}
+                      emptyText="No medicine matches. Add it under Medicines first."
+                    />
+                    {medicine ? (
+                      <p className="mt-1 break-words text-xs text-slate-500">
+                        {[...medicineMeta, `counted in ${unitWord(unit, 2)}`].join(" · ")}
+                      </p>
+                    ) : null}
+                    {fieldError("medicineId") ? (
+                      <p className="mt-1 text-[11px] text-rose-600">{fieldError("medicineId")}</p>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeLine(line.key)}
+                    aria-label={`Remove line ${n}`}
+                    title="Remove this line"
+                    className="mt-6 shrink-0 rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                  >
+                    <svg
+                      className="h-4 w-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                      aria-hidden="true"
+                    >
+                      <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
+                    </svg>
+                  </button>
+                </div>
+
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3 sm:pl-9">
+                  <div>
+                    <label htmlFor={`${line.key}-batch`} className="label">
+                      Batch no
+                    </label>
+                    <input
+                      id={`${line.key}-batch`}
+                      value={line.batchNumber}
+                      onChange={(event) =>
+                        updateLine(line.key, { batchNumber: event.target.value })
+                      }
+                      className="input font-mono"
+                      placeholder="B2409A"
+                    />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="label">Mfg date</p>
+                    <DualDateField
+                      id={`${line.key}-mfg`}
+                      value={line.mfgDate}
+                      onChange={(next) => updateLine(line.key, { mfgDate: next })}
+                      compact
+                      aria-label={`Manufacturing date for line ${n}`}
+                    />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="label">Expiry date</p>
+                    <DualDateField
+                      id={`${line.key}-exp`}
+                      value={line.expiryDate}
+                      onChange={(next) => updateLine(line.key, { expiryDate: next })}
+                      compact
+                      error={Boolean(fieldError("expiryDate"))}
+                      aria-label={`Expiry date for line ${n}`}
+                    />
+                    {fieldError("expiryDate") ? (
+                      <p className="mt-1 text-[11px] text-rose-600">{fieldError("expiryDate")}</p>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-5 sm:pl-9">
+                  <div>
+                    <label htmlFor={`${line.key}-qty`} className="label">
+                      Quantity
+                    </label>
+                    <input
+                      id={`${line.key}-qty`}
+                      type="number"
+                      min={0}
+                      inputMode="numeric"
+                      value={line.quantity}
+                      onChange={(event) => updateLine(line.key, { quantity: event.target.value })}
+                      placeholder="0"
+                      className="input tnum text-right"
+                    />
+                    {quantityHint ? (
+                      <p className="mt-1 text-[11px] leading-snug text-slate-500">{quantityHint}</p>
+                    ) : null}
+                  </div>
+                  <div>
+                    <label htmlFor={`${line.key}-free`} className="label">
+                      Free
+                    </label>
+                    <input
+                      id={`${line.key}-free`}
+                      type="number"
+                      min={0}
+                      inputMode="numeric"
+                      value={line.freeQuantity}
+                      onChange={(event) =>
+                        updateLine(line.key, { freeQuantity: event.target.value })
+                      }
+                      placeholder="0"
+                      className="input tnum text-right"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor={`${line.key}-cost`} className="label">
+                      Cost (Rs.)
+                    </label>
+                    <input
+                      id={`${line.key}-cost`}
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      inputMode="decimal"
+                      value={line.costPrice}
+                      onChange={(event) => updateLine(line.key, { costPrice: event.target.value })}
+                      placeholder="0.00"
+                      className="input tnum text-right"
+                    />
+                    {free > 0 && effectiveCost > 0 ? (
+                      <p className="mt-1 text-right text-[11px] text-brand-700">
+                        Effective {money(effectiveCost)} each
+                      </p>
+                    ) : null}
+                  </div>
+                  <div>
+                    <label htmlFor={`${line.key}-disc`} className="label">
+                      Discount (Rs.)
+                    </label>
+                    <input
+                      id={`${line.key}-disc`}
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      inputMode="decimal"
+                      value={line.discount}
+                      onChange={(event) => updateLine(line.key, { discount: event.target.value })}
+                      placeholder="0.00"
+                      className="input tnum text-right"
+                    />
+                  </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <label htmlFor={`${line.key}-mrp`} className="label">
+                      MRP (Rs.)
+                    </label>
+                    <input
+                      id={`${line.key}-mrp`}
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      inputMode="decimal"
+                      value={line.salePrice}
+                      onChange={(event) => updateLine(line.key, { salePrice: event.target.value })}
+                      placeholder="0.00"
+                      className="input tnum text-right"
+                    />
+                    {margin ? (
+                      <p
+                        className={cx(
+                          "mt-1 text-right text-[11px]",
+                          margin.perUnit < 0 ? "text-rose-600" : "text-slate-500",
+                        )}
                       >
-                        <option value="">Select…</option>
-                        {medicines.map((medicine) => (
-                          <option key={medicine.id} value={medicine.id}>
-                            {medicine.name}
-                            {medicine.manufacturer ? ` · ${medicine.manufacturer}` : ""}
-                          </option>
-                        ))}
-                      </select>
-                      {errors[`items.${index}.medicineId`] ? (
-                        <p className="mt-1 text-[11px] text-rose-600">
-                          {errors[`items.${index}.medicineId`]}
-                        </p>
-                      ) : null}
-                    </td>
+                        {margin.percent.toFixed(0)}% margin
+                      </p>
+                    ) : null}
+                    {lastSale != null && typedSale && typedSale !== lastSale ? (
+                      <p className="mt-1 text-right text-[11px] text-amber-700">
+                        was {money(lastSale)}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
 
-                    <td className="px-2 py-2">
-                      <input
-                        aria-label={`Batch number for line ${index + 1}`}
-                        value={line.batchNumber}
-                        onChange={(event) =>
-                          updateLine(line.key, { batchNumber: event.target.value })
-                        }
-                        className="input py-1.5 font-mono text-xs"
-                        placeholder="B2409A"
-                      />
-                    </td>
+                {line.medicineId ? (
+                  <label className="mt-2 flex items-start gap-1.5 text-xs leading-snug text-slate-500 sm:pl-9">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={line.applySalePriceToStock}
+                      onChange={(event) =>
+                        updateLine(line.key, { applySalePriceToStock: event.target.checked })
+                      }
+                    />
+                    <span>Apply this MRP to current stock of this medicine</span>
+                  </label>
+                ) : null}
 
-                    <td className="px-2 py-2">
-                      <DualDateField
-                        id={`${line.key}-mfg`}
-                        value={line.mfgDate}
-                        onChange={(next) => updateLine(line.key, { mfgDate: next })}
-                        table
-                        aria-label={`Manufacturing date for line ${index + 1}`}
-                      />
-                    </td>
-
-                    <td className="px-2 py-2">
-                      <DualDateField
-                        id={`${line.key}-exp`}
-                        value={line.expiryDate}
-                        onChange={(next) =>
-                          updateLine(line.key, { expiryDate: next })
-                        }
-                        table
-                        error={Boolean(errors[`items.${index}.expiryDate`])}
-                        aria-label={`Expiry date for line ${index + 1}`}
-                      />
-                      {errors[`items.${index}.expiryDate`] ? (
-                        <p className="mt-1 text-[11px] text-rose-600">
-                          {errors[`items.${index}.expiryDate`]}
-                        </p>
-                      ) : null}
-                    </td>
-
-                    <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        min={0}
-                        aria-label={`Quantity for line ${index + 1}`}
-                        value={line.quantity}
-                        onChange={(event) =>
-                          updateLine(line.key, { quantity: event.target.value })
-                        }
-                        className="input tnum w-20 py-1.5 text-right text-xs"
-                      />
-                      {(() => {
-                        const medicine = medicineById.get(line.medicineId);
-                        const hint = describePurchaseQuantity(
-                          quantity,
-                          medicine?.unitsPerStrip ?? 1,
-                          medicine?.unit ?? "unit",
-                        );
-                        return hint ? (
-                          <p className="mt-1 max-w-[9rem] text-[11px] leading-snug text-slate-500">
-                            {hint}
-                          </p>
-                        ) : null;
-                      })()}
-                    </td>
-
-                    <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        min={0}
-                        aria-label={`Free quantity for line ${index + 1}`}
-                        value={line.freeQuantity}
-                        onChange={(event) =>
-                          updateLine(line.key, { freeQuantity: event.target.value })
-                        }
-                        placeholder="0"
-                        className="input tnum w-16 py-1.5 text-right text-xs"
-                      />
-                    </td>
-
-                    <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        aria-label={`Cost price for line ${index + 1}`}
-                        value={line.costPrice}
-                        onChange={(event) =>
-                          updateLine(line.key, { costPrice: event.target.value })
-                        }
-                        className="input tnum w-24 py-1.5 text-right text-xs"
-                      />
-                      {free > 0 && effectiveCost > 0 ? (
-                        <p className="mt-1 text-right text-[11px] text-brand-700">
-                          eff {effectiveCost.toFixed(2)}
-                        </p>
-                      ) : null}
-                    </td>
-
-                    <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        aria-label={`Discount for line ${index + 1}`}
-                        value={line.discount}
-                        onChange={(event) =>
-                          updateLine(line.key, { discount: event.target.value })
-                        }
-                        placeholder="0"
-                        className="input tnum w-20 py-1.5 text-right text-xs"
-                      />
-                    </td>
-
-                    <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        aria-label={`Sale price for line ${index + 1}`}
-                        value={line.salePrice}
-                        onChange={(event) =>
-                          updateLine(line.key, { salePrice: event.target.value })
-                        }
-                        className="input tnum w-24 py-1.5 text-right text-xs"
-                      />
-                      {margin ? (
-                        <p
-                          className={cx(
-                            "mt-1 text-right text-[11px]",
-                            margin.perUnit < 0 ? "text-rose-600" : "text-slate-500",
-                          )}
-                        >
-                          {margin.percent.toFixed(0)}%
-                        </p>
-                      ) : null}
-                      {(() => {
-                        const last =
-                          medicineById.get(line.medicineId)?.lastSalePrice ?? null;
-                        const typed = num(line.salePrice);
-                        if (last == null || !typed || typed === last) return null;
-                        return (
-                          <p className="mt-1 text-right text-[11px] text-amber-700">
-                            was {money(last)}
-                          </p>
-                        );
-                      })()}
-                      {line.medicineId ? (
-                        <label className="mt-1.5 flex items-start gap-1.5 text-[11px] leading-snug text-slate-500">
-                          <input
-                            type="checkbox"
-                            className="mt-0.5"
-                            checked={line.applySalePriceToStock}
-                            onChange={(event) =>
-                              updateLine(line.key, {
-                                applySalePriceToStock: event.target.checked,
-                              })
-                            }
-                          />
-                          <span>Apply this price to current stock</span>
-                        </label>
-                      ) : null}
-                    </td>
-
-                    <td className="tnum px-2 py-2 text-right text-sm font-medium text-slate-900">
+                {/* The line's arithmetic, spelled out: Rs. 100.00 × 5 = Rs. 500.00. */}
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-lg bg-slate-50 px-3 py-2 sm:ml-9">
+                  <p className="tnum text-sm text-slate-600" aria-live="polite">
+                    {quantity > 0 && cost > 0 ? (
+                      <>
+                        {money(cost)} × {quantity} ={" "}
+                        <span className="font-semibold text-slate-900">{money(gross)}</span>
+                        {lineDiscount > 0 ? (
+                          <>
+                            {" "}
+                            − {money(lineDiscount)} discount ={" "}
+                            <span className="font-semibold text-slate-900">{money(net)}</span>
+                          </>
+                        ) : null}
+                      </>
+                    ) : (
+                      <span className="text-slate-400">
+                        Enter the cost and quantity to see this line&rsquo;s total.
+                      </span>
+                    )}
+                  </p>
+                  <p className="tnum text-right">
+                    <span className="text-xs text-slate-500">Line total </span>
+                    <span className="text-base font-semibold text-slate-900">
                       {received > 0 ? money(net) : "—"}
-                      {received > 0 ? (
-                        <p className="text-[11px] font-normal text-slate-400">
-                          {formatUnitCount(
-                            received,
-                            medicineById.get(line.medicineId)?.unit ?? "unit",
-                          )}
-                        </p>
-                      ) : null}
-                    </td>
+                    </span>
+                    {received > 0 ? (
+                      <span className="block text-[11px] text-slate-400">
+                        {formatUnitCount(received, unit)} received
+                        {free > 0 ? ` (${free} free)` : ""}
+                      </span>
+                    ) : null}
+                  </p>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
 
-                    <td className="px-2 py-2 text-right">
-                      <button
-                        type="button"
-                        onClick={() => removeLine(line.key)}
-                        aria-label={`Remove line ${index + 1}`}
-                        className="rounded p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
-                      >
-                        <svg
-                          className="h-4 w-4"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                          strokeWidth={2}
-                        >
-                          <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
-                        </svg>
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="border-t border-slate-200 px-4 py-3">
+          <button type="button" onClick={addLine} className="btn-secondary w-full sm:w-auto">
+            + Add another medicine
+          </button>
         </div>
       </div>
 
@@ -798,7 +849,7 @@ export function PurchaseForm({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div>
               <label htmlFor="discount" className="label">
-                Invoice discount (Rs)
+                Invoice discount (Rs.)
               </label>
               <input
                 id="discount"
@@ -812,7 +863,7 @@ export function PurchaseForm({
             </div>
             <div>
               <label htmlFor="otherCharges" className="label">
-                Freight / other (Rs)
+                Freight / other (Rs.)
               </label>
               <input
                 id="otherCharges"

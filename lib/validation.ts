@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 import {
-  MEDICINE_UNITS,
   PAYMENT_MODES,
   SUPPLIER_PAYMENT_METHODS,
 } from "@/lib/constants";
@@ -166,7 +165,17 @@ export const medicineSchema = z.object({
   saltComposition: z.string().trim().max(300).default(""),
   manufacturer: z.string().trim().max(200).default(""),
   category: z.string().trim().max(80).default("Other"),
-  unit: z.enum(MEDICINE_UNITS).default("tablet"),
+  /**
+   * Free text: the built-in forms are suggestions (lib/constants.ts), and a
+   * shop can add its own - "strip", "bottle", "kit". Stored lowercase so the
+   * same unit typed two ways stays one unit.
+   */
+  unit: z
+    .string()
+    .trim()
+    .max(40, "A unit can be at most 40 characters.")
+    .default("tablet")
+    .transform((value) => value.toLowerCase() || "tablet"),
   packSize: z.string().trim().max(60).default(""),
   /** The code on the pack, as a scanner reads it. Blank when there is none. */
   barcode: z.string().trim().max(60).default(""),
@@ -567,6 +576,19 @@ const taxNumberSchema = (label: string) =>
     .default("")
     .refine((value) => value === "" || /^\d{9}$/.test(value), label);
 
+/** A Nepali phone number: exactly ten digits, nothing else. Blank is allowed. */
+export const NEPAL_PHONE_PATTERN = /^\d{10}$/;
+export const NEPAL_PHONE_MESSAGE = "Enter a 10-digit phone number, digits only (e.g. 9841234567).";
+export const PAN_PATTERN = /^\d{9}$/;
+export const PAN_MESSAGE = "PAN/VAT No. must be exactly 9 digits, numbers only.";
+
+const nepalPhoneSchema = z
+  .string()
+  .trim()
+  .max(40)
+  .default("")
+  .refine((value) => value === "" || NEPAL_PHONE_PATTERN.test(value), NEPAL_PHONE_MESSAGE);
+
 /**
  * The shop's own details, as the Settings screen submits them.
  *
@@ -628,12 +650,15 @@ export const customerSchema = z.object({
 export const supplierSchema = z.object({
   name: z.string().trim().min(2, "Supplier name is required.").max(200),
   contactPerson: z.string().trim().max(120).default(""),
-  phone: z.string().trim().max(40).default(""),
+  phone: nepalPhoneSchema,
   email: z
-    .union([z.string().trim().toLowerCase().email("Enter a valid email address."), z.literal("")])
+    .union([
+      z.string().trim().toLowerCase().email("Enter a valid email address, like orders@supplier.com.np."),
+      z.literal(""),
+    ])
     .default(""),
   address: z.string().trim().max(300).default(""),
-  panNo: z.string().trim().max(30).default(""),
+  panNo: taxNumberSchema(PAN_MESSAGE),
   paymentTermsDays: numberFromInput("Payment terms must be a number of days.")
     .int()
     .min(0, "Payment terms cannot be negative.")

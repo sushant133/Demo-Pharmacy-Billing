@@ -10,9 +10,9 @@ const npr = new Intl.NumberFormat("en-NP", {
   maximumFractionDigits: 2,
 });
 
-/** Rs 1,234.50 - the notation Nepali pharmacy bills actually use. */
+/** Rs. 1,234.50 - the notation Nepali pharmacy bills actually use. */
 export function money(value: number | null | undefined): string {
-  return "Rs " + npr.format(Number(value ?? 0));
+  return "Rs. " + npr.format(Number(value ?? 0));
 }
 
 /** Amount without the currency prefix, for tables that label the column. */

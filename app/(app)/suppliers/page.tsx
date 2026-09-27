@@ -19,6 +19,7 @@ import {
   cx,
 } from "@/components/ui";
 import { SupplierFormPanel } from "@/components/suppliers/SupplierFormPanel";
+import { SupplierRowActions } from "@/components/suppliers/SupplierRowActions";
 
 export const metadata: Metadata = { title: "Suppliers" };
 export const dynamic = "force-dynamic";
@@ -124,6 +125,15 @@ export default async function SuppliersPage({
   if (params.q) baseQuery.set("q", params.q);
   if (status !== "all") baseQuery.set("status", status);
 
+  const canDelete = can(user.role, "supplier:delete");
+  // Keeps the search, tab and page, so the row being edited is still on screen.
+  const editQuery = (id: string) => {
+    const query = new URLSearchParams(baseQuery);
+    if (page > 1) query.set("page", String(page));
+    query.set("edit", id);
+    return query.toString();
+  };
+
   return (
     <>
       <PageHeader
@@ -219,7 +229,7 @@ export default async function SuppliersPage({
           />
         ) : (
           <>
-            <TableWrap minWidth="36rem" pinFirst>
+            <TableWrap minWidth="42rem" pinFirst>
               <thead className="border-b border-slate-200 bg-slate-50">
                 {/*
                   A phone keeps the name and what is owed - the two things
@@ -234,6 +244,7 @@ export default async function SuppliersPage({
                   <th className="th text-right">Terms</th>
                   <th className="th text-right">Purchased</th>
                   <th className="th text-right">Owed</th>
+                  <th className="th text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -278,6 +289,16 @@ export default async function SuppliersPage({
                         {money(row.outstanding)}
                       </span>
                     </td>
+                    <td className="td text-right">
+                      <SupplierRowActions
+                        id={row.id}
+                        name={row.name}
+                        isActive={row.isActive}
+                        editHref={`/suppliers?${editQuery(row.id)}`}
+                        canWrite={canWrite}
+                        canDelete={canDelete}
+                      />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -297,7 +318,7 @@ export default async function SuppliersPage({
 
       {canWrite && (params.new === "1" || editing) ? (
         <SupplierFormPanel
-          canDelete={can(user.role, "supplier:delete")}
+          canDelete={canDelete}
           supplier={
             editing
               ? {

@@ -215,7 +215,7 @@ const UNIT_ALIASES: Record<string, string> = {
   supp: "suppository",
 };
 
-/** Blank is left for the schema's default; anything unknown is passed on to be refused. */
+/** Blank is left for the schema's default; a unit the shop uses itself is kept as typed. */
 function normaliseUnit(value: string | undefined): string | undefined {
   const unit = value?.trim().toLowerCase().replace(/\.$/, "");
   if (!unit) return undefined;

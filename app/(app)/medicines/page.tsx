@@ -193,7 +193,7 @@ export default async function MedicinesPage({
   }
 
   // ---- Full catalogue ------------------------------------------------------
-  const { medicines, total, stock, settings, categories } = await withDbRead(
+  const { medicines, total, stock, categories, units } = await withDbRead(
     async () => {
     const scope = await resolveViewScope(user, params.branch);
 
@@ -220,7 +220,7 @@ export default async function MedicinesPage({
       ];
     }
 
-    const [medicines, total, settings, usedCategories] = await Promise.all([
+    const [medicines, total, settings, usedCategories, usedUnits] = await Promise.all([
       Medicine.find(filter)
         .sort({ name: 1 })
         .skip((page - 1) * PAGE_SIZE)
@@ -229,6 +229,7 @@ export default async function MedicinesPage({
       Medicine.countDocuments(filter),
       getSettings(user.pharmacyId, user.pharmacyName),
       Medicine.distinct("category", pharmacyFilter(user)),
+      Medicine.distinct("unit", pharmacyFilter(user)),
     ]);
     const categories = mergeMedicineCategories([
       ...settings.medicineCategories,
@@ -285,6 +286,8 @@ export default async function MedicinesPage({
       total,
       settings,
       categories,
+      // Units already in this catalogue, offered beside the built-in forms.
+      units: usedUnits.filter((name): name is string => typeof name === "string" && name.trim() !== ""),
       stock: new Map(
         stockRows.map((row) => [
           String(row._id),
@@ -567,6 +570,11 @@ export default async function MedicinesPage({
                         <td className="td col-actions">
                           <ActionBar>
                             <ActionIcon
+                              label="View"
+                              icon="view"
+                              href={`/batches?medicineId=${String(medicine._id)}`}
+                            />
+                            <ActionIcon
                               label="Edit"
                               icon="edit"
                               tone="primary"
@@ -607,7 +615,8 @@ export default async function MedicinesPage({
       {editable && (params.new === "1" || editing) ? (
         <MedicineFormPanel
           canDelete={can(user.role, "medicine:delete")}
-          extraCategories={settings.medicineCategories}
+          extraCategories={categories}
+          extraUnits={units}
           // The list exactly as it was, so closing the panel puts the user back
           // where they were rather than on an unfiltered page 1.
           returnHref={listHref}

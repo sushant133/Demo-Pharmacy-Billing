@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useRef, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { apiFetch } from "@/lib/client";
+import { Combobox } from "@/components/Combobox";
 import { Field, SlideOver } from "@/components/SlideOver";
 import { medicineSchema } from "@/lib/validation";
 import { MEDICINE_UNITS, mergeMedicineCategories } from "@/lib/constants";
@@ -51,11 +52,15 @@ export function MedicineFormPanel({
   medicine,
   canDelete,
   extraCategories = [],
+  extraUnits = [],
   returnHref = "/medicines",
 }: {
   medicine: MedicineFormValues | null;
   canDelete: boolean;
+  /** Category suggestions beyond the built-in list: Settings, plus ones in use. */
   extraCategories?: string[];
+  /** Units already used in this catalogue, suggested beside the built-in forms. */
+  extraUnits?: string[];
   /**
    * The list as it was when the panel was opened, filters and page included.
    *
@@ -67,11 +72,22 @@ export function MedicineFormPanel({
 }) {
   const router = useRouter();
   const isEdit = Boolean(medicine);
-  const categories = mergeMedicineCategories(extraCategories);
-  const knownCategory =
-    medicine?.category && categories.includes(medicine.category)
-      ? medicine.category
-      : "Other";
+  const categoryOptions = useMemo(
+    () => mergeMedicineCategories(extraCategories).map((name) => ({ value: name, label: name })),
+    [extraCategories],
+  );
+  // Built-in forms first, then whatever this shop has added; one entry each.
+  const unitOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const out: Array<{ value: string; label: string }> = [];
+    for (const unit of [...MEDICINE_UNITS, ...extraUnits]) {
+      const key = unit.trim().toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push({ value: key, label: key });
+    }
+    return out;
+  }, [extraUnits]);
 
   const [values, setValues] = useState({
     sku: medicine?.sku ?? "",
@@ -79,13 +95,7 @@ export function MedicineFormPanel({
     genericName: medicine?.genericName ?? "",
     saltComposition: medicine?.saltComposition ?? "",
     manufacturer: medicine?.manufacturer ?? "",
-    category: knownCategory,
-    categoryCustom:
-      knownCategory === "Other" &&
-      medicine?.category &&
-      medicine.category !== "Other"
-        ? medicine.category
-        : "",
+    category: medicine?.category ?? "",
     unit: medicine?.unit ?? "tablet",
     packSize: medicine?.packSize ?? "",
     barcode: medicine?.barcode ?? "",
@@ -161,11 +171,16 @@ export function MedicineFormPanel({
     if (inflight.current) return;
     setFormError(null);
 
-    const category =
-      values.category === "Other" && values.categoryCustom.trim()
-        ? values.categoryCustom.trim()
-        : values.category;
-    const parsed = medicineSchema.safeParse({ ...values, category });
+    // Blank means the catalogue's catch-all, as it always has.
+    const category = values.category.trim() || "Other";
+    const unit = values.unit.trim();
+    const parsed = medicineSchema.safeParse({
+      ...values,
+      category,
+      unit,
+      // A bottle or tube is sold whole; a strip count means nothing there.
+      unitsPerStrip: canSellLoose(unit) ? values.unitsPerStrip : "",
+    });
     if (!parsed.success) {
       const fieldErrors: Record<string, string> = {};
       for (const issue of parsed.error.issues) {
@@ -431,62 +446,50 @@ export function MedicineFormPanel({
             </Field>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Field label="Category" htmlFor="category" error={errors.category}>
-                <select
-                  id="category"
-                  value={values.category}
-                  onChange={(event) => set("category", event.target.value)}
-                  className="input"
-                >
-                  {categories.map((category) => (
-                    <option key={category} value={category}>
-                      {category}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-
-              <Field label="Unit" htmlFor="unit" error={errors.unit}>
-                <select
-                  id="unit"
-                  value={values.unit}
-                  onChange={(event) => {
-                    const unit = event.target.value;
-                    setValues((current) => ({
-                      ...current,
-                      unit,
-                      unitsPerStrip: canSellLoose(unit)
-                        ? current.unitsPerStrip
-                        : "",
-                    }));
-                  }}
-                  className="input capitalize"
-                >
-                  {MEDICINE_UNITS.map((unit) => (
-                    <option key={unit} value={unit}>
-                      {unit}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            </div>
-
-            {values.category === "Other" ? (
               <Field
-                label="Category name"
-                htmlFor="categoryCustom"
+                label="Category"
+                htmlFor="medicine-category"
                 error={errors.category}
-                hint="Optional. Leave blank to keep Other, or type a name such as Ayurvedic."
+                hint={errors.category ? undefined : "Search, or type a new one such as Ayurvedic."}
               >
-                <input
-                  id="categoryCustom"
-                  value={values.categoryCustom}
-                  onChange={(event) => set("categoryCustom", event.target.value)}
-                  placeholder="e.g. Ayurvedic"
-                  className="input"
+                <Combobox
+                  id="medicine-category"
+                  mode="free"
+                  value={values.category}
+                  onChange={(category) => set("category", category)}
+                  options={categoryOptions}
+                  placeholder="e.g. Analgesic"
+                  invalid={Boolean(errors.category)}
+                  addLabel={(text) => `Add new category “${text}”`}
                 />
               </Field>
-            ) : null}
+
+              <Field
+                label="Unit"
+                htmlFor="medicine-unit"
+                error={errors.unit}
+                hint={errors.unit ? undefined : "Search, or type a new one such as strip."}
+              >
+                <Combobox
+                  id="medicine-unit"
+                  mode="free"
+                  value={values.unit}
+                  onChange={(typed) => {
+                    // Units are stored lowercase; compare and keep them that way.
+                    const unit = typed.toLowerCase();
+                    // The strip count is kept while typing and dropped on save if the
+                    // unit turns out to be one sold whole.
+                    setValues((current) => ({ ...current, unit }));
+                    setErrors(({ unit: _cleared, ...rest }) => rest);
+                  }}
+                  options={unitOptions}
+                  placeholder="e.g. tablet"
+                  invalid={Boolean(errors.unit)}
+                  inputClassName="capitalize"
+                  addLabel={(text) => `Add new unit “${text.toLowerCase()}”`}
+                />
+              </Field>
+            </div>
           </Section>
 
           <Section title="Pack">
