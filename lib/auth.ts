@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import bcrypt from "bcryptjs";
 import { ApiError } from "@/lib/api";
 import { SESSION_COOKIE, verifySession, type SessionUser } from "@/lib/session";
+import { setRequestActor } from "@/lib/request-context";
 import { can, type Permission, type Role } from "@/lib/roles";
 
 /**
@@ -55,7 +56,9 @@ export function generateTemporaryPassword(): string {
 export async function getSession(): Promise<SessionUser | null> {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return null;
-  return verifySession(token);
+  const session = await verifySession(token);
+  if (session) setRequestActor(session);
+  return session;
 }
 
 // ---------------------------------------------------------------------------

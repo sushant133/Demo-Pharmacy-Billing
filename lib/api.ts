@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { ZodError, type TypeOf, type ZodTypeAny } from "zod";
 import { FefoError } from "@/lib/fefo";
+import { runWithRequestContext } from "@/lib/request-context";
 
 /**
  * Every API route returns the same envelope:
@@ -208,13 +209,16 @@ export function fieldErrors(error: ZodError): Record<string, string[]> {
 export function withRoute<Ctx>(
   handler: (req: Request, ctx: Ctx) => Promise<Response>,
 ): (req: Request, ctx: Ctx) => Promise<Response> {
-  return async (req, ctx) => {
-    try {
-      return await handler(req, ctx);
-    } catch (err) {
-      return toErrorResponse(err);
-    }
-  };
+  return async (req, ctx) =>
+    // Every write the handler makes is attributed to whoever the auth guards
+    // verify inside it - see lib/request-context.ts and lib/audit.ts.
+    runWithRequestContext(req, async () => {
+      try {
+        return await handler(req, ctx);
+      } catch (err) {
+        return toErrorResponse(err);
+      }
+    });
 }
 
 /**

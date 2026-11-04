@@ -43,7 +43,7 @@ const LOGO = { src: "/mantramed-logo.png", width: 1254, height: 1254 } as const;
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; expired?: string }>;
 }) {
   const params = await searchParams;
   // Only accept same-origin relative paths, so ?next= cannot be used as an
@@ -103,6 +103,15 @@ export default async function LoginPage({
                   "Pharmacy owners open their shop. The platform administrator opens the account panel."
                 )}
               </p>
+
+              {params.expired === "1" ? (
+                <p
+                  role="status"
+                  className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+                >
+                  You were signed out after a period of inactivity. Sign in again to continue.
+                </p>
+              ) : null}
 
               <div className="mt-6">
                 <LoginForm

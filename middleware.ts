@@ -1,5 +1,16 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { SESSION_COOKIE, verifySession } from "@/lib/session";
+import { config as appConfig } from "@/lib/config";
+import { BACKGROUND_PATHS, auditorMayWrite, idleLimitApplies } from "@/lib/request-rules";
+import {
+  SESSION_COOKIE,
+  SIGNED_OUT_COOKIE,
+  isIdleExpired,
+  isSignedOutSession,
+  sessionCookieOptions,
+  signSession,
+  verifySession,
+  type SessionUser,
+} from "@/lib/session";
 import { ROUTE_PERMISSIONS, can, homePath } from "@/lib/roles";
 
 /**
@@ -36,10 +47,15 @@ const PUBLIC_PATHS = [
   "/android-app-version.json",
   // Play Console and anyone deciding whether to use the app read it signed out.
   "/privacy",
+  // Called by an external scheduler with its own bearer secret, not a session.
+  "/api/cbms/run",
 ];
 
 /** Where a user signed in on a temporary password is held until they replace it. */
 const CHANGE_PASSWORD_PATH = "/change-password";
+
+/** Re-sign the cookie at most this often while someone is working. */
+const ACTIVITY_REFRESH_SECONDS = 60;
 
 function isPublic(pathname: string): boolean {
   return PUBLIC_PATHS.some(
@@ -78,6 +94,8 @@ function isShopAppPath(pathname: string): boolean {
     pathname.startsWith("/payables") ||
     pathname.startsWith("/alerts") ||
     pathname.startsWith("/staff") ||
+    pathname.startsWith("/audit") ||
+    pathname.startsWith("/cbms") ||
     pathname.startsWith("/branches") ||
     pathname.startsWith("/settings") ||
     pathname.startsWith("/bills/") ||
@@ -91,7 +109,76 @@ export async function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
 
   const token = req.cookies.get(SESSION_COOKIE)?.value;
-  const session = token ? await verifySession(token) : null;
+  const presented = token ? await verifySession(token) : null;
+  // A session signed out in this browser stays out, even if a response already
+  // on its way when they clicked Sign out has put the cookie back.
+  const signedOut =
+    presented != null && isSignedOutSession(presented, req.cookies.get(SIGNED_OUT_COOKIE)?.value);
+  const verified = signedOut ? null : presented;
+
+  /*
+    Idle timeout. A token is valid for a whole shift, but a till left signed in
+    over lunch should not be. Past the idle limit the session is treated as
+    gone: the cookie is cleared and the user sees the sign-in screen with a
+    note saying why.
+  */
+  if (
+    verified &&
+    idleLimitApplies(pathname) &&
+    isIdleExpired(verified, appConfig.idleTimeoutSeconds)
+  ) {
+    let response: NextResponse;
+    if (isPublic(pathname)) {
+      response = NextResponse.next();
+    } else if (pathname.startsWith("/api/")) {
+      response = NextResponse.json(
+        {
+          ok: false,
+          error: {
+            code: "UNAUTHORIZED",
+            message: "You were signed out after a period of inactivity. Please sign in again.",
+          },
+        },
+        { status: 401 },
+      );
+    } else {
+      const loginUrl = new URL("/login", req.url);
+      loginUrl.searchParams.set("expired", "1");
+      if (pathname !== "/") loginUrl.searchParams.set("next", pathname + search);
+      response = NextResponse.redirect(loginUrl);
+    }
+    response.cookies.set({ ...sessionCookieOptions(0), value: "" });
+    return response;
+  }
+
+  const response = await gate(req, verified);
+  if (signedOut) {
+    response.cookies.set({ ...sessionCookieOptions(0), value: "" });
+    return response;
+  }
+
+  // Sliding activity: push the idle clock forward while someone is working,
+  // keeping the token's original expiry so a shift still ends.
+  if (
+    verified &&
+    token &&
+    !isPublic(pathname) &&
+    !BACKGROUND_PATHS.includes(pathname) &&
+    response.status < 400
+  ) {
+    const now = Math.floor(Date.now() / 1000);
+    const remaining = (verified.expiresAt ?? 0) - now;
+    if (now - (verified.lastActiveAt ?? 0) >= ACTIVITY_REFRESH_SECONDS && remaining > 0) {
+      const fresh = await signSession(verified, remaining);
+      response.cookies.set({ ...sessionCookieOptions(remaining), value: fresh });
+    }
+  }
+
+  return response;
+}
+
+async function gate(req: NextRequest, session: SessionUser | null): Promise<NextResponse> {
+  const { pathname, search } = req.nextUrl;
 
   // Already signed in and heading for the login page - send them to work.
   if (session && pathname === "/login") {
@@ -193,6 +280,24 @@ export async function middleware(req: NextRequest) {
       );
     }
     return NextResponse.redirect(new URL(homePath(session.role), req.url));
+  }
+
+  // An IRD auditor reads everything they are given and changes nothing. The
+  // handlers already refuse writes for want of permission; this makes the
+  // rule hold even for an endpoint that forgets to ask.
+  if (
+    session.role === "auditor" &&
+    pathname.startsWith("/api/") &&
+    !["GET", "HEAD", "OPTIONS"].includes(req.method) &&
+    !auditorMayWrite(pathname)
+  ) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: { code: "FORBIDDEN", message: "Auditor access is read-only." },
+      },
+      { status: 403 },
+    );
   }
 
   // Coarse per-screen role gate. Fine-grained checks live in the handlers.

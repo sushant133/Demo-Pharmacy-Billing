@@ -9,6 +9,8 @@ import { User } from "@/models/User";
 import { Branch } from "@/models/Branch";
 import { Pharmacy } from "@/models/Pharmacy";
 import { normalizeRole } from "@/lib/roles";
+import { recordSecurityEvent } from "@/lib/audit";
+import { setRequestActor } from "@/lib/request-context";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,14 +26,29 @@ export const POST = withRoute(async (req) => {
   // Same message and roughly the same work for both failure modes, so the
   // response cannot be used to enumerate which emails exist.
   const invalid = ApiError.unauthorized("Email or password is incorrect.");
+  // Every refused sign-in is kept in the audit trail, with the address tried.
+  const refused = async (error: ApiError, why: string) => {
+    await recordSecurityEvent({
+      action: "login-failed",
+      actor: user ? { id: String(user._id), name: user.name, role: user.role } : null,
+      pharmacyId: user?.pharmacyId ?? null,
+      note: `${email}: ${why}`,
+    });
+    return error;
+  };
 
   if (!user) {
     await verifyPassword(password, "$2a$12$" + "x".repeat(53));
-    throw invalid;
+    throw await refused(invalid, "unknown email");
   }
-  if (!(await verifyPassword(password, user.passwordHash))) throw invalid;
+  if (!(await verifyPassword(password, user.passwordHash))) {
+    throw await refused(invalid, "wrong password");
+  }
   if (user.isActive === false) {
-    throw ApiError.forbidden("This account has been deactivated.");
+    throw await refused(
+      ApiError.forbidden("This account has been deactivated."),
+      "account deactivated",
+    );
   }
   // A row written before narrower roles existed carries no `roleVersion`, so
   // a stored "pharmacist" or "cashier" still signs in as the owner it used to
@@ -98,6 +115,8 @@ export const POST = withRoute(async (req) => {
     value: token,
   });
 
+  setRequestActor(sessionUser);
+  await recordSecurityEvent({ action: "login", pharmacyId: pharmacyId || null });
   await User.updateOne({ _id: user._id }, { $set: { lastLoginAt: new Date() } });
 
   return created({ user: sessionUser });

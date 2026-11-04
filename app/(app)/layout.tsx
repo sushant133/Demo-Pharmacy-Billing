@@ -8,6 +8,8 @@ import { getSettings } from "@/lib/settings";
 import { alertAccountKey, getAlertOverview } from "@/lib/alerts";
 import { can } from "@/lib/roles";
 import { AlertNotifications } from "@/components/native/AlertNotifications";
+import { IdleSignOut } from "@/components/IdleSignOut";
+import { config } from "@/lib/config";
 
 /**
  * Layout for every authenticated screen.
@@ -88,6 +90,7 @@ export default async function AppLayout({
       >
         {children}
       </AppShell>
+      <IdleSignOut timeoutSeconds={config.idleTimeoutSeconds} />
     </>
   );
 }

@@ -385,9 +385,13 @@ export default async function ActivityPage({
       */}
       <p className="mt-4 text-xs text-slate-500">
         Read back from the records themselves - every bill, purchase, stock
-        movement and prescription stamps who did it. Actions that leave no
-        document behind, such as viewing a report or a failed sign-in attempt,
-        are not recorded anywhere and so cannot be listed here.
+        movement and prescription stamps who did it. For every change to every
+        record with its old and new values, and for sign-ins and refused
+        sign-ins, open the{" "}
+        <Link href="/audit" className="text-brand-700 hover:underline">
+          audit trail
+        </Link>
+        .
       </p>
     </>
   );

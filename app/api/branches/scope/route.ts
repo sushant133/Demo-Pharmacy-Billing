@@ -14,9 +14,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * POST /api/branches/scope - set the admin viewing-scope cookie.
+ * POST /api/branches/scope - set the viewing-scope cookie.
  *
- * Non-admins are pinned to their own branch; the cookie is ignored for them
+ * Roles that cannot switch are pinned to their own branch; the cookie is ignored for them
  * and we still succeed so a stale client does not error.
  */
 export const POST = withRoute(async (req) => {

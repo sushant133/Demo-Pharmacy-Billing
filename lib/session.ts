@@ -47,6 +47,12 @@ export interface SessionUser {
    * Middleware allows nothing but /change-password while this is set.
    */
   mustChangePassword?: boolean;
+  /**
+   * Token bookkeeping, read back by verifySession for the idle timeout in
+   * middleware. Epoch seconds. Ignored when signing.
+   */
+  lastActiveAt?: number;
+  expiresAt?: number;
 }
 
 const encoder = new TextEncoder();
@@ -83,6 +89,9 @@ export async function signSession(
       ? { impBy: user.impersonatorId, impName: user.impersonatorName ?? "" }
       : {}),
     ...(user.mustChangePassword ? { mcp: true } : {}),
+    // Last activity, for the idle timeout. Middleware re-signs the token with
+    // a fresh value as the user works, keeping the original expiry.
+    act: now,
   })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setSubject(user.id)
@@ -127,10 +136,56 @@ export async function verifySession(token: string): Promise<SessionUser | null> 
           }
         : {}),
       ...(payload.mcp === true ? { mustChangePassword: true } : {}),
+      lastActiveAt:
+        typeof payload.act === "number" ? payload.act : (payload.iat ?? 0),
+      expiresAt: payload.exp ?? 0,
     };
   } catch {
     return null;
   }
+}
+
+/**
+ * Has this session sat unused for longer than the idle limit?
+ * A limit of 0 turns the idle timeout off.
+ */
+export function isIdleExpired(
+  session: Pick<SessionUser, "lastActiveAt">,
+  idleSeconds: number,
+  nowSeconds = Math.floor(Date.now() / 1000),
+): boolean {
+  if (!idleSeconds || idleSeconds <= 0) return false;
+  return nowSeconds - (session.lastActiveAt ?? 0) > idleSeconds;
+}
+
+/**
+ * Set on sign-out, holding the expiry of the session that was ended.
+ *
+ * Tokens are stateless, so there is nothing on the server to revoke. And a request
+ * sent just before signing out can answer just after, with a Set-Cookie that puts
+ * a valid session back on a shared till. A refreshed token keeps its original
+ * expiry, so this one value rejects every copy of the ended session, and a new
+ * sign-in, with its own expiry, is unaffected. The late response does not touch
+ * this cookie, because it only ever sets the session one.
+ */
+export const SIGNED_OUT_COOKIE = "mp_signed_out";
+
+export function isSignedOutSession(
+  session: Pick<SessionUser, "expiresAt">,
+  marker: string | undefined,
+): boolean {
+  return Boolean(marker) && String(session.expiresAt ?? "") === marker;
+}
+
+export function signedOutCookieOptions(maxAge: number) {
+  return {
+    name: SIGNED_OUT_COOKIE,
+    httpOnly: true,
+    sameSite: "lax" as const,
+    secure: config.isProd,
+    path: "/",
+    maxAge,
+  };
 }
 
 /** Cookie options shared by the login and logout routes. */

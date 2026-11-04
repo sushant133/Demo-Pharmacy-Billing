@@ -19,7 +19,7 @@ import {
 } from "@/lib/roles";
 
 describe("ROLES", () => {
-  it("is the platform operator and the five shop roles", () => {
+  it("is the platform operator, the five shop roles and the auditor", () => {
     expect(ROLES).toEqual([
       "superadmin",
       "admin",
@@ -27,6 +27,7 @@ describe("ROLES", () => {
       "pharmacist",
       "cashier",
       "inventory",
+      "auditor",
     ]);
   });
 
@@ -152,6 +153,40 @@ describe("inventory", () => {
 
   it("lands on the dashboard rather than the till", () => {
     expect(homePath("inventory")).toBe("/dashboard");
+  });
+});
+
+describe("auditor", () => {
+  it("reads every book, report and the audit trail", () => {
+    for (const permission of [
+      "sale:read",
+      "purchase:read",
+      "report:financial",
+      "report:export",
+      "audit:read",
+    ] as const) {
+      expect(can("auditor", permission)).toBe(true);
+    }
+  });
+
+  it("holds no permission that writes", () => {
+    const writes = permissionsFor("auditor").filter(
+      (permission) => !permission.endsWith(":read") && !permission.startsWith("report:"),
+    );
+    expect(writes).toEqual([]);
+  });
+
+  it("is a role the owner can issue", () => {
+    expect(isAssignableRole("auditor")).toBe(true);
+  });
+});
+
+describe("audit trail access", () => {
+  it("belongs to the owner and the auditor, not the floor staff", () => {
+    expect(can("admin", "audit:read")).toBe(true);
+    expect(can("manager", "audit:read")).toBe(false);
+    expect(can("cashier", "audit:read")).toBe(false);
+    expect(can("superadmin", "audit:read")).toBe(false);
   });
 });
 

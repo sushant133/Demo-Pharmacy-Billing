@@ -1,4 +1,5 @@
 import { config } from "@/lib/config";
+import { adToBs, nepaliFiscalYear } from "@/lib/bs-date";
 
 /**
  * Date helpers that respect the pharmacy's local timezone.
@@ -53,6 +54,12 @@ export function localParts(
     month: shifted.getUTCMonth() + 1,
     day: shifted.getUTCDate(),
   };
+}
+
+/** Nepali fiscal year an instant falls in, e.g. "2082-83", in the business timezone. */
+export function fiscalYearOf(instant: Date = new Date()): string {
+  const local = localParts(instant);
+  return nepaliFiscalYear(adToBs(local.year, local.month, local.day));
 }
 
 /** The UTC instant of local midnight starting the day containing `instant`. */

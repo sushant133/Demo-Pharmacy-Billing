@@ -12,6 +12,7 @@ export const ROLES = [
   "pharmacist",
   "cashier",
   "inventory",
+  "auditor",
 ] as const;
 export type Role = (typeof ROLES)[number];
 
@@ -28,6 +29,7 @@ export const ASSIGNABLE_ROLES = [
   "pharmacist",
   "cashier",
   "inventory",
+  "auditor",
 ] as const satisfies readonly Role[];
 export type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
 
@@ -87,6 +89,8 @@ export const PERMISSIONS = [
   "branch:manage",
   "settings:manage",
   "pharmacy:manage",
+  /** Read the audit trail: every change, sign-in and sign-out. */
+  "audit:read",
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -131,7 +135,10 @@ const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     (permission) =>
       permission !== "user:manage" &&
       permission !== "branch:manage" &&
-      permission !== "settings:manage",
+      permission !== "settings:manage" &&
+      // The trail records what the staff did, the manager included; it is the
+      // owner's to read, and an auditor's.
+      permission !== "audit:read",
   ),
 
   /**
@@ -184,6 +191,26 @@ const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "purchase:read",
     "purchase:write",
     "purchase:post",
+  ],
+
+  /**
+   * Read-only access for an IRD officer or the shop's external auditor: every
+   * book, bill, report and the audit trail, and nothing that writes. Middleware
+   * also refuses any write from this role outright (see middleware.ts), so a
+   * handler that forgot its permission check still cannot be used to change
+   * a record.
+   */
+  auditor: [
+    ...DASHBOARD,
+    "report:financial",
+    "report:export",
+    "audit:read",
+    "medicine:read",
+    "batch:read",
+    "sale:read",
+    "customer:read",
+    "supplier:read",
+    "purchase:read",
   ],
 };
 
@@ -259,6 +286,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   pharmacist: "Pharmacist",
   cashier: "Cashier",
   inventory: "Inventory staff",
+  auditor: "Auditor (read-only)",
 };
 
 /** One line on what the role is for, shown wherever one is picked. */
@@ -272,6 +300,8 @@ export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   cashier: "Bills and takes payment. Cannot void, discount, or sell on credit.",
   inventory:
     "Receives and counts stock. No till, no customers, no money figures.",
+  auditor:
+    "For an IRD officer or auditor. Reads every book, bill, report and the audit trail. Changes nothing.",
 };
 
 /** Which top-level screens a role may open. Used by the nav and middleware. */
@@ -295,6 +325,13 @@ export const ROUTE_PERMISSIONS: Array<{ prefix: string; permission: Permission }
   { prefix: "/alerts", permission: "report:read" },
   { prefix: "/dashboard", permission: "report:read" },
   { prefix: "/staff", permission: "user:manage" },
+  { prefix: "/audit", permission: "audit:read" },
+  { prefix: "/cbms", permission: "report:export" },
   { prefix: "/branches", permission: "branch:manage" },
   { prefix: "/settings", permission: "settings:manage" },
 ];
+
+/** A role as people read it. A value we no longer issue is shown as it was stored. */
+export function roleName(role: string): string {
+  return ROLE_LABELS[role as Role] ?? role;
+}

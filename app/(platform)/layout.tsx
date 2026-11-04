@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { SuperAdminShell } from "@/components/SuperAdminShell";
+import { IdleSignOut } from "@/components/IdleSignOut";
 import { requirePagePermission } from "@/lib/auth";
+import { config } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +17,7 @@ export default async function PlatformLayout({
   return (
     <SuperAdminShell user={{ name: user.name, email: user.email }}>
       {children}
+      <IdleSignOut timeoutSeconds={config.idleTimeoutSeconds} />
     </SuperAdminShell>
   );
 }

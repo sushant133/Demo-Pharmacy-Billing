@@ -41,9 +41,13 @@ export const BRANCH_COOKIE = "mp_branch";
 /** The cookie value that means "every branch at once". */
 export const ALL_BRANCHES = "all";
 
-/** Only an admin sees across branches; everyone else is pinned to their own. */
+/**
+ * Only an admin or an auditor sees across branches; everyone else is pinned to
+ * their own. An auditor reads every book, and pinning one to a single outlet
+ * would give them part of a pharmacy's figures with nothing saying so.
+ */
 export function canSwitchBranch(user: SessionUser): boolean {
-  return user.role === "admin";
+  return user.role === "admin" || user.role === "auditor";
 }
 
 /**
