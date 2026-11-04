@@ -5,6 +5,7 @@ import { branchFilter, resolveRequestScope } from "@/lib/branch-scope";
 import { connectDB } from "@/lib/db";
 import { dateRangeFromStrings } from "@/lib/dates";
 import { createSale } from "@/lib/sales";
+import { syncCbmsNow } from "@/lib/cbms";
 import { Sale } from "@/models/Sale";
 import { pharmacyFilter } from "@/lib/tenant";
 import { createSaleSchema, salesQuerySchema } from "@/lib/validation";
@@ -156,6 +157,10 @@ export const POST = withRoute(async (req) => {
   await connectDB();
 
   const sale = await createSale(input, user);
+  // Real-time report to IRD, after the bill has committed, without waiting for
+  // it: with IRD down, every bill would otherwise hold the queue for 8 seconds.
+  // The row is already saved, so the retry runner covers a send that fails.
+  void syncCbmsNow(sale.cbmsQueueId);
   return created(sale);
 });
 

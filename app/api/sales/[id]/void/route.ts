@@ -1,6 +1,7 @@
 import { ok, parseJson, withRoute } from "@/lib/api";
 import { requirePermission } from "@/lib/auth";
 import { voidSale } from "@/lib/sales";
+import { syncCbmsNow } from "@/lib/cbms";
 import { objectIdSchema, voidSaleSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
@@ -24,5 +25,7 @@ export const POST = withRoute<Ctx>(async (req, ctx) => {
   const { reason } = await parseJson(req, voidSaleSchema);
 
   const result = await voidSale(objectIdSchema.parse(id), reason, user);
+  // Not waited for: see POST /api/sales.
+  void syncCbmsNow(result.cbmsQueueId);
   return ok(result);
 });
