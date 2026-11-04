@@ -1,4 +1,5 @@
 import { Schema, model, models, type InferSchemaType, type Model } from "mongoose";
+import { auditPlugin } from "@/lib/audit";
 import {
   DEFAULT_PRINT_TEMPLATE,
   PRINT_TEMPLATE_IDS,
@@ -92,6 +93,12 @@ const pharmacySchema = new Schema(
     drugLicenceNo: { type: String, trim: true, default: "", maxlength: 60 },
     /** When that licence runs out, so an expiring one can be chased. */
     licenceExpiry: { type: Date, default: null },
+    /**
+     * When scripts/backfill-nepal-compliance.ts marked this catalogue exempt.
+     * After that, a medicine marked taxable is the shop's decision, and a re-run
+     * has no way to tell it from one the clean-up missed.
+     */
+    vatExemptBackfilledAt: { type: Date, default: null },
     address: { type: String, trim: true, default: "", maxlength: 300 },
     city: { type: String, trim: true, default: "", maxlength: 120 },
     phone: { type: String, trim: true, default: "", maxlength: 40 },
@@ -133,6 +140,9 @@ const pharmacySchema = new Schema(
   },
   { timestamps: true },
 );
+
+// Every change to this collection lands in the audit trail (lib/audit.ts).
+pharmacySchema.plugin(auditPlugin);
 
 export type PharmacyDoc = InferSchemaType<typeof pharmacySchema>;
 

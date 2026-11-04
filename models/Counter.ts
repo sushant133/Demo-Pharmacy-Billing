@@ -71,6 +71,39 @@ export async function nextSequence(
 }
 
 /**
+ * Hand back a number whose sale did not go through, on a standalone MongoDB
+ * where no transaction can abort the increment. Only when it is still the
+ * latest: if another till has moved on, the number is genuinely spent and the
+ * gap report is where it belongs.
+ */
+export async function releaseSequence(key: string, seq: number): Promise<void> {
+  await Counter.updateOne({ _id: key, seq }, { $inc: { seq: -1 } });
+}
+
+/** A run of numbers missing from a series, both ends inclusive. */
+export interface SequenceGap {
+  from: number;
+  to: number;
+}
+
+/**
+ * Numbers missing from a series that should run 1, 2, 3... without a break.
+ * `issued` is the counter's value, which catches numbers spent after the last
+ * record on file as well as those between records.
+ */
+export function findSequenceGaps(seqs: readonly number[], issued = 0): SequenceGap[] {
+  const present = [...new Set(seqs)].sort((a, b) => a - b);
+  const gaps: SequenceGap[] = [];
+  let expected = 1;
+  for (const seq of present) {
+    if (seq > expected) gaps.push({ from: expected, to: seq - 1 });
+    expected = seq + 1;
+  }
+  if (issued >= expected) gaps.push({ from: expected, to: issued });
+  return gaps;
+}
+
+/**
  * The allocation rule on its own, with the database swapped for two callbacks.
  *
  * Bill numbering is as business-critical as FEFO and fails the same way - by
@@ -109,9 +142,10 @@ export async function allocateSequence({
 /**
  * Formatted bill number, e.g. INV-2082-83-000173.
  *
- * IRD numbering is per Nepali fiscal year (Shrawan–Ashadh) and must not use
- * a slash — `/bills/INV-2082/83-…` would break routing. The printed bill
- * shows 2082/83.
+ * IRD numbering is per Nepali fiscal year (Shrawan–Ashadh). This one string is
+ * the invoice number everywhere - the record, the screen, the paper, the books
+ * and CBMS - because an invoice number that reads two ways is two numbers to an
+ * auditor. No slash, since `/bills/INV-2082/83-…` would break routing.
  */
 export function formatBillNo(
   seq: number,
@@ -122,20 +156,30 @@ export function formatBillNo(
   return fiscalYear ? `${prefix}-${fiscalYear}-${n}` : `${prefix}-${n}`;
 }
 
-/** Printed form of a stored bill number: INV-2082-83-000001 → INV-2082/83-000001 */
-export function displayBillNo(billNo: string): string {
-  return billNo.replace(/^(INV-\d{4})-(\d{2}-)/, "$1/$2");
-}
-
 /**
  * What to look up in the database when someone types a bill number.
- * Printed receipts use a slash in the fiscal year; stored numbers use a hyphen.
+ * Paper printed before the format was unified has a slash in the fiscal year,
+ * and those bills can still come back to the counter.
  */
 export function storedBillNo(value: string): string {
   return value
     .trim()
     .toUpperCase()
-    .replace(/^(INV-\d{4})\/(\d{2}-)/, "$1-$2");
+    .replace(/^((?:INV|CN|DN)-\d{4})\/(\d{2}-)/, "$1-$2");
+}
+
+/**
+ * Credit and debit note numbers, e.g. CN-2082-83-000004.
+ *
+ * Each note is numbered in its own unbroken series per fiscal year, the same
+ * way bills are, so the credit and debit note books have no gaps either.
+ */
+export function formatNoteNo(
+  kind: "CN" | "DN",
+  seq: number,
+  fiscalYear: string,
+): string {
+  return formatBillNo(seq, fiscalYear, kind);
 }
 
 /**

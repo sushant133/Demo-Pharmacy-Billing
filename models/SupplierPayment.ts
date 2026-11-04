@@ -1,4 +1,5 @@
 import { Schema, model, models, type InferSchemaType, type Model } from "mongoose";
+import { auditPlugin } from "@/lib/audit";
 import { SUPPLIER_PAYMENT_METHODS } from "@/lib/constants";
 
 export { SUPPLIER_PAYMENT_METHODS };
@@ -48,6 +49,9 @@ const supplierPaymentSchema = new Schema(
 );
 
 supplierPaymentSchema.index({ supplierId: 1, paidOn: -1 });
+
+// Every change to this collection lands in the audit trail (lib/audit.ts).
+supplierPaymentSchema.plugin(auditPlugin);
 
 export type SupplierPaymentDoc = InferSchemaType<typeof supplierPaymentSchema>;
 

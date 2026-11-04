@@ -1,4 +1,5 @@
 import { Schema, model, models, type InferSchemaType, type Model } from "mongoose";
+import { auditPlugin } from "@/lib/audit";
 
 /**
  * A physical outlet of one pharmacy.
@@ -9,9 +10,8 @@ import { Schema, model, models, type InferSchemaType, type Model } from "mongoos
  * tells the pharmacist to order something they already have. So a Batch now
  * belongs to a branch, and FEFO only ever sees the stock in the room.
  *
- * Each branch carries its own printed identity. Nepali VAT invoices must show
- * the issuing outlet's own name, address and PAN, not the company's - which is
- * also what Phase 5's IRD work will need.
+ * Bills print the pharmacy's registered name and PAN, which is what IRD holds,
+ * with this branch's name, address and phone beneath to say where it was issued.
  *
  * Codes are unique per pharmacy, not globally: two vendors can both have a
  * `main` outlet.
@@ -36,7 +36,7 @@ const branchSchema = new Schema(
     name: { type: String, required: true, trim: true, maxlength: 160 },
     address: { type: String, trim: true, default: "", maxlength: 300 },
     phone: { type: String, trim: true, default: "", maxlength: 40 },
-    /** Falls back to the company PAN from config when empty. */
+    /** Only used if the pharmacy has no PAN of its own. Nine digits, or blank. */
     panNo: { type: String, trim: true, default: "", maxlength: 30 },
     /**
      * Where a new user, an unscoped script or a migration puts things when no
@@ -53,6 +53,9 @@ const branchSchema = new Schema(
 
 branchSchema.index({ pharmacyId: 1, code: 1 }, { unique: true });
 branchSchema.index({ pharmacyId: 1, isDefault: 1 });
+
+// Every change to this collection lands in the audit trail (lib/audit.ts).
+branchSchema.plugin(auditPlugin);
 
 export type BranchDoc = InferSchemaType<typeof branchSchema>;
 

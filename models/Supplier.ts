@@ -1,4 +1,5 @@
 import { Schema, model, models, type InferSchemaType, type Model } from "mongoose";
+import { auditPlugin } from "@/lib/audit";
 
 /**
  * A distributor or manufacturer the shop buys from.
@@ -38,6 +39,9 @@ const supplierSchema = new Schema(
 
 supplierSchema.index({ pharmacyId: 1, name: 1 }, { unique: true });
 supplierSchema.index({ name: "text", contactPerson: "text", phone: "text" });
+
+// Every change to this collection lands in the audit trail (lib/audit.ts).
+supplierSchema.plugin(auditPlugin);
 
 export type SupplierDoc = InferSchemaType<typeof supplierSchema>;
 

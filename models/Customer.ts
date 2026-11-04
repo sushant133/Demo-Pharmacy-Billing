@@ -1,4 +1,5 @@
 import { Schema, model, models, type InferSchemaType, type Model } from "mongoose";
+import { auditPlugin } from "@/lib/audit";
 
 const customerSchema = new Schema(
   {
@@ -20,6 +21,9 @@ const customerSchema = new Schema(
 
 customerSchema.index({ name: "text", phone: "text" });
 customerSchema.index({ pharmacyId: 1, phone: 1 });
+
+// Every change to this collection lands in the audit trail (lib/audit.ts).
+customerSchema.plugin(auditPlugin);
 
 export type CustomerDoc = InferSchemaType<typeof customerSchema>;
 

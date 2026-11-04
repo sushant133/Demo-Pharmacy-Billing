@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   allocateSequence,
-  displayBillNo,
   formatBillNo,
   formatGrnNo,
   storedBillNo,
@@ -118,9 +117,10 @@ describe("bill number formatting", () => {
     expect(formatGrnNo(15)).toBe("GRN-000015");
   });
 
-  it("prints the fiscal year with a slash but stores it with a hyphen", () => {
+  it("reads older slash-printed numbers back to the one canonical form", () => {
     const stored = formatBillNo(139, "2083-84");
-    expect(displayBillNo(stored)).toBe("INV-2083/84-000139");
-    expect(storedBillNo(displayBillNo(stored))).toBe(stored);
+    expect(storedBillNo("INV-2083/84-000139")).toBe(stored);
+    expect(storedBillNo("cn-2083/84-000004")).toBe("CN-2083-84-000004");
+    expect(storedBillNo(stored)).toBe(stored);
   });
 });

@@ -1,4 +1,5 @@
 import { Schema, model, models, type InferSchemaType, type Model } from "mongoose";
+import { auditPlugin } from "@/lib/audit";
 
 import {
   PAYMENT_MODES,
@@ -38,6 +39,10 @@ const saleItemSchema = new Schema(
     unit: { type: String, default: "unit" },
     unitPrice: { type: Number, required: true, min: 0 },
     subtotal: { type: Number, required: true, min: 0 },
+    /** Frozen from the medicine at sale: this line carried no VAT. */
+    vatExempt: { type: Boolean, default: false },
+    /** Frozen from the medicine at sale, so the register survives a reclassification. */
+    schedule: { type: String, default: "otc" },
     /**
      * What this stock cost the shop, captured at the moment of sale.
      *
@@ -71,6 +76,7 @@ const saleReturnItemSchema = new Schema(
     subtotal: { type: Number, required: true, min: 0 },
     discount: { type: Number, required: true, min: 0, default: 0 },
     taxableAmount: { type: Number, required: true, min: 0 },
+    exemptAmount: { type: Number, min: 0, default: 0 },
     vatAmount: { type: Number, required: true, min: 0, default: 0 },
     totalAmount: { type: Number, required: true, min: 0 },
     lineCost: { type: Number, required: true, min: 0, default: 0 },
@@ -83,6 +89,11 @@ const saleReturnSchema = new Schema(
     returnedAt: { type: Date, required: true },
     returnedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
     returnedByName: { type: String, default: "" },
+    /**
+     * The credit note's own number, from its own series (CN-2082-83-000001).
+     * Blank on returns recorded before credit notes were numbered.
+     */
+    creditNoteNo: { type: String, trim: true, default: "" },
     /** One of RETURN_REASONS. Blank on returns taken before the list existed. */
     reasonCode: { type: String, trim: true, default: "" },
     reason: { type: String, trim: true, required: true, maxlength: 300 },
@@ -121,6 +132,7 @@ const saleReturnSchema = new Schema(
     subtotal: { type: Number, required: true, min: 0 },
     discount: { type: Number, required: true, min: 0, default: 0 },
     taxableAmount: { type: Number, required: true, min: 0 },
+    exemptAmount: { type: Number, min: 0, default: 0 },
     vatAmount: { type: Number, required: true, min: 0, default: 0 },
     totalAmount: { type: Number, required: true, min: 0 },
     totalCost: { type: Number, required: true, min: 0, default: 0 },
@@ -176,6 +188,27 @@ const saleSchema = new Schema(
     customerPan: { type: String, trim: true, default: "" },
     customerAddress: { type: String, trim: true, default: "" },
     customerPhone: { type: String, trim: true, default: "" },
+    /**
+     * Who a narcotic or psychotropic line went to and on whose word. Null on a
+     * bill with no controlled line. These fill the DDA retailer's record.
+     */
+    controlled: {
+      type: new Schema(
+        {
+          patientName: { type: String, required: true, trim: true, maxlength: 160 },
+          recipientName: { type: String, trim: true, default: "", maxlength: 160 },
+          prescriberName: { type: String, required: true, trim: true, maxlength: 160 },
+          /** Nepal Medical Council registration number. */
+          prescriberNmcNo: { type: String, required: true, trim: true, maxlength: 60 },
+          /** Where the paper prescription is filed, when no photo was taken. */
+          prescriptionRef: { type: String, trim: true, default: "", maxlength: 120 },
+          /** A photo is held in PrescriptionImage, against this bill. */
+          hasImage: { type: Boolean, default: false },
+        },
+        { _id: false },
+      ),
+      default: null,
+    },
     items: {
       type: [saleItemSchema],
       required: true,
@@ -197,6 +230,11 @@ const saleSchema = new Schema(
     discountPercent: { type: Number, required: true, min: 0, max: 100, default: 0 },
     /** subtotal - discount; the base VAT is charged on. */
     taxableAmount: { type: Number, required: true, min: 0 },
+    /**
+     * The VAT-exempt part of taxableAmount. VAT was charged on the rest.
+     * Zero on bills raised before exempt lines existed, which is what they were.
+     */
+    exemptAmount: { type: Number, min: 0, default: 0 },
     vatRate: { type: Number, required: true, min: 0, default: 0.13 },
     vatAmount: { type: Number, required: true, min: 0, default: 0 },
     totalAmount: { type: Number, required: true, min: 0 },
@@ -244,12 +282,38 @@ const saleSchema = new Schema(
     },
     /** Denormalised so a reprint shows the outlet that actually issued it. */
     branchName: { type: String, default: "" },
+    /**
+     * Full tax invoice, or an abbreviated one for a small retail sale to a
+     * buyer with no PAN. Decided when the bill is raised and never changed,
+     * so a reprint is the same kind of document as the original.
+     */
+    invoiceType: {
+      type: String,
+      enum: ["full", "abbreviated"],
+      default: "full",
+    },
     /** Nepali fiscal year, e.g. 2082-83, matching the bill-number prefix. */
     fiscalYear: { type: String, default: "", index: true },
+    /**
+     * Where this bill stands with IRD's CBMS, mirrored from its CbmsSync row
+     * so lists and the bill screen can show it without a second read.
+     * "none" on bills raised while CBMS was switched off, or before it existed.
+     */
+    cbmsStatus: {
+      type: String,
+      enum: ["none", "pending", "synced", "failed", "disabled"],
+      default: "none",
+      index: true,
+    },
+    cbmsSyncedAt: { type: Date, default: null },
+    cbmsResponseCode: { type: Number, default: null },
+    cbmsMessage: { type: String, default: "" },
     /** Set the first time the original is sent to the printer. */
     printedAt: { type: Date, default: null },
     /** Reprints after the original must be labelled "Copy of Original – N". */
     reprintCount: { type: Number, default: 0, min: 0 },
+    /** Who printed the original. IRD's materialized view has a column for it. */
+    printedByName: { type: String, default: "" },
     note: { type: String, trim: true, default: "" },
     /**
      * A voided bill stays on record - the bill number was issued, and a gap in
@@ -271,6 +335,7 @@ const saleSchema = new Schema(
     returnedUnits: { type: Number, required: true, min: 0, default: 0 },
     returnedDiscount: { type: Number, required: true, min: 0, default: 0 },
     returnedTaxable: { type: Number, required: true, min: 0, default: 0 },
+    returnedExempt: { type: Number, min: 0, default: 0 },
     returnedVat: { type: Number, required: true, min: 0, default: 0 },
     returnedTotal: { type: Number, required: true, min: 0, default: 0 },
     returnedCost: { type: Number, required: true, min: 0, default: 0 },
@@ -286,6 +351,9 @@ saleSchema.index({ pharmacyId: 1, customerId: 1, paymentStatus: 1, createdAt: -1
 saleSchema.index({ createdAt: -1 });
 saleSchema.index({ pharmacyId: 1, createdAt: -1 });
 saleSchema.index({ branchId: 1, createdAt: -1 });
+
+// Every change to this collection lands in the audit trail (lib/audit.ts).
+saleSchema.plugin(auditPlugin);
 
 export type SaleDoc = InferSchemaType<typeof saleSchema>;
 

@@ -1,4 +1,5 @@
 import { Schema, model, models, type InferSchemaType, type Model } from "mongoose";
+import { auditPlugin } from "@/lib/audit";
 
 /**
  * The shop's own identity, as one editable record.
@@ -44,6 +45,12 @@ const settingSchema = new Schema(
     vatNumber: { type: String, trim: true, default: "", maxlength: 30 },
     /** Stored as a fraction: 0.13 is 13%. */
     vatRate: { type: Number, default: 0.13, min: 0, max: 1 },
+    /**
+     * Bills up to this amount to a buyer with no PAN print as an abbreviated
+     * tax invoice; above it, a full tax invoice naming the buyer is required.
+     * A setting rather than a constant because IRD revises the figure.
+     */
+    abbreviatedInvoiceLimit: { type: Number, default: 5000, min: 0 },
 
     // --- Licences ---------------------------------------------------------
     /** Department of Drug Administration licence. */
@@ -65,6 +72,14 @@ const settingSchema = new Schema(
     /** The closing line. "Thank you", or whatever the shop prefers. */
     billFooterNote: { type: String, trim: true, default: "", maxlength: 400 },
 
+    // --- IRD CBMS -----------------------------------------------------------
+    /** Send every bill and return to IRD's CBMS as it is issued. */
+    cbmsEnabled: { type: Boolean, default: false },
+    /** The CBMS login IRD issued to this taxpayer. */
+    cbmsUsername: { type: String, trim: true, default: "", maxlength: 120 },
+    /** Its password, sealed with lib/secret-box.ts. Never sent to a browser. */
+    cbmsPasswordEnc: { type: String, default: "" },
+
     /** Extra medicine categories on top of the built-in list. */
     medicineCategories: { type: [String], default: [] },
   },
@@ -72,6 +87,9 @@ const settingSchema = new Schema(
 );
 
 settingSchema.index({ pharmacyId: 1, key: 1 }, { unique: true });
+
+// Every change to this collection lands in the audit trail (lib/audit.ts).
+settingSchema.plugin(auditPlugin);
 
 export type SettingDoc = InferSchemaType<typeof settingSchema>;
 

@@ -1,4 +1,5 @@
 import { Schema, model, models, type InferSchemaType, type Model } from "mongoose";
+import { auditPlugin } from "@/lib/audit";
 
 import {
   MOVEMENT_KINDS,
@@ -102,6 +103,9 @@ stockMovementSchema.index({ branchId: 1, direction: 1, createdAt: -1 });
 stockMovementSchema.index({ pharmacyId: 1, kind: 1, createdAt: -1 });
 // "What has happened to this lot?" - the history shown beside a batch.
 stockMovementSchema.index({ batchId: 1, createdAt: -1 });
+
+// Every change to this collection lands in the audit trail (lib/audit.ts).
+stockMovementSchema.plugin(auditPlugin);
 
 export type StockMovementDoc = InferSchemaType<typeof stockMovementSchema>;
 

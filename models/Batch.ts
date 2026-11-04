@@ -1,4 +1,5 @@
 import { Schema, model, models, type InferSchemaType, type Model } from "mongoose";
+import { auditPlugin } from "@/lib/audit";
 
 /**
  * A physical lot of one medicine, at one branch, with its own expiry and
@@ -87,6 +88,9 @@ batchSchema.pre("validate", function seedInitialQuantity(next) {
   }
   next();
 });
+
+// Every change to this collection lands in the audit trail (lib/audit.ts).
+batchSchema.plugin(auditPlugin);
 
 export type BatchDoc = InferSchemaType<typeof batchSchema>;
 

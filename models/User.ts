@@ -1,4 +1,5 @@
 import { Schema, model, models, type InferSchemaType, type Model } from "mongoose";
+import { auditPlugin } from "@/lib/audit";
 import { ROLES } from "@/lib/roles";
 
 const userSchema = new Schema(
@@ -74,6 +75,9 @@ userSchema.set("toJSON", {
     return ret;
   },
 });
+
+// Every change to this collection lands in the audit trail (lib/audit.ts).
+userSchema.plugin(auditPlugin);
 
 export type UserDoc = InferSchemaType<typeof userSchema>;
 

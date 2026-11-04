@@ -1,4 +1,5 @@
 import { Schema, model, models, type InferSchemaType, type Model } from "mongoose";
+import { auditPlugin } from "@/lib/audit";
 
 /**
  * A doctor's prescription, and what has been handed over against it.
@@ -169,6 +170,9 @@ prescriptionSchema.index({
   doctorName: "text",
   "items.medicineName": "text",
 });
+
+// Every change to this collection lands in the audit trail (lib/audit.ts).
+prescriptionSchema.plugin(auditPlugin);
 
 export type PrescriptionDoc = InferSchemaType<typeof prescriptionSchema>;
 

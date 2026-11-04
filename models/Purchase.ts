@@ -1,4 +1,5 @@
 import { Schema, model, models, type InferSchemaType, type Model } from "mongoose";
+import { auditPlugin } from "@/lib/audit";
 import { PAYMENT_STATUSES, PURCHASE_STATUSES } from "@/lib/constants";
 
 export { PURCHASE_STATUSES, PAYMENT_STATUSES };
@@ -78,6 +79,11 @@ const purchaseReturnSchema = new Schema(
     reason: { type: String, trim: true, default: "", maxlength: 300 },
     /** The supplier's own credit note reference, once they issue one. */
     creditNoteNo: { type: String, trim: true, default: "", maxlength: 60 },
+    /**
+     * The shop's own debit note to the supplier, numbered in its own series
+     * (DN-2082-83-000001). Blank on returns recorded before it existed.
+     */
+    debitNoteNo: { type: String, trim: true, default: "" },
     items: { type: [purchaseReturnItemSchema], required: true },
     units: { type: Number, required: true, min: 0 },
     /**
@@ -195,6 +201,9 @@ purchaseSchema.index({ pharmacyId: 1, createdAt: -1 });
 purchaseSchema.index({ branchId: 1, createdAt: -1 });
 purchaseSchema.index({ supplierId: 1, status: 1 });
 purchaseSchema.index({ pharmacyId: 1, status: 1, paymentStatus: 1 });
+
+// Every change to this collection lands in the audit trail (lib/audit.ts).
+purchaseSchema.plugin(auditPlugin);
 
 export type PurchaseDoc = InferSchemaType<typeof purchaseSchema>;
 

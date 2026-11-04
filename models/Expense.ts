@@ -1,4 +1,5 @@
 import { Schema, model, models, type InferSchemaType, type Model } from "mongoose";
+import { auditPlugin } from "@/lib/audit";
 
 import {
   EXPENSE_CATEGORIES,
@@ -70,6 +71,9 @@ expenseSchema.index({ pharmacyId: 1, paidOn: -1 });
 expenseSchema.index({ branchId: 1, paidOn: -1 });
 // The by-category roll-up behind the summary strip and the profit report.
 expenseSchema.index({ pharmacyId: 1, category: 1, paidOn: -1 });
+
+// Every change to this collection lands in the audit trail (lib/audit.ts).
+expenseSchema.plugin(auditPlugin);
 
 export type ExpenseDoc = InferSchemaType<typeof expenseSchema>;
 

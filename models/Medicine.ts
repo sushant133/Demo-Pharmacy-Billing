@@ -1,7 +1,9 @@
 import { Schema, model, models, type InferSchemaType, type Model } from "mongoose";
+import { auditPlugin } from "@/lib/audit";
 
 import {
   MEDICINE_CATEGORIES,
+  MEDICINE_SCHEDULES,
   MEDICINE_UNITS,
   type MedicineUnit,
 } from "@/lib/constants";
@@ -89,8 +91,21 @@ const medicineSchema = new Schema(
      */
     defaultCostPrice: { type: Number, min: 0, default: null },
     defaultSalePrice: { type: Number, min: 0, default: null },
+    /**
+     * Exempt from VAT under the VAT Act schedule. Most medicines are; cosmetics,
+     * supplements and devices usually are not. The till charges VAT only on
+     * lines without this flag, and the bill shows the two amounts apart.
+     */
+    vatExempt: { type: Boolean, default: true },
     /** Prescription-only medicines get a visible warning at the counter. */
     requiresPrescription: { type: Boolean, default: false },
+    /**
+     * Over the counter, Rx, psychotropic or narcotic. Blank on records from
+     * before the field existed; read through `medicineSchedule`, which falls
+     * back to the Rx flag. Controlled lines are refused at the till without a
+     * patient, prescriber and prescription, and go on the DDA register.
+     */
+    schedule: { type: String, enum: ["", ...MEDICINE_SCHEDULES], default: "" },
     /** Per-medicine override of LOW_STOCK_THRESHOLD. */
     reorderLevel: { type: Number, min: 0, default: null },
     isActive: { type: Boolean, default: true },
@@ -103,6 +118,8 @@ medicineSchema.index({ name: "text", genericName: "text", saltComposition: "text
 // Prefix search (`^query`) uses this; also keeps one pharmacy's catalogue free of dupes.
 medicineSchema.index({ pharmacyId: 1, name: 1, manufacturer: 1 }, { unique: true });
 medicineSchema.index({ pharmacyId: 1, category: 1 });
+// What the controlled-drug register starts from.
+medicineSchema.index({ pharmacyId: 1, schedule: 1 });
 // A scan is an exact lookup on the hot path of the till, so it gets its own
 // index. Partial, because the empty default is the common case and two
 // medicines without a barcode are not duplicates of each other.
@@ -122,6 +139,9 @@ medicineSchema.index(
     partialFilterExpression: { sku: { $type: "string", $gt: "" } },
   },
 );
+
+// Every change to this collection lands in the audit trail (lib/audit.ts).
+medicineSchema.plugin(auditPlugin);
 
 export type MedicineDoc = InferSchemaType<typeof medicineSchema>;
 
