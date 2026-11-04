@@ -3,7 +3,6 @@ import { requirePermission } from "@/lib/auth";
 import {
   IMAGE_MEDIA_TYPES,
   ImageImportError,
-  imageImportConfigured,
   readMedicinePack,
   type ImageMediaType,
 } from "@/lib/medicine-image-import";
@@ -24,12 +23,6 @@ const MAX_BYTES = 5 * 1024 * 1024;
  */
 export const POST = withRoute(async (req) => {
   await requirePermission("medicine:write");
-
-  if (!imageImportConfigured()) {
-    throw ApiError.badRequest(
-      "Reading a medicine from a photo is not switched on for this server yet. Ask the administrator to add an ANTHROPIC_API_KEY.",
-    );
-  }
 
   const mediaType = (req.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
   if (!(IMAGE_MEDIA_TYPES as readonly string[]).includes(mediaType)) {

@@ -1,9 +1,11 @@
 import { ApiError, ok, withRoute } from "@/lib/api";
 import { requirePermission } from "@/lib/auth";
+import { connectDB } from "@/lib/db";
+import { pharmacyFilter } from "@/lib/tenant";
+import { Medicine } from "@/models/Medicine";
 import {
   IMAGE_MEDIA_TYPES,
   ImageImportError,
-  imageImportConfigured,
   readMedicineImage,
   type ImageMediaType,
 } from "@/lib/medicine-image-import";
@@ -22,15 +24,13 @@ const MAX_BYTES = 5 * 1024 * 1024;
  * The body is the raw image, its type in Content-Type. Nothing is written:
  * the reply is the CSV the import panel shows, so the rows go through the
  * same preview and the same checks as a pasted list or an Excel file.
+ *
+ * Read names are matched against this pharmacy's own medicines, so a name the
+ * photo smudged comes back as the one the shop already stocks - and every
+ * medicine saved makes later photos read better.
  */
 export const POST = withRoute(async (req) => {
-  await requirePermission("medicine:write");
-
-  if (!imageImportConfigured()) {
-    throw ApiError.badRequest(
-      "Reading medicines from a photo is not switched on for this server yet. Ask the administrator to add an ANTHROPIC_API_KEY.",
-    );
-  }
+  const user = await requirePermission("medicine:write");
 
   const mediaType = (req.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
   if (!(IMAGE_MEDIA_TYPES as readonly string[]).includes(mediaType)) {
@@ -43,8 +43,14 @@ export const POST = withRoute(async (req) => {
     throw ApiError.badRequest("That photo is too large. Use one under 5 MB.");
   }
 
+  await connectDB();
+  const catalogue = await Medicine.find(pharmacyFilter(user))
+    .select({ name: 1, genericName: 1, manufacturer: 1, category: 1, unit: 1, packSize: 1, _id: 0 })
+    .limit(20000)
+    .lean();
+
   try {
-    return ok(await readMedicineImage(data, mediaType as ImageMediaType));
+    return ok(await readMedicineImage(data, mediaType as ImageMediaType, catalogue));
   } catch (error) {
     if (error instanceof ImageImportError) throw ApiError.badRequest(error.message);
     throw error;

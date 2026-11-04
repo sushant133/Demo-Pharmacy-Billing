@@ -23,7 +23,7 @@ export const metadata: Metadata = {
  * is out of date until it says so.
  */
 
-const EFFECTIVE_DATE = "24 September 2026";
+const EFFECTIVE_DATE = "4 November 2026";
 const CONTACT_EMAIL = "mantrasphere.official@gmail.com";
 const COMPANY = "MantraSphere Innovations Pvt. Ltd.";
 
@@ -165,6 +165,7 @@ export default function PrivacyPage() {
             <List
               items={[
                 "Service providers that host our servers and database and deliver our emails. They process data only to provide those services to us.",
+                "OCR.space, which reads the text in photos of medicine packs, medicine lists and supplier bills that you choose to upload for automatic entry. Prescription photos are never sent to it.",
                 "Authorities, when the law requires it.",
                 "A buyer or successor, if the business is sold or merged, under the same protections as this policy.",
               ]}

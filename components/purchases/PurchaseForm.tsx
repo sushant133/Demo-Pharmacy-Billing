@@ -16,6 +16,7 @@ import {
   SUPPLIER_PAYMENT_METHOD_LABELS,
 } from "@/lib/constants";
 import { Combobox, type ComboOption } from "@/components/Combobox";
+import { BillImport, type ImportedBill } from "@/components/purchases/BillImport";
 import { DualDateField } from "@/components/DualDateField";
 import { cx } from "@/components/ui";
 
@@ -137,6 +138,7 @@ export function PurchaseForm({
   purchase,
   canPost,
   preset,
+  startWithImport = false,
 }: {
   suppliers: SupplierOption[];
   medicines: MedicineOption[];
@@ -147,20 +149,25 @@ export function PurchaseForm({
   purchase: PurchaseFormValues | null;
   canPost: boolean;
   preset?: StockPreset | null;
+  /** Arrived from "Scan supplier bill": the bill reader is already open. */
+  startWithImport?: boolean;
 }) {
   const router = useRouter();
   const isEdit = Boolean(purchase);
+  // The catalogue as this form knows it: medicines created while importing a
+  // bill join it, so their lines show and can be picked like any other.
+  const [catalogue, setCatalogue] = useState(medicines);
   // A new delivery has no GRN yet - the server allocates it on save.
   const grnLabel = purchase ? `GRN ${purchase.id.slice(-6).toUpperCase()}` : "this delivery";
   const medicineById = useMemo(
-    () => new Map(medicines.map((medicine) => [medicine.id, medicine])),
-    [medicines],
+    () => new Map(catalogue.map((medicine) => [medicine.id, medicine])),
+    [catalogue],
   );
   // Searchable by name, generic name and manufacturer; the second line tells
   // two strengths or two makers of the same drug apart.
   const medicineOptions = useMemo<ComboOption[]>(
     () =>
-      medicines.map((medicine) => ({
+      catalogue.map((medicine) => ({
         value: medicine.id,
         label: medicine.name,
         detail:
@@ -168,7 +175,7 @@ export function PurchaseForm({
           undefined,
         keywords: medicine.genericName,
       })),
-    [medicines],
+    [catalogue],
   );
   const supplierOptions = useMemo<ComboOption[]>(
     () =>
@@ -263,6 +270,39 @@ export function PurchaseForm({
         hint?.lastSalePrice != null ? String(hint.lastSalePrice) : "",
       applySalePriceToStock: false,
     });
+  }
+
+  const [importing, setImporting] = useState(startWithImport);
+  const [imported, setImported] = useState<string | null>(null);
+
+  /**
+   * Lines read from a supplier's bill: they replace the empty rows, keep any
+   * the user already filled, and fill the invoice fields that are still blank.
+   */
+  function applyImport(bill: ImportedBill) {
+    if (bill.created.length > 0) setCatalogue((current) => [...current, ...bill.created]);
+    const incoming: LineState[] = bill.lines.map((line) => ({
+      ...blankLine(),
+      medicineId: line.medicineId,
+      batchNumber: line.batchNumber,
+      expiryDate: line.expiryDate,
+      quantity: String(line.quantity),
+      freeQuantity: line.freeQuantity ? String(line.freeQuantity) : "",
+      costPrice: String(line.costPrice),
+      salePrice: String(line.salePrice),
+    }));
+    setLines((current) => [...current.filter((line) => line.medicineId), ...incoming]);
+    if (!invoiceNo.trim() && bill.invoiceNo) setInvoiceNo(bill.invoiceNo);
+    if (!invoiceDate && bill.invoiceDate) setInvoiceDate(bill.invoiceDate);
+    if (!supplierId && bill.supplierId) setSupplierId(bill.supplierId);
+    setImporting(false);
+    setImported(
+      `${incoming.length} line${incoming.length === 1 ? "" : "s"} added from the bill` +
+        (bill.created.length > 0
+          ? `, and ${bill.created.length} new medicine${bill.created.length === 1 ? "" : "s"} added to the catalogue`
+          : "") +
+        ". Check them against the bill, then save.",
+    );
   }
 
   function addLine() {
@@ -503,6 +543,14 @@ export function PurchaseForm({
         </div>
       </div>
 
+      {importing ? (
+        <BillImport
+          medicines={catalogue}
+          onApply={applyImport}
+          onClose={() => setImporting(false)}
+        />
+      ) : null}
+
       {/* Line items */}
       <div className="card">
         {preset && !isEdit ? (
@@ -543,10 +591,24 @@ export function PurchaseForm({
               {pricedLines.length} of {lines.length} complete
             </span>
           </h2>
-          <button type="button" onClick={addLine} className="btn-secondary px-3 py-1.5 text-xs">
-            + Add line
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setImporting(true)}
+              className="btn-secondary px-3 py-1.5 text-xs"
+            >
+              Import bill
+            </button>
+            <button type="button" onClick={addLine} className="btn-secondary px-3 py-1.5 text-xs">
+              + Add line
+            </button>
+          </div>
         </div>
+        {imported ? (
+          <p role="status" className="border-b border-brand-100 bg-brand-50 px-4 py-2 text-xs text-brand-900">
+            {imported}
+          </p>
+        ) : null}
 
         {/*
           One card per invoice line rather than an eleven-column grid: the

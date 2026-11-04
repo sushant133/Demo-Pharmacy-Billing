@@ -1,0 +1,112 @@
+[
+ {
+  "text": "SNO. DESCRIPTION              PACKING BATCH NO EXPIRY QUANTITY FREE RATE AMOUNT WAP. REMARKS",
+  "height": 49,
+  "confidence": 59
+ },
+ {
+  "text": "I G-NAX SOAPTSGH 1°C 68-013 12/202 10,00 Ta.) E00 12500 1.00",
+  "height": 46,
+  "confidence": 46,
+  "alternatives": [
+   "I G-NAX SOAPTSGH 1°C 68-013 12/202 10,00 1.0 125.00 3,00",
+   "I G-NAX SOAPTSGH 1°C 68-013 12/202 10,00 0 06 128.00 3.00",
+   "I GUA SOAPTSGH 1PC 68-013 12/202 10,00 MRA) E00 125.00 3,00",
+   "I G-UAX SOAPTSGH PC Gems 1200 10,00 LA) a0 128.06 3.00"
+  ]
+ },
+ {
+  "text": "~ 2 FOITCURE CREA 756M [ ¢-351 05/2026 5.00 LE HELI 20.01 100",
+  "height": 45,
+  "confidence": 52,
+  "alternatives": [
+   "~ 2 FOITCURE CREA 756M [ ¢-351 05/2026 6.00 0 008 10",
+   "~ 2 FOITCURE CREA 756M [ ¢-351 05/2026 6.00 1 90.00 10",
+   "~ 2 FOJTCURE CREAV T5CU Ices 05/2028 6.00 LE HELI 260.00 3.00",
+   "~ 2 FOJTCURE CREAV 75GN I gs 05/202 5.00 MLE HELIC 280.08 1.00"
+  ]
+ },
+ {
+  "text": "I KETOCURE PONDER 100Gu 1006 GEPIIO2 10/2027 26,00 2.00 275.00 3502.00 199.00 1.30",
+  "height": 45,
+  "confidence": 61,
+  "alternatives": [
+   "I KETOCURE PONDER 100Gu 1006 GEPIIO2 10/2027 26,00 2.00 275.00 5500.00 149.00 1.50",
+   "I KETOCURE PONDER 100Gu 1006 GEPIIO2 10/2027 20,00 2,00 275.80 5500.0 39.00 1.0",
+   "3 KETOCURE POWDER 100GY 06V GePig2 10/2020 25.00 2.00 2715.00 500.00 149.00 1.30",
+   "I KETOCURE PONDER 1006 1006 GERI 10/2027 20,00 2.00 21D 5BA1.00 199.00 1.30"
+  ]
+ },
+ {
+  "text": "E ACNIFAIR FACEWASH 0UL 6ouL K-002 02/2023 5.00 378.30 1898.50 ¢75.00 3.00",
+  "height": 57,
+  "confidence": 34,
+  "alternatives": [
+   "E ACNIFAIR FACEWASH 0UL 6ouL K-002 02/2023 5.00 178.30 1894.50 275.00 3.00",
+   "E ACNIFAIR FACEWASH 0UL 6ouL K-002 02/2023 5.00 8.30 194.50 16.00 .0",
+   "L ACNIFAIR FACENASH BOWL BML x-002 02/2029 5.00 78.10 1898.50 215.00 5.00",
+   "U ACNIFATR FACENASH SOUL BML K-00 0222 5.00 6.00 1888.50 115.00 3.00"
+  ]
+ },
+ {
+  "text": "$ G-MAX-C LOTION 100uL GNC-001 03/2026 5,00 03.4 A 220.00 3.00",
+  "height": 50,
+  "confidence": 53,
+  "alternatives": [
+   "$ G-MAX-C LOTION 100uL GNC-001 03/2026 5,00 0340 18 120.00 3.00",
+   "$ G-MAX-C LOTION 100uL GNC-001 03/2026 5,00 05.40 15 0.00 3.00",
+   "So CMA-C LOTION oouLGnc-0ar 09/2026 5,00 WIA 5A 220.00 3.00",
+   "* G-NAX-C LOTION oC guc-a0r 03/202 5,00 03.40 180A 0.00 3.00"
+  ]
+ },
+ {
+  "text": "DL                      A",
+  "height": 117,
+  "confidence": 48
+ },
+ {
+  "text": "L927                         'v",
+  "height": 58,
+  "confidence": 0
+ },
+ {
+  "text": "- 0b        0 f /",
+  "height": 103,
+  "confidence": 56
+ },
+ {
+  "text": "ENS (X                                      (",
+  "height": 116,
+  "confidence": 0
+ },
+ {
+  "text": "550”",
+  "height": 128,
+  "confidence": 0
+ },
+ {
+  "text": "TOTAL       12708.30",
+  "height": 39,
+  "confidence": 59
+ },
+ {
+  "text": ":                                                         Less: Discount Allowed         38.2",
+  "height": 49,
+  "confidence": 38
+ },
+ {
+  "text": "oy                                                               ceswcscvcssssmssncnsase",
+  "height": 64,
+  "confidence": 0
+ },
+ {
+  "text": "f 3          In Words Rs, Twelve Thousand Thre Kundred Twenty Six Only.                       =",
+  "height": 173,
+  "confidence": 60
+ },
+ {
+  "text": "SRY",
+  "height": 28,
+  "confidence": 21
+ }
+]

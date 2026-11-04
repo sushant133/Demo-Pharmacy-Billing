@@ -1,0 +1,117 @@
+[
+ {
+  "text": "SN. HS Code Item Description          Pack       Batch Expiry Quantity     Free     Rate   Amount | ] rp [once",
+  "height": 103,
+  "confidence": 74
+ },
+ {
+  "text": "— ERICOB 90MG TAB 10S TET98107 04/2027 J000 500 12070 120700 14000 500",
+  "height": 70,
+  "confidence": 71,
+  "alternatives": [
+   "— ERICOB 90MG TAB 10S TET98107 04/2027 000 500 12070 120700 14000 500",
+   "— ERICOB 90MG TAB 10S TET98107 04/2027 000 500 12070 120700 14000 500",
+   "— ERICOB 90MG TAB 10S TET98107 04/2027 J000 500 12070 1.20700 14000 00",
+   "RP ERICOB S0MG TAB 10S TETS8107 04/2027 J000 500 12070 120700 14000 S500"
+  ]
+ },
+ {
+  "text": "~ 4 09/2026 5 0.",
+  "height": 37,
+  "confidence": 81,
+  "alternatives": [
+   "~ 4 09/2026 5.50 0.",
+   "~ 4 09/2026 5.50 0.",
+   "~, LACRYL G 10ML 1 PHL ECSGDO04 09/2026 5.50 0.!",
+   "“. LACRYL G 10ML 1 PHL ECSGDO04 09/2026 5.50 0."
+  ]
+ },
+ {
+  "text": "eX 5 LACRYL G 10ML 1 PHL ECSGDO0 550 0.50 189.69 104330 22000. 500",
+  "height": 76,
+  "confidence": 73,
+  "alternatives": [
+   "eX 5 LACRYL G 10ML 1 PHL ECSGDO0 5.50 0.50 18969 104330 22000. 500",
+   "eX 5 LACRYL G 10ML 1 PHL ECSGDO0 5.50 0.50 189.69 104330 22000. 500",
+   "27 LACRYL G 10ML 1 PHL ECSGDO004 09/2026 5.50 0.50 18969 104330 22000 500",
+   "27 LACRYL G 10ML 1PHL ECSGDO04 09/2026 550 050 18969 104330 22000. 500"
+  ]
+ },
+ {
+  "text": "3 IDFLO EYE /EAR DROP 5ML. 1 PHL EOFEOQ11 02/2028 10.00 2.00 68.97 1689.70 8000 500",
+  "height": 60,
+  "confidence": 71,
+  "alternatives": [
+   "3 IDFLO EYE /EAR DROP 5ML. 1 PHL EOFEOQ11 02/2028 10.00 2.00 68.97 689.70 8000 5.00",
+   "3 IDFLO EYE /EAR DROP 5ML. 1 PHL EOFEOQ11 02/2028 10.00 2.00 68.97 68970 8000. 5.00",
+   "¥V IDFLO EYE /EAR DROP 5ML. 1 PHL EOFEO11 02/2028 10.00 2.00 68.97 689.70 8000 5.00",
+   "¥ IDFLO EYE /EAR DROP 5ML 1 PHL EOFEO11 02/2028 10.00 200 6897 68970 8000. 500"
+  ]
+ },
+ {
+  "text": "4,” CLOTRIBEST 10ML 1 PHL ACLE002 01/2028 500 1.00 68.97 344.85 80.00 5.00",
+  "height": 65,
+  "confidence": 84,
+  "alternatives": [
+   "4,” CLOTRIBEST 10ML 1 PHL ACLE002 01/2028 500 1.00 68.97 344.85 80.00 500",
+   "4,” CLOTRIBEST 10ML 1 PHL ACLE002 01/2028 500 1.00 68.97 344.85 8000 5.00",
+   "a,” CLOTRIBEST 10ML 1PHL ACLE002 01/2028 500 1.00 68.97 34485 8000 500",
+   "a,” CLOTRIBEST 10ML 1PHL ACLE002 01/2028 500-100 6897 34485 8000 500"
+  ]
+ },
+ {
+  "text": "In Words: Rupees Three Thousand One Hundred Twenty-One Only                                   Basic Total                   3,284.85",
+  "height": 40,
+  "confidence": 95
+ },
+ {
+  "text": "Product Discount             164.25",
+  "height": 36,
+  "confidence": 95
+ },
+ {
+  "text": "Discount                          0.00",
+  "height": 33,
+  "confidence": 96
+ },
+ {
+  "text": "Add Amount                       0.00",
+  "height": 35,
+  "confidence": 96
+ },
+ {
+  "text": "Remark's                                                                                                                      CC On Free Goods                0.00",
+  "height": 44,
+  "confidence": 92
+ },
+ {
+  "text": "Round Off                      0.40",
+  "height": 33,
+  "confidence": 95
+ },
+ {
+  "text": "Note",
+  "height": 26,
+  "confidence": 95
+ },
+ {
+  "text": "1 EXPIRY GOODS WILL NOT BE TAKEN BACK",
+  "height": 30,
+  "confidence": 93
+ },
+ {
+  "text": "’                  2 NEAR EXPIRY GOODS SHOULD BE RETURED 3 MONTHS BEFORE EXPIRY DATE .",
+  "height": 32,
+  "confidence": 92
+ },
+ {
+  "text": "3. BREAKAGE GOODS SHOULD BE RETURNED WITHIN 7 DAYS AFTER RECEIVING THE GOODS.",
+  "height": 34,
+  "confidence": 89
+ },
+ {
+  "text": "—      —    — — t~   va —— —",
+  "height": 60,
+  "confidence": 9
+ }
+]

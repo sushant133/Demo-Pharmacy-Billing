@@ -1,0 +1,153 @@
+[
+ {
+  "text": "S.N.        Description              Pack Batch Expiry     Qty Free Rate      Amount MRP",
+  "height": 50,
+  "confidence": 87
+ },
+ {
+  "text": "\\ 1 B-COLEN SYR 200ML 1PH 25016 05/2027 5.00 1.00 147.94 739.70 108.50",
+  "height": 47,
+  "confidence": 85,
+  "alternatives": [
+   "\\ 1 B-COLEN SYR 200ML 1PH 25016 05/2027 5.00 1.00 14794 739.70 10850",
+   "\\ 1 B-COLEN SYR 200ML 1PH 25016 05/2027 5.00 1.00 147.94 739.70 10850",
+   "\\ 1 B-COLEN SYR 200ML 1PH 25016 05/2027 5.00 1.00 14794 739.70 10850",
+   "1 B-COLEN SYR 200ML IPH 25016 05/2027 5.00 1.00 147.94 739.70 10850"
+  ]
+ },
+ {
+  "text": "2 SOLVINCOLD AF SYRUP 60ML 3400AR 04/2027 2.50 050 103.48 258.70 75.00",
+  "height": 38,
+  "confidence": 77,
+  "alternatives": [
+   "2 SOLVINCOLD AF SYRUP 60ML 3400AR 04/2027 2.50 0.50 103.48 258.70 75.00",
+   "2 SOLVINCOLD AF SYRUP 60ML 3400AR 04/2027 2.50 050 103.48 258.70 75.00",
+   "2 SOLVINCOLD AF SYRUP 60ML 3400AR 04/2027 2.50 0.50 103.48 258.70 75.00",
+   "2 SOLVINCOLD AF SYRUP 60ML 3400AR 04/2027 2.50 050 103.48 258.70 75.00"
+  ]
+ },
+ {
+  "text": "3 MUCO BM 100ML SYP 100ML MB-135 03/2027 2.50 0.50 89.80 22450 104.00",
+  "height": 39,
+  "confidence": 83,
+  "alternatives": [
+   "3 MUCO BM 100ML SYP 100ML MB-135 03/2027 2.50 0.50 89.80 22450 104.00",
+   "3 MUCO BM 100ML SYP 100ML MB-135 03/2027 2.50 050 89.80 22450 104.00",
+   "3 MUCO BM 100ML SYP 100ML MB-135 03/2027 2.50 0.50 89.80 22450 104.00",
+   "3 MUCO BM 100ML SYP 100ML MB-135 03/2027 2.50 050 89.80 22450 104.00"
+  ]
+ },
+ {
+  "text": "4 FEBREX PLUS SYR 60ML 1PH 25051109 11/2027 3.00 0.00 84.70 254.10 61.80",
+  "height": 37,
+  "confidence": 86,
+  "alternatives": [
+   "4 FEBREX PLUS SYR 60ML 1PH 25051109 11/2027 3.00 0.00 84.70 254.10 61.80",
+   "4 FEBREX PLUS SYR 60ML 1PH 25051109 11/2027 3.00 000 84.70 25410 61.80",
+   "4 FEBREX PLUS SYR 60ML 1PH 25051109 11/2027 3.00 0.00 84.70 254.10 61.80",
+   "4 FEBREX PLUS SYR 60ML 1PH 25051109 11/2027 3.00 000 84.70 25410 61.80"
+  ]
+ },
+ {
+  "text": "- _s~ Niko TAB 10X1 NKT26560 02/2029 15.00 0 0.00 8.62 129.30 10.00",
+  "height": 87,
+  "confidence": 77,
+  "alternatives": [
+   "- _s~ Niko TAB 10X1 NKT26560 02/2029 15.00 0.00 8.62 129.30 10.00",
+   "- _s~ Niko TAB 10X1 NKT26560 02/2029 15.00 0 0.00 8.62 12930 10.09",
+   "NIKO TAB 10X1 NKT26560 02/2029 1500 0.00 862, 12930 10.09",
+   "- S77 NIKO TAB 10X1 NKT26560 02/2029 15.00 0_ 0.00 8.62 12930 10.09"
+  ]
+ },
+ {
+  "text": "ERINORM IN AMIGE254039D 04/2027 10.00 0.00 8.25 82.50 59",
+  "height": 46,
+  "confidence": 90,
+  "alternatives": [
+   "ERINORM IN AMIGE254039D 04/2027 1000, 000 8.25 8250 5.9",
+   "ERINORM IN AMIGE254039D 04/2027 1000, 000 8.25 8250 59",
+   "YERINORM INJ 1 AMIGE254039D 04/2027 10.00,~ 0.00 8.25 82.50 5.94",
+   "'ERINORM INJ 1 AMIGE254039D 04/2027 10.00,~ 0.00 8.25 82.50 5.9"
+  ]
+ },
+ {
+  "text": "SPER        J                     1 AMG       9      /          00,~          98.",
+  "height": 72,
+  "confidence": 50
+ },
+ {
+  "text": "< _3”BETNOR E/E DROPS SML 1PCS TB519 05/2027 5.50 ~ 050 79.46 437.03 57.48",
+  "height": 90,
+  "confidence": 65,
+  "alternatives": [
+   "< _3”BETNOR E/E DROPS SML 1PCS TB519 05/2027 550 0.50 79.46 43703 57.48",
+   "< _3”BETNOR E/E DROPS SML 1PCS TB519 05/2027 550 050 79.46 43703 57.48",
+   "_ 3” BETNOR E/E DROPS SML 1PCS TBS19 05/2027 550 0.50 _ 79.46 43703 57.48",
+   ". J” BETNOR E/E DROPS SML 1PCS TB519 05/2027 5.50. 0.50 _ 79.46 43703 57.48"
+  ]
+ },
+ {
+  "text": "B FLEXON TABS 15'S DPC260544 02/2029 11.00” 1.00 2465 271.15 1837, ~",
+  "height": 65,
+  "confidence": 73,
+  "alternatives": [
+   "B FLEXON TABS 15'S DPC260544 02/2029 11.007 1.00 24.65 271.15 1837. 7",
+   "B FLEXON TABS 15'S DPC260544 02/2029 11.007 100 2465 271.15 1837.",
+   "_8~ FLEXON TABS 15'S DPC260544 02/2029 11.00” 1.00 2465 271.15 18.37, ~",
+   "_B~ FLEXON TABS 15'S DPC260544 02/2029 11.00” 1.00 24.65 27115 1837. ~"
+  ]
+ },
+ {
+  "text": "«_ 9 DEZACOR SYRUP 30MLMPI253614 02/2027 2.00 000 112.18 22436 87.23",
+  "height": 76,
+  "confidence": 63,
+  "alternatives": [
+   "«_ 9 DEZACOR SYRUP 30MLMPI253614 02/2027 200 0.00 112.18 224.36 87.23",
+   "«_ 9 DEZACOR SYRUP 30MLMPI253614 02/2027 200 0.00 112.18 22436 87.23",
+   "«__ 9” DEZACOR SYRUP 30MLMPJ253614 02/2027 2.00_~0.00 112.18 22436 87.23",
+   "«__ /9” DEZACOR SYRUP 30MLMPJ253614 02/2027 2.00_~0.00 112.18 2436 87.23"
+  ]
+ },
+ {
+  "text": "_10_ORNADO TAB 10'S 483 06/2027 5.00 — 5.00 86.21 431.05 100.09",
+  "height": 71,
+  "confidence": 78,
+  "alternatives": [
+   "_10_ORNADO TAB 10'S 483 06/2027 5.00 5.00 86.21 431.05 100.09",
+   "_10_ORNADO TAB 10'S 483 06/2027 5.00 5.00 86.21 431.05 100.09",
+   "10 _ORNADO TAB 10'S 483 06/2027 5.00 — 5.00 86.21 431.05 100.09",
+   "_10_ORNADO TAB 10'S 483 06/2027 5.00— 5.00 - 86.21 431.05 100.09-"
+  ]
+ },
+ {
+  "text": "Y sco uQuib 200MMPB260564 01/2028 5.50 0.50 119.31 656.21 92.76",
+  "height": 149,
+  "confidence": 67,
+  "alternatives": [
+   "Y sco uQuib 200MMPB260564 01/2028 5.50 0.50 119.31 656.21 92.76",
+   "Y sco uQuib 200MMPB260564 01/2028 5.50 050 119.31 656.21 92.76",
+   "py 11-VISCO uQuID 200MMPB260564 01/2028 5.50 0.50 119.31 656.21 92.76",
+   "py 11.VISCO uQuID 200MMPB260564 01/2028 5.50 050 119.31 656.21 92.76"
+  ]
+ },
+ {
+  "text": "InWord's : In Words: Rupees Three Thousand Seven        Basic Total           :         3,708.60",
+  "height": 47,
+  "confidence": 87
+ },
+ {
+  "text": "Hundred Thirty-One Only                              CC On Free Goods :              2258",
+  "height": 56,
+  "confidence": 82
+ },
+ {
+  "text": "B                                                                               Round Off             :               0.18",
+  "height": 46,
+  "confidence": 71
+ },
+ {
+  "text": "Remark's :                                                                                 Net Total                   :             3,731.00",
+  "height": 45,
+  "confidence": 89
+ }
+]

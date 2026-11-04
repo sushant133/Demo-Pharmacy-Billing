@@ -38,6 +38,20 @@ export default async function StockInPage({
       shortcut that would quietly become a second way for stock to appear.
     */
     actions: can(user.role, "purchase:write") ? (
+      <>
+      <Link href="/purchases/new?scan=1" className="btn-secondary">
+        <svg
+          className="h-4.5 w-4.5"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={1.9}
+          aria-hidden="true"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V6a2 2 0 012-2h2M16 4h2a2 2 0 012 2v2M20 16v2a2 2 0 01-2 2h-2M8 20H6a2 2 0 01-2-2v-2M4 12h16" />
+        </svg>
+        Scan supplier bill
+      </Link>
       <Link href="/purchases/new" className="btn-primary">
         <svg
           className="h-4.5 w-4.5"
@@ -52,6 +66,7 @@ export default async function StockInPage({
         </svg>
         Receive stock
       </Link>
+      </>
     ) : null,
     statLabels: { units: "Units received", kinds: "Movement types" },
     emptyTitle: "Nothing came in over this range",

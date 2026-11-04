@@ -2,7 +2,7 @@ import { Types, type ClientSession } from "mongoose";
 import { ApiError } from "@/lib/api";
 import { config } from "@/lib/config";
 import { connectDB } from "@/lib/db";
-import { addDays } from "@/lib/dates";
+import { addDays, fiscalYearOf } from "@/lib/dates";
 import {
   calculatePurchaseTotals,
   paymentStatusFor,
@@ -18,7 +18,7 @@ import { Medicine } from "@/models/Medicine";
 import { Purchase } from "@/models/Purchase";
 import { Sale } from "@/models/Sale";
 import { Supplier } from "@/models/Supplier";
-import { formatGrnNo, nextSequence } from "@/models/Counter";
+import { formatGrnNo, formatNoteNo, nextSequence } from "@/models/Counter";
 import {
   PurchaseReturnError,
   planPurchaseReturn,
@@ -908,9 +908,18 @@ export async function returnPurchaseItems(
       }
     }
 
+    // The shop's debit note to the supplier, in its own unbroken series.
+    const noteYear = fiscalYearOf(returnedAt);
+    const noteSeq = await nextSequence(
+      `${String(pharmacyId)}:debit-note:${noteYear}`,
+      session,
+    );
+    const debitNoteNo = formatNoteNo("DN", noteSeq, noteYear);
+
     if (!purchase.returns) purchase.set("returns", []);
     purchase.returns.push({
       returnedAt,
+      debitNoteNo,
       returnedBy: new Types.ObjectId(user.id),
       returnedByName: user.name,
       reasonCode: input.reasonCode,

@@ -29,7 +29,7 @@ export const dynamic = "force-dynamic";
 export default async function NewPurchasePage({
   searchParams,
 }: {
-  searchParams: Promise<{ medicineId?: string }>;
+  searchParams: Promise<{ medicineId?: string; scan?: string }>;
 }) {
   const user = await requirePagePermission("purchase:write");
   const params = await searchParams;
@@ -144,6 +144,7 @@ export default async function NewPurchasePage({
         expiryAlertDays={config.expiryAlertDays}
         today={toDateInputValue()}
         purchase={null}
+        startWithImport={params.scan === "1"}
         canPost={can(user.role, "purchase:post")}
         preset={
           presetMedicine
