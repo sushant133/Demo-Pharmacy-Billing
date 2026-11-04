@@ -49,6 +49,23 @@ export type OcrLayout = "pack" | "list";
 
 const WHITE = { r: 255, g: 255, b: 255 };
 
+/** Longest the pixel loops below may hold the server before letting it answer others. */
+const BREATHE_MS = 25;
+let lastBreath = 0;
+
+/**
+ * Let other requests through, if it has been a while.
+ *
+ * Cleaning a bill is about a second of arithmetic on the server's one main thread.
+ * Run straight through, a till completing a sale would wait on it for up to 300ms
+ * at a stretch. Tesseract itself is already in a worker; this is the part that is not.
+ */
+async function breathe(): Promise<void> {
+  if (Date.now() - lastBreath < BREATHE_MS) return;
+  await new Promise((resolve) => setImmediate(resolve));
+  lastBreath = Date.now();
+}
+
 interface GreyImage {
   data: Buffer;
   width: number;
@@ -76,11 +93,12 @@ async function toGrey(pipeline: Sharp): Promise<GreyImage> {
  * dilate/erode are binary - they threshold a grey image first - so this is
  * done by hand, separably, on the small images it is used on.
  */
-function rankFilter(image: GreyImage, radius: number, op: "max" | "min"): GreyImage {
+async function rankFilter(image: GreyImage, radius: number, op: "max" | "min"): Promise<GreyImage> {
   const { width, height } = image;
   const pick = op === "max" ? Math.max : Math.min;
   const rows = Buffer.alloc(image.data.length);
   for (let y = 0; y < height; y++) {
+    await breathe();
     for (let x = 0; x < width; x++) {
       let value = image.data[y * width + x]!;
       for (let k = Math.max(0, x - radius); k <= Math.min(width - 1, x + radius); k++) {
@@ -91,6 +109,7 @@ function rankFilter(image: GreyImage, radius: number, op: "max" | "min"): GreyIm
   }
   const out = Buffer.alloc(image.data.length);
   for (let y = 0; y < height; y++) {
+    await breathe();
     for (let x = 0; x < width; x++) {
       let value = rows[y * width + x]!;
       for (let k = Math.max(0, y - radius); k <= Math.min(height - 1, y + radius); k++) {
@@ -174,7 +193,7 @@ export async function prepareDocument(data: Buffer, options: { rotate?: number }
   // The paper's own brightness at each point: a max filter wipes out print
   // (dark and thin) before the blur, so dense text and ruling do not drag the
   // estimate down. Done at quarter size - the background is smooth anyway.
-  const small = rankFilter(await toGrey(fromGrey(grey).resize({ width: Math.round(width / 4) })), 6, "max");
+  const small = await rankFilter(await toGrey(fromGrey(grey).resize({ width: Math.round(width / 4) })), 6, "max");
   const background = (await toGrey(fromGrey(small).blur(6).resize({ width, height, fit: "fill" }))).data;
 
   // Paper is what is bright after the max filter; the floor, a hand or the
@@ -185,6 +204,7 @@ export async function prepareDocument(data: Buffer, options: { rotate?: number }
 
   const ratios = new Float32Array(grey.data.length);
   for (let i = 0; i < ratios.length; i++) {
+    if (i % width === 0) await breathe();
     ratios[i] = background[i]! < paperFloor ? 1 : Math.min(1, grey.data[i]! / Math.max(1, background[i]!));
   }
   const paperCut = paperCutOff(ratios, background, paperFloor);
@@ -194,12 +214,16 @@ export async function prepareDocument(data: Buffer, options: { rotate?: number }
   // against their own neighbourhood. Never closer to the paper than 0.2 below
   // the cut-off, so a blank patch's noise is not blown up into marks.
   const ratioImage: GreyImage = { data: Buffer.alloc(ratios.length), width, height };
-  for (let i = 0; i < ratios.length; i++) ratioImage.data[i] = Math.round(ratios[i]! * 255);
-  const localSmall = rankFilter(await toGrey(fromGrey(ratioImage).resize({ width: Math.round(width / 4) })), 4, "min");
+  for (let i = 0; i < ratios.length; i++) {
+    if (i % width === 0) await breathe();
+    ratioImage.data[i] = Math.round(ratios[i]! * 255);
+  }
+  const localSmall = await rankFilter(await toGrey(fromGrey(ratioImage).resize({ width: Math.round(width / 4) })), 4, "min");
   const localInk = (await toGrey(fromGrey(localSmall).blur(3).resize({ width, height, fit: "fill" }))).data;
 
   const flat = Buffer.alloc(ratios.length);
   for (let i = 0; i < flat.length; i++) {
+    if (i % width === 0) await breathe();
     const ratio = ratios[i]!;
     if (ratio >= paperCut) {
       flat[i] = 255;
@@ -214,10 +238,10 @@ export async function prepareDocument(data: Buffer, options: { rotate?: number }
   // to recognise as ruling. Photos of paper are rarely tilted evenly - it
   // curls, and perspective slopes the bottom rows more than the top - so each
   // band of the page is measured and every row is levelled by its own slope.
-  const out = shearRows(flat, width, height, rowSlopes(flat, width, height));
+  const out = await shearRows(flat, width, height, await rowSlopes(flat, width, height));
   if (process.env.OCR_DEBUG) console.log("[ocr] channel", channel, "paper cut", paperCut);
 
-  eraseRuling(out, width, height);
+  await eraseRuling(out, width, height);
   return fromGrey({ data: out, width, height }).png().toBuffer();
 }
 
@@ -289,12 +313,12 @@ function paperCutOff(ratios: Float32Array, background: Buffer, paperFloor: numbe
  * margins - take their neighbours' slope, and the slope is interpolated
  * between band centres so a curled page is followed smoothly.
  */
-export function rowSlopes(pixels: Buffer, width: number, height: number): Float64Array {
+export async function rowSlopes(pixels: Buffer, width: number, height: number): Promise<Float64Array> {
   const band = Math.round(height / 6);
   const step = Math.round(band / 2);
   const known: { centre: number; slope: number }[] = [];
   for (let top = 0; top + band <= height; top += step) {
-    const found = bandSkew(pixels.subarray(top * width, (top + band) * width), width, band);
+    const found = await bandSkew(pixels.subarray(top * width, (top + band) * width), width, band);
     if (found.gain > 1.05) {
       known.push({ centre: top + band / 2, slope: Math.tan((found.degrees * Math.PI) / 180) });
     }
@@ -318,7 +342,7 @@ export function rowSlopes(pixels: Buffer, width: number, height: number): Float6
 }
 
 /** The best levelling angle for one band, and how much sharper it makes the rows than level. */
-function bandSkew(pixels: Buffer, width: number, height: number): { degrees: number; gain: number } {
+async function bandSkew(pixels: Buffer, width: number, height: number): Promise<{ degrees: number; gain: number }> {
   const xs: number[] = [];
   const ys: number[] = [];
   for (let y = 0; y < height; y += 4) {
@@ -348,6 +372,7 @@ function bandSkew(pixels: Buffer, width: number, height: number): { degrees: num
   let best = 0;
   let bestScore = level;
   for (let degrees = -4; degrees <= 4.001; degrees += 0.25) {
+    await breathe();
     const value = score(degrees);
     if (value > bestScore) {
       best = degrees;
@@ -356,6 +381,7 @@ function bandSkew(pixels: Buffer, width: number, height: number): { degrees: num
   }
   const coarse = best;
   for (let degrees = coarse - 0.2; degrees <= coarse + 0.201; degrees += 0.05) {
+    await breathe();
     const value = score(degrees);
     if (value > bestScore) {
       best = degrees;
@@ -369,10 +395,11 @@ function bandSkew(pixels: Buffer, width: number, height: number): { degrees: num
  * Level every row by its own slope: a vertical shear about the page centre,
  * so rows come out horizontal while columns stay where they were.
  */
-function shearRows(pixels: Buffer, width: number, height: number, slopes: Float64Array): Buffer {
+async function shearRows(pixels: Buffer, width: number, height: number, slopes: Float64Array): Promise<Buffer> {
   const out = Buffer.alloc(pixels.length, 255);
   const centre = width / 2;
   for (let y = 0; y < height; y++) {
+    await breathe();
     const slope = slopes[y]!;
     for (let x = 0; x < width; x++) {
       const sourceY = y - (x - centre) * slope;
@@ -391,7 +418,7 @@ function shearRows(pixels: Buffer, width: number, height: number, slopes: Float6
  * printed lighter than the text), column rules may be dashed, and each rule
  * is erased with a margin so its grey edge does not stay behind as a ghost.
  */
-function eraseRuling(pixels: Buffer, width: number, height: number): void {
+async function eraseRuling(pixels: Buffer, width: number, height: number): Promise<void> {
   const ink = new Uint8Array(width * height);
   for (let i = 0; i < ink.length; i++) ink[i] = pixels[i]! < 200 ? 1 : 0;
   const ruling = new Uint8Array(width * height);
@@ -401,6 +428,7 @@ function eraseRuling(pixels: Buffer, width: number, height: number): void {
   const gap = 8;
 
   for (let y = 0; y < height; y++) {
+    await breathe();
     let start = -1;
     for (let x = 0; x <= width; x++) {
       const on = x < width && ink[y * width + x] === 1;
@@ -417,6 +445,7 @@ function eraseRuling(pixels: Buffer, width: number, height: number): void {
     }
   }
   for (let x = 0; x < width; x++) {
+    await breathe();
     let start = -1;
     let last = -1;
     for (let y = 0; y <= height; y++) {
@@ -598,7 +627,7 @@ async function readCrop(
   if (options.thicken) {
     // Dot-matrix strokes are rows of separate dots; spreading each dot by a
     // pixel joins them into lines Tesseract recognises.
-    cut = fromGrey(rankFilter(await toGrey(cut), 1, "min"));
+    cut = fromGrey(await rankFilter(await toGrey(cut), 1, "min"));
   }
   const crop = await cut.extend({ top: 12, bottom: 12, left: 12, right: 12, background: WHITE }).png().toBuffer();
   const { data } = await worker.recognize(crop);

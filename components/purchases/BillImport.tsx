@@ -340,7 +340,7 @@ export function BillImport({
           >
             <span className="text-sm font-semibold text-slate-900">Photo of the bill</span>
             <span className="text-xs text-slate-500">
-              Flat, close and in good light, the whole table in view. Use the original photo, not a WhatsApp copy. Reading can take up to 30 seconds.
+              Flat, close and in good light, the whole table in view. Use the original photo, not a WhatsApp copy. Reading can take up to a minute.
             </span>
             <input
               type="file"
@@ -394,8 +394,8 @@ export function BillImport({
             {result.note ? <p className="text-amber-700">{result.note}</p> : null}
             {result.source === "photo" ? (
               <p>
-                Prices are checked against each other, but names, batch numbers and expiry dates
-                cannot be. Compare those with the paper bill.
+                Prices are checked against each other, but names, batch numbers, free quantities
+                and expiry dates cannot be. Compare those with the paper bill.
               </p>
             ) : null}
             <p>
