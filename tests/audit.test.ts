@@ -1,3 +1,4 @@
+import { auditExportCoverage } from "@/lib/audit-view";
 import { describe, expect, it } from "vitest";
 import { Types } from "mongoose";
 import { diffRecords, signAuditEntry, verifyAuditEntry } from "@/lib/audit";
@@ -86,5 +87,22 @@ describe("audit signatures", () => {
     const signature = signAuditEntry(entry);
     const stored = JSON.parse(JSON.stringify(entry)) as Record<string, unknown>;
     expect(verifyAuditEntry({ ...stored, signature })).toBe(true);
+  });
+});
+
+describe("auditExportCoverage", () => {
+  it("says nothing extra when the file holds everything", () => {
+    const coverage = auditExportCoverage(500, 500, 1);
+    expect(coverage.warning).toBe("");
+    expect(coverage.meta[0]!.value).toBe("500");
+    expect(coverage.meta[1]!.label).toBe("Failed verification");
+  });
+
+  it("says so plainly when it does not, and that the rest was not verified", () => {
+    const coverage = auditExportCoverage(60000, 20000, 0);
+    expect(coverage.warning).toContain("INCOMPLETE");
+    expect(coverage.warning).toContain("not verified");
+    expect(coverage.meta[0]!.value).toBe("Newest 20000 of 60000");
+    expect(coverage.meta[1]!.label).toBe("Failed verification, of those shown");
   });
 });

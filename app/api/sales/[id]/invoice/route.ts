@@ -9,6 +9,7 @@ import { getPrintTemplate, getSettings, printedIssuer } from "@/lib/settings";
 import { INVOICE_CONTENT_TYPE, toInvoicePdf } from "@/lib/export/invoice-pdf";
 import { Sale } from "@/models/Sale";
 import type { PaymentMode } from "@/lib/constants";
+import { storedBillNo } from "@/models/Counter";
 import { pharmacyFilter } from "@/lib/tenant";
 import { objectIdSchema } from "@/lib/validation";
 
@@ -36,7 +37,7 @@ export const GET = withRoute<Ctx>(async (_req, ctx) => {
 
   const query = objectIdSchema.safeParse(id).success
     ? { _id: id, ...pharmacyFilter(user) }
-    : { billNo: decodeURIComponent(id).toUpperCase(), ...pharmacyFilter(user) };
+    : { billNo: storedBillNo(decodeURIComponent(id)), ...pharmacyFilter(user) };
 
   const sale = await Sale.findOne(query).lean();
   if (!sale) throw ApiError.notFound("No bill found with that number.");

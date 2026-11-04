@@ -142,7 +142,7 @@ const pharmacySchema = new Schema(
 );
 
 // Every change to this collection lands in the audit trail (lib/audit.ts).
-pharmacySchema.plugin(auditPlugin);
+pharmacySchema.plugin(auditPlugin, { tenantIsSelf: true });
 
 export type PharmacyDoc = InferSchemaType<typeof pharmacySchema>;
 

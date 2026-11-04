@@ -66,7 +66,7 @@ export function IdleSignOut({ timeoutSeconds }: { timeoutSeconds: number }) {
       if (!browserIsIdle(Date.now(), lastActivity.current, readSharedActivity(), limitMs)) return;
       window.clearInterval(timer);
       const next = window.location.pathname + window.location.search;
-      void fetch("/api/auth/logout", { method: "POST" })
+      void fetch("/api/auth/logout?reason=idle", { method: "POST" })
         .catch(() => {})
         .finally(() => {
           window.location.href = `/login?expired=1&next=${encodeURIComponent(next)}`;

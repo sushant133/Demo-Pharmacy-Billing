@@ -201,6 +201,8 @@ export function returnPayload(
 /** The number CBMS answers with. It sends a bare JSON number; be forgiving. */
 export function parseCbmsResponse(text: string): number | null {
   const trimmed = text.trim().replace(/^"|"$/g, "");
+  // Number("") is 0, which would hide an empty 502 behind "IRD answered 0".
+  if (trimmed === "") return null;
   const direct = Number(trimmed);
   if (Number.isFinite(direct)) return direct;
   try {
@@ -208,7 +210,9 @@ export function parseCbmsResponse(text: string): number | null {
     if (typeof parsed === "number") return parsed;
     if (parsed && typeof parsed === "object") {
       for (const key of ["status", "code", "statusCode", "responseCode"]) {
-        const value = Number((parsed as Record<string, unknown>)[key]);
+        const raw = (parsed as Record<string, unknown>)[key];
+        if (raw == null || raw === "") continue;
+        const value = Number(raw);
         if (Number.isFinite(value)) return value;
       }
     }

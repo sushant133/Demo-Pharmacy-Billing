@@ -50,6 +50,10 @@ describe("idleLimitApplies", () => {
     expect(idleLimitApplies("/api/reports/alerts")).toBe(false);
   });
 
+  it("lets a sign-out through, so it can be recorded", () => {
+    expect(idleLimitApplies("/api/auth/logout")).toBe(false);
+  });
+
   it("applies to everything else, including other background requests", () => {
     expect(idleLimitApplies("/api/auth/me")).toBe(true);
     expect(idleLimitApplies("/api/sales")).toBe(true);

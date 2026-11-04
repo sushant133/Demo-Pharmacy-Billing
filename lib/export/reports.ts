@@ -107,7 +107,7 @@ export const REPORT_LABELS: Record<ReportKey, string> = {
   "parties-above-lakh": "Customers & suppliers above NPR 1 lakh",
   "vat-return": "VAT return",
   "cbms-unsynced": "Bills not yet in CBMS",
-  "bill-number-gaps": "Bill number gaps",
+  "bill-number-gaps": "Document number gaps",
   "materialized-view": "Materialized view (IRD)",
   "controlled-register": "Narcotic & psychotropic register (DDA)",
 };
@@ -132,7 +132,7 @@ export const REPORT_DESCRIPTIONS: Record<ReportKey, string> = {
   "parties-above-lakh": "Parties whose dealings exceed NPR 1,00,000. Run for a full fiscal year.",
   "vat-return": "Output VAT, input VAT and the amount payable for the period.",
   "cbms-unsynced": "Invoices and credit notes IRD's CBMS has not accepted yet.",
-  "bill-number-gaps": "Any number missing from the bill series, across every branch.",
+  "bill-number-gaps": "Any number missing from the bill, credit note or debit note series.",
   "materialized-view": "One row per bill, in the columns IRD's e-billing procedure names.",
   "controlled-register": "DDA's retailer's record: every controlled unit in and out, with patient and prescriber.",
 };

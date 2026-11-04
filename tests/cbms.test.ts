@@ -96,3 +96,17 @@ describe("backoffMs", () => {
     expect(backoffMs(30)).toBe(6 * 60 * 60 * 1000);
   });
 });
+
+describe("parseCbmsResponse with no real answer", () => {
+  it("does not read an empty body as code 0", () => {
+    expect(parseCbmsResponse("")).toBeNull();
+    expect(parseCbmsResponse("   ")).toBeNull();
+    expect(parseCbmsResponse('""')).toBeNull();
+  });
+
+  it("does not read an empty status field as code 0", () => {
+    expect(parseCbmsResponse('{"status":null}')).toBeNull();
+    expect(parseCbmsResponse('{"status":""}')).toBeNull();
+    expect(parseCbmsResponse('{"status":200}')).toBe(200);
+  });
+});

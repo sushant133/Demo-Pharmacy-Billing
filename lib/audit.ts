@@ -191,7 +191,22 @@ function buildEntry(input: EntryInput): Plain {
 async function writeEntries(inputs: EntryInput[], session: ClientSession | null) {
   if (inputs.length === 0) return;
   const docs = inputs.map(buildEntry);
-  await AuditLog.insertMany(docs, session ? { session } : {});
+  if (session) {
+    // Inside a transaction a failure aborts the write it describes, as it should.
+    await AuditLog.insertMany(docs, { session });
+    return;
+  }
+  // Without one, the record is already stored by the time this runs, and throwing
+  // would leave the caller half-way: a bill on file with its stock rolled back. A
+  // missing log line is the smaller harm, so it is reported as loudly as possible.
+  try {
+    await AuditLog.insertMany(docs);
+  } catch (err) {
+    console.error("[audit] ENTRY LOST - could not record a change that was saved", {
+      entries: docs.map((doc) => ({ action: doc.action, entity: doc.entity, entityId: doc.entityId })),
+      err,
+    });
+  }
 }
 
 /** Sign-in, sign-out and similar events that do not change a record. */
@@ -235,11 +250,19 @@ function entityName(model: Model<unknown>): string {
   return model.modelName;
 }
 
-function pharmacyOf(record: Plain | null): unknown {
-  return record?.pharmacyId ?? null;
-}
+export function auditPlugin(schema: Schema, options?: { tenantIsSelf?: boolean }): void {
+  // The record that is itself a tenant carries no pharmacyId: it is its own. Without
+  // this, a superadmin's edit to a shop lands where that shop's owner cannot see it.
+  const pharmacyOf = (record: Plain | null): unknown =>
+    options?.tenantIsSelf ? record?._id ?? null : record?.pharmacyId ?? null;
 
-export function auditPlugin(schema: Schema): void {
+  // Fields a normal read leaves out, which is what makes a password reset show no
+  // difference at all. They go through REDACTED, so only the fact of it is logged.
+  const hiddenFields: string[] = [];
+  schema.eachPath((path, type) => {
+    if ((type as { options?: { select?: boolean } }).options?.select === false) hiddenFields.push(`+${path}`);
+  });
+
   // ---- Document saves (create, and doc.save() after edits) ---------------
   schema.pre("save", async function () {
     const doc = this as HydratedDocument<Plain>;
@@ -302,6 +325,7 @@ export function auditPlugin(schema: Schema): void {
       query.op === "replaceOne" || query.op === "findOneAndReplace";
     query._auditBefore = (await query.model
       .find(query.getFilter())
+      .select(hiddenFields.join(" "))
       .session(querySession(query))
       .limit(single ? 1 : MAX_RECORDS_PER_WRITE)
       .lean()) as Plain[];
@@ -324,6 +348,7 @@ export function auditPlugin(schema: Schema): void {
 
     const afterList = (await query.model
       .find({ _id: { $in: ids } })
+      .select(hiddenFields.join(" "))
       .session(session)
       .lean()) as Plain[];
     const afterById = new Map(afterList.map((record) => [String(record._id), record]));

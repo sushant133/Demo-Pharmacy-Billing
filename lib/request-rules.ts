@@ -21,7 +21,9 @@ export const BACKGROUND_PATHS = ["/api/reports/alerts", "/api/auth/me"];
  * hour. It still stops when the session itself ends, and it never extends it.
  */
 export function idleLimitApplies(pathname: string): boolean {
-  return pathname !== "/api/reports/alerts";
+  // Signing out is exempt too: expiring the session first would leave the route
+  // not knowing who is leaving, and the audit trail with no sign-out to show.
+  return pathname !== "/api/reports/alerts" && pathname !== "/api/auth/logout";
 }
 
 /**

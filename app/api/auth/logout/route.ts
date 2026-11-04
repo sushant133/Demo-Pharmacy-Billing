@@ -14,9 +14,15 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** POST /api/auth/logout - clear the session cookie. */
-export const POST = withRoute(async () => {
+export const POST = withRoute(async (req) => {
   // Read before the cookie is cleared, so the entry names who signed out.
-  if (await getSession()) await recordSecurityEvent({ action: "logout" });
+  if (await getSession()) {
+    const idle = new URL(req.url).searchParams.get("reason") === "idle";
+    await recordSecurityEvent({
+      action: "logout",
+      ...(idle ? { note: "Signed out automatically after inactivity" } : {}),
+    });
+  }
   const cookieStore = await cookies();
   // Remember which session this was, for as long as its token could still be
   // valid, in case a response already on its way restores the cookie.

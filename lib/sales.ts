@@ -696,7 +696,7 @@ export async function voidSale(
       _id: id,
       ...pharmacyFilter(user),
     })
-      .select("billNo voidedAt returnedUnits")
+      .select("billNo voidedAt returnedUnits paymentStatus")
       .lean();
     if (!existing) throw ApiError.notFound("That bill no longer exists.");
     if (existing.voidedAt) {
@@ -743,7 +743,15 @@ export async function voidSale(
       Sale.updateOne(
         { _id: sale._id },
         {
-          $set: { voidedAt: null, voidedBy: null, voidedByName: "", voidReason: "" },
+          $set: {
+            voidedAt: null,
+            voidedBy: null,
+            voidedByName: "",
+            voidReason: "",
+            // The void marked it paid. Left that way, a customer's debt would
+            // disappear from their dues while the bill is live again.
+            paymentStatus: existing.paymentStatus,
+          },
         },
       ).exec(),
     );
@@ -971,10 +979,9 @@ export async function returnSaleItems(
     // inside the transaction like a bill number so an aborted return leaves no
     // gap behind it.
     const noteYear = fiscalYearOf(returnedAt);
-    const noteSeq = await nextSequence(
-      `${String(pharmacyId)}:credit-note:${noteYear}`,
-      session,
-    );
+    const noteKey = `${String(pharmacyId)}:credit-note:${noteYear}`;
+    const noteSeq = await nextSequence(noteKey, session);
+    onRollback(() => releaseSequence(noteKey, noteSeq));
     const creditNoteNo = formatNoteNo("CN", noteSeq, noteYear);
 
     if (!sale.returns) sale.set("returns", []);
@@ -1035,8 +1042,9 @@ export async function returnSaleItems(
     sale.markModified("items");
     sale.markModified("returns");
 
-    await sale.save({ session: session ?? undefined });
-
+    // Queued before the bill is saved, and undone if the save fails. The other way
+    // round, a failed queue would leave the return on the bill with its stock
+    // rolled back, and a cashier told to try again.
     let cbmsQueueId: string | null = null;
     if ((sale.cbmsStatus ?? "none") !== "none") {
       const { cbmsEnabled } = await getSettings(pharmacyId);
@@ -1055,6 +1063,8 @@ export async function returnSaleItems(
       if (cbmsEnabled) cbmsQueueId = queued;
       onRollback(() => CbmsSync.deleteOne({ _id: queued }).exec());
     }
+
+    await sale.save({ session: session ?? undefined });
 
     return {
       id: String(sale._id),

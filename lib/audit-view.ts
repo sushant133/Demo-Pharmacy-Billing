@@ -180,22 +180,40 @@ export function describeAuditChanges(row: Pick<AuditRow, "changes" | "action">, 
   return parts.join("; ");
 }
 
+/** Most entries one export will carry. */
+const EXPORT_LIMIT = 20_000;
+
+/**
+ * What an export has to say about how much it holds. An auditor must not take a
+ * cut-off file for the whole trail, or a clean verification count for a clean log.
+ */
+export function auditExportCoverage(total: number, shown: number, unverified: number) {
+  const partial = total > shown;
+  return {
+    meta: [
+      { label: "Entries", value: partial ? `Newest ${shown} of ${total}` : String(total) },
+      { label: partial ? "Failed verification, of those shown" : "Failed verification", value: String(unverified) },
+    ],
+    warning: partial
+      ? `INCOMPLETE: this file holds the newest ${shown} of ${total} entries. Older entries are not in it and were not verified. Export a shorter date range to cover them.`
+      : "",
+  };
+}
+
 /** The audit trail as a printable / downloadable report. */
 export async function auditLogReport(
   user: SessionUser,
   query: AuditQuery & { rangeLabel: string },
 ): Promise<ReportDataset> {
-  const { rows, total } = await readAuditLog(user, query, { skip: 0, limit: 20_000 });
+  const { rows, total } = await readAuditLog(user, query, { skip: 0, limit: EXPORT_LIMIT });
   const unverified = rows.filter((row) => !row.verified).length;
+  const coverage = auditExportCoverage(total, rows.length, unverified);
 
   return {
     title: "Audit Trail",
     subtitle: query.rangeLabel,
     generatedAt: new Date(),
-    meta: [
-      { label: "Entries", value: String(total) },
-      { label: "Failed verification", value: String(unverified) },
-    ],
+    meta: coverage.meta,
     columns: [
       { key: "at", header: "When (AD)", type: "date" },
       { key: "bs", header: "Date (BS)", type: "text", width: 11 },
@@ -222,6 +240,6 @@ export async function auditLogReport(
       ip: row.ip,
       verified: row.verified ? "Yes" : "NO",
     })),
-    note: "Append-only. Entries cannot be edited or removed from within the application, and each is signed: 'NO' under Verified means the stored entry was altered after it was written.",
+    note: `${coverage.warning ? `${coverage.warning} ` : ""}Append-only. Entries cannot be edited or removed from within the application, and each is signed: 'NO' under Verified means the stored entry was altered after it was written.`,
   };
 }

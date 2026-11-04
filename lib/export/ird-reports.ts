@@ -741,8 +741,16 @@ export async function cbmsUnsynced({
 // Bill number gaps
 // ---------------------------------------------------------------------------
 
+/** The number at the end of "CN-2083-84-000012", or null for one from before numbering. */
+function noteSeq(noteNo: string | null | undefined, prefix: string, year: string): number | null {
+  if (!noteNo?.startsWith(`${prefix}-${year}-`)) return null;
+  const seq = Number(noteNo.slice(noteNo.lastIndexOf("-") + 1));
+  return Number.isInteger(seq) && seq > 0 ? seq : null;
+}
+
 /**
- * Numbers missing from the bill series of each fiscal year the period touches.
+ * Numbers missing from the bill, credit note and debit note series of each fiscal
+ * year the period touches.
  *
  * Always the whole year across every branch, whatever the screen is scoped to:
  * the series belongs to the pharmacy, so one branch's view of it is full of
@@ -769,40 +777,62 @@ export async function billNumberGaps({
   const rows: ReportRow[] = [];
   let checked = 0;
   for (const year of years.sort()) {
-    const [sales, counter] = await Promise.all([
+    const [sales, withCredit, withDebit, counters] = await Promise.all([
       Sale.find({ pharmacyId, fiscalYear: year }).select("billSeq").lean(),
-      Counter.findById(`${String(pharmacyId)}:sale:${year}`).lean(),
+      Sale.find({ pharmacyId, "returns.creditNoteNo": { $regex: `^CN-${year}-` } })
+        .select("returns.creditNoteNo")
+        .lean(),
+      Purchase.find({ pharmacyId, "returns.debitNoteNo": { $regex: `^DN-${year}-` } })
+        .select("returns.debitNoteNo")
+        .lean(),
+      Counter.find({
+        _id: {
+          $in: ["sale", "credit-note", "debit-note"].map((name) => `${String(pharmacyId)}:${name}:${year}`),
+        },
+      }).lean(),
     ]);
-    checked += sales.length;
-    for (const gap of findSequenceGaps(
-      sales.map((sale) => sale.billSeq ?? 0).filter((seq) => seq > 0),
-      counter?.seq ?? 0,
-    )) {
-      rows.push({
-        fiscalYear: year,
-        from: gap.from,
-        to: gap.to,
-        count: gap.to - gap.from + 1,
-      });
+    const issued = (name: string) =>
+      counters.find((counter) => counter._id === `${String(pharmacyId)}:${name}:${year}`)?.seq ?? 0;
+    const known = (seqs: Array<number | null>) => seqs.filter((seq): seq is number => seq != null && seq > 0);
+
+    const series = [
+      { label: "Bills", seqs: known(sales.map((sale) => sale.billSeq ?? null)), counter: issued("sale") },
+      {
+        label: "Credit notes",
+        seqs: known(withCredit.flatMap((sale) => (sale.returns ?? []).map((entry) => noteSeq(entry.creditNoteNo, "CN", year)))),
+        counter: issued("credit-note"),
+      },
+      {
+        label: "Debit notes",
+        seqs: known(withDebit.flatMap((purchase) => (purchase.returns ?? []).map((entry) => noteSeq(entry.debitNoteNo, "DN", year)))),
+        counter: issued("debit-note"),
+      },
+    ];
+    for (const { label, seqs, counter } of series) {
+      checked += seqs.length;
+      for (const gap of findSequenceGaps(seqs, counter)) {
+        rows.push({ series: label, fiscalYear: year, from: gap.from, to: gap.to, count: gap.to - gap.from + 1 });
+      }
     }
   }
 
   return {
-    title: "Bill Number Gaps",
+    title: "Document Number Gaps",
     subtitle: rangeLabel,
     generatedAt: new Date(),
     meta: [
-      { label: "Bills checked", value: String(checked) },
+      { label: "Documents checked", value: String(checked) },
       { label: "Numbers missing", value: String(rows.reduce((sum, row) => sum + Number(row.count), 0)) },
     ],
     columns: [
+      { key: "series", header: "Series", type: "text", width: 14 },
       { key: "fiscalYear", header: "Fiscal year", type: "text", width: 12 },
       { key: "from", header: "First missing", type: "integer" },
       { key: "to", header: "Last missing", type: "integer" },
       { key: "count", header: "Numbers", type: "integer", total: true },
     ],
     rows,
-    note: "Checks every branch for each fiscal year the period touches. An empty table means the series is unbroken.",
+    note: "Checks bills, credit notes and debit notes across every branch, for each fiscal year the period touches. An empty table means every series is unbroken.",
   };
 }
 

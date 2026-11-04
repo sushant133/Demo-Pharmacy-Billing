@@ -64,6 +64,21 @@ const auditLogSchema = new Schema(
   // No `timestamps`: `updatedAt` would suggest an entry can change.
   { versionKey: false },
 );
+/*
+  Failed sign-ins for an address that has no account. Anybody on the internet can
+  write these, they belong to no pharmacy so no screen shows them, and the trail is
+  otherwise append-only forever. Kept long enough to look into an attack, then
+  dropped. Partial, so nothing else in the trail ever expires.
+*/
+auditLogSchema.index(
+  { at: 1 },
+  {
+    name: "unknown_signin_ttl",
+    expireAfterSeconds: 90 * 24 * 60 * 60,
+    partialFilterExpression: { action: "login-failed", actorId: "" },
+  },
+);
+
 
 auditLogSchema.index({ pharmacyId: 1, at: -1 });
 auditLogSchema.index({ pharmacyId: 1, entity: 1, entityId: 1, at: -1 });
