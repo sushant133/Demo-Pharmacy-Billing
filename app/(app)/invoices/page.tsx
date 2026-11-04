@@ -107,7 +107,9 @@ export default async function InvoicesPage({
   const { rows, total, summary } = await withDbRead(async () => {
     const scope = await resolveViewScope(user, params.branch);
 
-    // Named customer only. An anonymous walk-in gets a receipt, not an invoice.
+    // Named customers only, because that is what this screen is for. A walk-in's
+    // bill is just as much an invoice: it is numbered in the same series and is
+    // in the invoice register, the sales book and the CBMS queue.
     const filter: Record<string, unknown> = {
       ...branchFilter(scope),
       customerName: { $nin: [null, ""] },
@@ -742,7 +744,7 @@ export default async function InvoicesPage({
             description={
               filtered
                 ? "Try widening the date range, or clearing the status and payment filters."
-                : "Name a customer on a bill at the till and it is filed here. A walk-in with no name gets a receipt, not an invoice."
+                : "Bills with a named customer are listed here. Walk-in bills are invoices too: find them under Sales and in the invoice register."
             }
             action={
               filtered ? (

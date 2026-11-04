@@ -34,6 +34,9 @@ const MUTED = "#64748b";
 export const INVOICE_CONTENT_TYPE = "application/pdf";
 
 export interface InvoiceIssuer {
+  /** The issuing branch, beneath the registered name. */
+  outlet?: string;
+  licence?: string;
   name: string;
   address: string;
   phone: string;
@@ -72,6 +75,8 @@ export interface InvoiceData {
   discount: number;
   discountPercent: number;
   taxableAmount: number;
+  /** The VAT-exempt part of taxableAmount. */
+  exemptAmount?: number;
   vatRate: number;
   vatAmount: number;
   totalAmount: number;
@@ -84,8 +89,14 @@ export interface InvoiceData {
   footerNote: string;
   /** A voided bill still prints - the number was issued - but says so. */
   voided: boolean;
+  /** Printed as an abbreviated tax invoice. Absent means a full one. */
+  invoiceType?: "full" | "abbreviated";
   /** Copy number. 0 is the original. */
   reprintCount: number;
+}
+
+function invoiceTitle(invoice: Pick<InvoiceData, "invoiceType">): string {
+  return invoice.invoiceType === "abbreviated" ? "ABBREVIATED TAX INVOICE" : "TAX INVOICE";
 }
 
 /** Rupee figure without the currency word; the column header carries that. */
@@ -279,11 +290,13 @@ function renderSheet(
 
   doc.font("Helvetica").fontSize(fs(9)).fillColor(MUTED);
   const issuerLines = [
+    invoice.issuer.outlet ? `Branch: ${invoice.issuer.outlet}` : "",
     invoice.issuer.address,
     invoice.issuer.phone ? `Tel: ${invoice.issuer.phone}` : "",
     invoice.issuer.email ?? "",
     `PAN: ${invoice.issuer.pan || "—"}`,
     invoice.issuer.vatNumber ? `VAT: ${invoice.issuer.vatNumber}` : "",
+    invoice.issuer.licence ? `DDA licence: ${invoice.issuer.licence}` : "",
   ].filter(Boolean);
   for (const line of issuerLines) doc.text(line, left, doc.y, { width: width * 0.55 });
 
@@ -292,7 +305,7 @@ function renderSheet(
     .font("Helvetica-Bold")
     .fontSize(fs(13))
     .fillColor(INK)
-    .text("TAX INVOICE", left + width * 0.55, margin, {
+    .text(invoiceTitle(invoice), left + width * 0.55, margin, {
       width: width * 0.45,
       align: "right",
     });
@@ -457,8 +470,12 @@ function renderSheet(
         : "Discount",
       `− ${rs(invoice.discount)}`,
     );
-    totalRow("Taxable amount", rs(invoice.taxableAmount));
   }
+  totalRow("Exempt amount", rs(invoice.exemptAmount ?? 0));
+  totalRow(
+    "Taxable amount",
+    rs(invoice.taxableAmount - (invoice.exemptAmount ?? 0)),
+  );
   totalRow(`VAT (${Math.round(invoice.vatRate * 100)}%)`, rs(invoice.vatAmount));
 
   y += 2;
@@ -574,13 +591,15 @@ function renderRoll(
     y += 4;
   }
 
-  centre("TAX INVOICE", base);
+  centre(invoiceTitle(invoice), base);
   centre(invoice.issuer.name.toUpperCase(), base + 3, true);
   for (const line of [
+    invoice.issuer.outlet ? `Branch: ${invoice.issuer.outlet}` : "",
     invoice.issuer.address,
     invoice.issuer.phone ? `Tel: ${invoice.issuer.phone}` : "",
     `PAN: ${invoice.issuer.pan || "—"}`,
     invoice.issuer.vatNumber ? `VAT: ${invoice.issuer.vatNumber}` : "",
+    invoice.issuer.licence ? `DDA: ${invoice.issuer.licence}` : "",
   ].filter(Boolean)) {
     centre(line, base);
   }
@@ -636,7 +655,8 @@ function renderRoll(
       `− ${rs(invoice.discount)}`,
     );
   }
-  pair("Taxable", rs(invoice.taxableAmount));
+  pair("Exempt", rs(invoice.exemptAmount ?? 0));
+  pair("Taxable", rs(invoice.taxableAmount - (invoice.exemptAmount ?? 0)));
   pair(`VAT ${Math.round(invoice.vatRate * 100)}%`, rs(invoice.vatAmount));
   pair("TOTAL", `Rs. ${rs(invoice.totalAmount)}`, true);
 

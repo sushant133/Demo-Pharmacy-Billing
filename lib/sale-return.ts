@@ -23,6 +23,8 @@ export interface SaleLineForReturn {
   batchNumber: string;
   /** The lot's expiry. An expired lot cannot go back on a sellable shelf. */
   expiryDate: Date | string;
+  /** The line was sold without VAT, so none comes back on it either. */
+  vatExempt?: boolean;
 }
 
 export interface ReturnRequest {
@@ -42,6 +44,8 @@ export interface PlannedReturnLine {
   subtotal: number;
   discount: number;
   taxableAmount: number;
+  /** Equal to taxableAmount on an exempt line, otherwise 0. */
+  exemptAmount: number;
   vatAmount: number;
   totalAmount: number;
   lineCost: number;
@@ -53,6 +57,7 @@ export interface PlannedReturn {
   subtotal: number;
   discount: number;
   taxableAmount: number;
+  exemptAmount: number;
   vatAmount: number;
   totalAmount: number;
   totalCost: number;
@@ -121,7 +126,8 @@ export function planSaleReturn(
     const discount =
       sale.subtotal > 0 ? round2((sale.discount * gross) / sale.subtotal) : 0;
     const taxableAmount = round2(gross - discount);
-    const vatAmount = round2(taxableAmount * sale.vatRate);
+    const exemptAmount = line.vatExempt ? taxableAmount : 0;
+    const vatAmount = line.vatExempt ? 0 : round2(taxableAmount * sale.vatRate);
     const lineCost = round2(
       line.quantity > 0 ? (line.lineCost / line.quantity) * request.quantity : 0,
     );
@@ -138,6 +144,7 @@ export function planSaleReturn(
       subtotal: gross,
       discount,
       taxableAmount,
+      exemptAmount,
       vatAmount,
       totalAmount: round2(taxableAmount + vatAmount),
       lineCost,
@@ -150,6 +157,7 @@ export function planSaleReturn(
     subtotal: round2(items.reduce((sum, item) => sum + item.subtotal, 0)),
     discount: round2(items.reduce((sum, item) => sum + item.discount, 0)),
     taxableAmount: round2(items.reduce((sum, item) => sum + item.taxableAmount, 0)),
+    exemptAmount: round2(items.reduce((sum, item) => sum + item.exemptAmount, 0)),
     vatAmount: round2(items.reduce((sum, item) => sum + item.vatAmount, 0)),
     totalAmount: round2(items.reduce((sum, item) => sum + item.totalAmount, 0)),
     totalCost: round2(items.reduce((sum, item) => sum + item.lineCost, 0)),

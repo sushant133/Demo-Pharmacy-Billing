@@ -21,6 +21,8 @@ import { Expense } from "@/models/Expense";
 import { Medicine } from "@/models/Medicine";
 import { Pharmacy } from "@/models/Pharmacy";
 import { Prescription } from "@/models/Prescription";
+import { CbmsSync } from "@/models/CbmsSync";
+import { PrescriptionImage } from "@/models/PrescriptionImage";
 import { Purchase } from "@/models/Purchase";
 import { Sale } from "@/models/Sale";
 import { Setting } from "@/models/Setting";
@@ -777,6 +779,8 @@ const TENANT_MODELS = [
   ["purchases", Purchase],
   ["payments", SupplierPayment],
   ["prescriptions", Prescription],
+  ["prescriptionImages", PrescriptionImage],
+  ["cbmsQueue", CbmsSync],
   ["movements", StockMovement],
   ["expenses", Expense],
   ["batches", Batch],

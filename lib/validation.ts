@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  MEDICINE_SCHEDULES,
   PAYMENT_MODES,
   SUPPLIER_PAYMENT_METHODS,
 } from "@/lib/constants";
@@ -38,6 +39,15 @@ const optionalDateSchema = z
 /** Number that also accepts the strings an HTML form sends. */
 const numberFromInput = (message: string) =>
   z.coerce.number({ invalid_type_error: message });
+
+/**
+ * A blank box is not a zero. `z.coerce.number("")` is 0, which on a setting is a
+ * real value with real effects: a clear box here means no VAT, or a limit that
+ * refuses every walk-in bill. Made invalid before coercion, so it reports the
+ * field's own error instead.
+ */
+const blankIsInvalid = (value: unknown) =>
+  typeof value === "string" && value.trim() === "" ? Number.NaN : value;
 
 /**
  * An optional money field: a non-negative number, or null when left blank.
@@ -198,6 +208,10 @@ export const medicineSchema = z.object({
   defaultCostPrice: optionalMoneySchema("Purchase price must be a number."),
   defaultSalePrice: optionalMoneySchema("MRP must be a number."),
   requiresPrescription: z.coerce.boolean().default(false),
+  /** Left out, an update keeps the schedule the record already has. */
+  schedule: z.enum(MEDICINE_SCHEDULES).optional(),
+  /** Medicines are exempt under Schedule 1 of the VAT Act, so that is the default. */
+  vatExempt: z.coerce.boolean().default(true),
   reorderLevel: z
     .union([
       z.literal("").transform(() => null),
@@ -333,6 +347,31 @@ export const saleItemInputSchema = z.object({
     .optional(),
 });
 
+/**
+ * What the till records before a narcotic or psychotropic line can leave.
+ *
+ * A photo or a filing reference: the Drugs Act wants the prescription kept with
+ * the record, and a counter with no camera can still file the paper and say where.
+ */
+export const controlledSaleSchema = z
+  .object({
+    patientName: z.string().trim().min(2, "Patient name is required.").max(160),
+    recipientName: z.string().trim().max(160).default(""),
+    prescriberName: z.string().trim().min(2, "Prescriber name is required.").max(160),
+    prescriberNmcNo: z.string().trim().min(1, "Prescriber NMC number is required.").max(60),
+    prescriptionRef: z.string().trim().max(120).default(""),
+    prescriptionImage: z
+      .string()
+      .max(6_000_000, "That photo is too large. Retake it closer to the prescription.")
+      .regex(/^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/, "That photo could not be read.")
+      .optional(),
+  })
+  .refine((value) => Boolean(value.prescriptionImage || value.prescriptionRef), {
+    message: "Attach a photo of the prescription, or say where the paper copy is filed.",
+    path: ["prescriptionRef"],
+  });
+export type ControlledSaleInput = z.infer<typeof controlledSaleSchema>;
+
 export const createSaleSchema = z.object({
   items: z
     .array(saleItemInputSchema)
@@ -350,6 +389,8 @@ export const createSaleSchema = z.object({
     .optional(),
   customerAddress: z.string().trim().max(300).optional(),
   customerPhone: z.string().trim().max(30).optional(),
+  /** Required by `createSale` when the bill carries a controlled line. */
+  controlled: controlledSaleSchema.nullable().optional(),
   discount: z.coerce.number().min(0, "Discount cannot be negative.").default(0),
   /**
    * A percentage of the subtotal, 0-100. When present it decides the rupee
@@ -605,10 +646,28 @@ const nepalPhoneSchema = z
  */
 export const settingsSchema = z.object({
   /** Entered as a percentage, stored as a fraction. */
-  vatRate: numberFromInput("VAT rate must be a number.")
-    .min(0, "VAT rate cannot be negative.")
-    .max(100, "VAT rate is a percentage, so it cannot exceed 100.")
+  vatRate: z
+    .preprocess(
+      blankIsInvalid,
+      numberFromInput("VAT rate must be a number.")
+        .min(0, "VAT rate cannot be negative.")
+        .max(100, "VAT rate is a percentage, so it cannot exceed 100."),
+    )
     .default(13),
+  /** IRD CBMS. The password is write-only: blank keeps the saved one. */
+  cbmsEnabled: z.coerce.boolean().default(false),
+  cbmsUsername: z.string().trim().max(120).default(""),
+  cbmsPassword: z.string().max(200).optional(),
+
+  /** Rupees. Up to this, a bill to a buyer with no PAN prints as abbreviated. */
+  abbreviatedInvoiceLimit: z
+    .preprocess(
+      blankIsInvalid,
+      numberFromInput("The limit must be a number.")
+        .min(0, "The limit cannot be negative.")
+        .max(10_000_000),
+    )
+    .default(5000),
 
   address: z.string().trim().max(300).default(""),
   city: z.string().trim().max(120).default(""),
@@ -639,7 +698,7 @@ export const customerSchema = z.object({
   name: z.string().trim().min(2, "Customer name is required.").max(160),
   phone: z.string().trim().max(30).default(""),
   address: z.string().trim().max(300).default(""),
-  panNo: z.string().trim().max(30).default(""),
+  panNo: taxNumberSchema("A Nepali PAN is nine digits."),
   notes: z.string().trim().max(500).default(""),
 });
 
@@ -938,8 +997,8 @@ export const branchSchema = z.object({
   name: z.string().trim().min(2, "Branch name is required.").max(160),
   address: z.string().trim().max(300).default(""),
   phone: z.string().trim().max(40).default(""),
-  /** Blank falls back to the company PAN when the bill is printed. */
-  panNo: z.string().trim().max(30).default(""),
+  /** Blank is the normal case: bills print the pharmacy's registered PAN. */
+  panNo: taxNumberSchema("A Nepali PAN is nine digits."),
   notes: z.string().trim().max(500).default(""),
 });
 export type BranchInput = z.infer<typeof branchSchema>;
@@ -967,9 +1026,9 @@ export type BranchScopeBody = z.infer<typeof branchScopeBodySchema>;
 /**
  * The paperwork a pharmacy account carries. All of it optional.
  *
- * An account is usually opened from a phone call: a name, a person and a
- * password are enough to have the shop billing this afternoon, and the licence
- * numbers arrive by photograph next week. Making any of these required would
+ * An account is usually opened from a phone call: a name, a person and the DDA
+ * licence are enough to have the shop billing this afternoon, and the other
+ * numbers arrive by photograph next week. Making these required would
  * only teach whoever is typing to invent a value, and an invented PAN is worse
  * than a blank one - it prints on a tax invoice.
  *
@@ -1018,6 +1077,12 @@ const pharmacyProfileFields = {
 
 export const createPharmacySchema = z.object({
   ...pharmacyProfileFields,
+  /**
+   * The one paper an account cannot open without: no pharmacy may trade without
+   * its DDA registration, and it prints on every bill. Required here and not on
+   * update, because superadmin must be able to clear a licence that has lapsed.
+   */
+  drugLicenceNo: z.string().trim().min(1, "Enter the DDA drug licence number.").max(60),
   name: z.string().trim().min(2, "Pharmacy name is required.").max(160),
   slug: z
     .string()

@@ -19,14 +19,27 @@ import { can } from "@/lib/roles";
 import { planSaleReturn } from "@/lib/sale-return";
 import { refundSplit } from "@/lib/return-eligibility";
 import { settleSale, type PaymentStatus } from "@/lib/sale-payment";
+import { queueCbms } from "@/lib/cbms";
 import { sessionOption, withTransaction } from "@/lib/transaction";
 import { Batch } from "@/models/Batch";
 import { Medicine } from "@/models/Medicine";
 import { Sale } from "@/models/Sale";
-import { formatBillNo, nextSequence } from "@/models/Counter";
+import { CbmsSync } from "@/models/CbmsSync";
+import {
+  formatBillNo,
+  formatNoteNo,
+  nextSequence,
+  releaseSequence,
+} from "@/models/Counter";
+import { PrescriptionImage } from "@/models/PrescriptionImage";
+import {
+  isControlledSchedule,
+  medicineSchedule,
+  type MedicineSchedule,
+} from "@/lib/constants";
 import { Customer } from "@/models/Customer";
 import { adToBs, nepaliFiscalYear } from "@/lib/bs-date";
-import { localParts } from "@/lib/dates";
+import { fiscalYearOf, localParts } from "@/lib/dates";
 import type {
   CreateSaleInput,
   ReceiveSalePaymentInput,
@@ -62,6 +75,10 @@ export interface SalePlanLine {
   medicineId: string;
   medicineName: string;
   unit: string;
+  /** No VAT is charged on this line. */
+  vatExempt: boolean;
+  /** Narcotic or psychotropic lines cannot leave without a controlled record. */
+  schedule: MedicineSchedule;
   /**
    * The lot the counter pinned this line to, or null when FEFO chose.
    * Echoed back so the cart can tell two lines of the same medicine apart.
@@ -82,6 +99,8 @@ export interface SalePlan {
   /** 0 when the discount was entered as a rupee amount. */
   discountPercent: number;
   taxableAmount: number;
+  /** The VAT-exempt part of taxableAmount. */
+  exemptAmount: number;
   vatRate: number;
   vatAmount: number;
   totalAmount: number;
@@ -113,14 +132,20 @@ async function buildPlan(
     pharmacyId,
     _id: { $in: medicineIds.map((id) => new Types.ObjectId(id)) },
   })
-    .select("_id name unit isActive")
+    .select("_id name unit isActive vatExempt schedule requiresPrescription")
     .lean();
 
   const medicineNames = new Map<string, string>();
   const medicineUnits = new Map<string, string>();
+  const exemptMedicines = new Set<string>();
+  const schedules = new Map<string, MedicineSchedule>();
   for (const medicine of medicines) {
+    schedules.set(String(medicine._id), medicineSchedule(medicine));
     medicineNames.set(String(medicine._id), medicine.name);
     medicineUnits.set(String(medicine._id), medicine.unit ?? "unit");
+    // Lean reads skip the schema default, so a record with no answer is exempt
+    // here too, and only an explicit no is taxed.
+    if (medicine.vatExempt !== false) exemptMedicines.add(String(medicine._id));
   }
 
   const missing = medicineIds.filter((id) => !medicineNames.has(id));
@@ -174,21 +199,30 @@ async function buildPlan(
   }
 
   const grossSubtotal = result.lines.reduce((sum, line) => sum + line.lineTotal, 0);
+  const exemptSubtotal = result.lines
+    .filter((line) => exemptMedicines.has(line.medicineId))
+    .reduce((sum, line) => sum + line.lineTotal, 0);
   // The VAT rate comes from Settings, so a shop that is not VAT registered, or
   // that is charged at another rate, bills correctly without a redeploy. Past
   // bills are untouched: each sale stores the rate it was charged at.
-  const { vatRate } = await getSettings(pharmacyId);
+  // A PAN-only business is not registered for VAT and may not charge it, whatever
+  // rate is left in its settings.
+  const { vatRate: shopVatRate, vatRegistered } = await getSettings(pharmacyId);
+  const vatRate = vatRegistered ? shopVatRate : 0;
   const totals = calculateTotals({
     grossSubtotal,
     discount: input.discount ?? 0,
     discountPercent: input.discountPercent ?? 0,
     vatRate,
+    exemptSubtotal,
   });
 
   const lines: SalePlanLine[] = result.lines.map((line) => ({
     medicineId: line.medicineId,
     medicineName: medicineNames.get(line.medicineId) ?? "Unknown",
     unit: medicineUnits.get(line.medicineId) ?? "unit",
+    vatExempt: exemptMedicines.has(line.medicineId),
+    schedule: schedules.get(line.medicineId) ?? "otc",
     requestedBatchId: line.requestedBatchId,
     requestedQuantity: line.requestedQuantity,
     lineTotal: line.lineTotal,
@@ -244,6 +278,8 @@ export interface CreatedSale {
   billNo: string;
   totalAmount: number;
   plan: SalePlan;
+  /** The CBMS queue row to send once the transaction has committed. */
+  cbmsQueueId: string | null;
 }
 
 /**
@@ -271,6 +307,27 @@ export async function createSale(
       branch.id,
       pharmacyId,
     );
+
+    // Everything that can refuse this bill is asked before anything is written,
+    // and above all before a bill number is taken.
+    const controlledLines = plan.lines.filter((line) => isControlledSchedule(line.schedule));
+    if (controlledLines.length > 0 && !input.controlled) {
+      throw ApiError.badRequest(
+        `${controlledLines.map((line) => line.medicineName).join(", ")} is a controlled drug. Record the patient, the prescriber and the prescription before selling it.`,
+      );
+    }
+
+    // Small retail sales to a buyer with no PAN may go out as an abbreviated
+    // invoice. Above the limit IRD wants the buyer named, so a bill that would
+    // leave without one is refused here, where the total is finally known.
+    const { abbreviatedInvoiceLimit, cbmsEnabled } = await getSettings(pharmacyId);
+    const buyerPan = (input.customerPan ?? "").trim();
+    const buyerNamed = Boolean(input.customerId || input.customerName?.trim());
+    if (plan.totalAmount > abbreviatedInvoiceLimit && !buyerNamed) {
+      throw ApiError.badRequest(
+        `Bills above Rs. ${abbreviatedInvoiceLimit.toLocaleString("en-IN")} must name the buyer.`,
+      );
+    }
 
     for (const line of allocation) {
       for (const pick of line.picks) {
@@ -313,26 +370,7 @@ export async function createSale(
         "You are not allowed to let a bill leave the counter unpaid.",
       );
     }
-    const local = localParts(issuedAt);
-    const bs = adToBs(local.year, local.month, local.day);
-    const fiscalYear = nepaliFiscalYear(bs);
-    // Bill numbers restart each Nepali fiscal year, so the high-water mark is
-    // read within this pharmacy's own year rather than across its whole history.
-    const seq = await nextSequence(
-      `${String(pharmacyId)}:sale:${fiscalYear}`,
-      session,
-      async () => {
-        const last = await Sale.findOne({ pharmacyId, fiscalYear })
-          .sort({ billSeq: -1 })
-          .select("billSeq")
-          .session(session)
-          .lean();
-        return last?.billSeq ?? 0;
-      },
-    );
-    const billNo = formatBillNo(seq, fiscalYear);
-
-    let customerPan = input.customerPan ?? "";
+    let customerPan = buyerPan;
     let customerAddress = input.customerAddress ?? "";
     let customerPhone = input.customerPhone ?? "";
     if (input.customerId) {
@@ -350,6 +388,25 @@ export async function createSale(
       }
     }
 
+    // The last thing before the write. IRD allows no skipped numbers, so a bill
+    // number is only taken once nothing above can still refuse the sale.
+    const local = localParts(issuedAt);
+    const bs = adToBs(local.year, local.month, local.day);
+    const fiscalYear = nepaliFiscalYear(bs);
+    // Bill numbers restart each Nepali fiscal year, so the high-water mark is
+    // read within this pharmacy's own year rather than across its whole history.
+    const sequenceKey = `${String(pharmacyId)}:sale:${fiscalYear}`;
+    const seq = await nextSequence(sequenceKey, session, async () => {
+      const last = await Sale.findOne({ pharmacyId, fiscalYear })
+        .sort({ billSeq: -1 })
+        .select("billSeq")
+        .session(session)
+        .lean();
+      return last?.billSeq ?? 0;
+    });
+    onRollback(() => releaseSequence(sequenceKey, seq));
+    const billNo = formatBillNo(seq, fiscalYear);
+
     const items = plan.lines.flatMap((line) =>
       line.picks.map((pick) => ({
         medicineId: new Types.ObjectId(line.medicineId),
@@ -363,6 +420,8 @@ export async function createSale(
         unitCost: pick.unitCost,
         subtotal: pick.subtotal,
         lineCost: pick.lineCost,
+        vatExempt: line.vatExempt,
+        schedule: line.schedule,
       })),
     );
 
@@ -373,6 +432,22 @@ export async function createSale(
           billNo,
           billSeq: seq,
           fiscalYear,
+          invoiceType:
+            !customerPan && plan.totalAmount <= abbreviatedInvoiceLimit
+              ? "abbreviated"
+              : "full",
+          cbmsStatus: cbmsEnabled ? "pending" : "disabled",
+          controlled:
+            controlledLines.length > 0 && input.controlled
+              ? {
+                  patientName: input.controlled.patientName,
+                  recipientName: input.controlled.recipientName,
+                  prescriberName: input.controlled.prescriberName,
+                  prescriberNmcNo: input.controlled.prescriberNmcNo,
+                  prescriptionRef: input.controlled.prescriptionRef,
+                  hasImage: Boolean(input.controlled.prescriptionImage),
+                }
+              : null,
           customerId: input.customerId ? new Types.ObjectId(input.customerId) : null,
           customerName: input.customerName ?? "",
           customerPan,
@@ -384,6 +459,7 @@ export async function createSale(
           discount: plan.discount,
           discountPercent: plan.discountPercent,
           taxableAmount: plan.taxableAmount,
+          exemptAmount: plan.exemptAmount,
           vatRate: plan.vatRate,
           vatAmount: plan.vatAmount,
           totalAmount: plan.totalAmount,
@@ -422,11 +498,44 @@ export async function createSale(
 
     onRollback(() => Sale.deleteOne({ _id: sale._id }).exec());
 
+    const image = controlledLines.length > 0 ? input.controlled?.prescriptionImage : undefined;
+    if (image) {
+      await PrescriptionImage.create(
+        [
+          {
+            pharmacyId,
+            saleId: sale._id,
+            contentType: "image/jpeg",
+            data: Buffer.from(image.slice(image.indexOf(",") + 1), "base64"),
+          },
+        ],
+        sessionOption(session),
+      );
+      onRollback(() => PrescriptionImage.deleteOne({ saleId: sale._id }).exec());
+    }
+
+    // Queued in the same transaction as the bill, so a bill cannot exist
+    // without its CBMS row - also while CBMS is off, when the row waits to be
+    // pushed in bulk. The route sends a live one once this commits.
+    const queued = await queueCbms(
+      {
+        pharmacyId,
+        saleId: sale._id,
+        kind: "bill",
+        documentNo: billNo,
+        issuedAt: issuedAt,
+        enabled: cbmsEnabled,
+      },
+      session,
+    );
+    onRollback(() => CbmsSync.deleteOne({ _id: queued }).exec());
+
     return {
       id: String(sale._id),
       billNo,
       totalAmount: round2(plan.totalAmount),
       plan,
+      cbmsQueueId: cbmsEnabled ? queued : null,
     };
   });
 }
@@ -552,6 +661,8 @@ export interface VoidedSale {
   id: string;
   billNo: string;
   voidedAt: Date;
+  /** The CBMS cancellation to send once the transaction has committed. */
+  cbmsQueueId: string | null;
   /** What went back on the shelf, per lot. */
   restored: StockReturn[];
   /** Lot numbers whose batch no longer exists, so nothing could be returned. */
@@ -673,12 +784,32 @@ export async function voidSale(
       );
     }
 
+    // A bill IRD was told about has to be withdrawn there too.
+    let cbmsQueueId: string | null = null;
+    if ((sale.cbmsStatus ?? "none") !== "none") {
+      const { cbmsEnabled } = await getSettings(sale.pharmacyId as Types.ObjectId);
+      const queued = await queueCbms(
+        {
+          pharmacyId: sale.pharmacyId as Types.ObjectId,
+          saleId: sale._id,
+          kind: "cancel",
+          documentNo: `${sale.billNo}-CANCEL`,
+          issuedAt: voidedAt,
+          enabled: cbmsEnabled,
+        },
+        session,
+      );
+      if (cbmsEnabled) cbmsQueueId = queued;
+      onRollback(() => CbmsSync.deleteOne({ _id: queued }).exec());
+    }
+
     return {
       id: String(sale._id),
       billNo: sale.billNo,
       voidedAt,
       restored,
       unreturned,
+      cbmsQueueId,
     };
   });
 }
@@ -692,6 +823,9 @@ export interface RecordedReturn {
   billNo: string;
   /** Where this return sits in the bill's `returns` array - its receipt id. */
   returnIndex: number;
+  creditNoteNo: string;
+  /** The CBMS credit note to send once the transaction has committed. */
+  cbmsQueueId: string | null;
   units: number;
   totalAmount: number;
   restored: StockReturn[];
@@ -746,6 +880,7 @@ export async function returnSaleItems(
             batchId: String(item.batchId),
             batchNumber: item.batchNumber,
             expiryDate: item.expiryDate as unknown as Date,
+            vatExempt: item.vatExempt ?? false,
           })),
           subtotal: sale.subtotal,
           discount: sale.discount,
@@ -832,11 +967,22 @@ export async function returnSaleItems(
       line.returnedQuantity = (line.returnedQuantity ?? 0) + item.quantity;
     }
 
+    // The credit note gets its own number in its own unbroken series, read
+    // inside the transaction like a bill number so an aborted return leaves no
+    // gap behind it.
+    const noteYear = fiscalYearOf(returnedAt);
+    const noteSeq = await nextSequence(
+      `${String(pharmacyId)}:credit-note:${noteYear}`,
+      session,
+    );
+    const creditNoteNo = formatNoteNo("CN", noteSeq, noteYear);
+
     if (!sale.returns) sale.set("returns", []);
     sale.returns.push({
       returnedAt,
       returnedBy: new Types.ObjectId(user.id),
       returnedByName: user.name,
+      creditNoteNo,
       reasonCode: input.reasonCode,
       reason: input.reason,
       conditionConfirmed: input.conditionConfirmed,
@@ -854,6 +1000,7 @@ export async function returnSaleItems(
         subtotal: item.subtotal,
         discount: item.discount,
         taxableAmount: item.taxableAmount,
+        exemptAmount: item.exemptAmount,
         vatAmount: item.vatAmount,
         totalAmount: item.totalAmount,
         lineCost: item.lineCost,
@@ -862,6 +1009,7 @@ export async function returnSaleItems(
       subtotal: plan.subtotal,
       discount: plan.discount,
       taxableAmount: plan.taxableAmount,
+      exemptAmount: plan.exemptAmount,
       vatAmount: plan.vatAmount,
       totalAmount: plan.totalAmount,
       totalCost: plan.totalCost,
@@ -870,6 +1018,7 @@ export async function returnSaleItems(
     sale.returnedUnits = (sale.returnedUnits ?? 0) + plan.units;
     sale.returnedDiscount = round2((sale.returnedDiscount ?? 0) + plan.discount);
     sale.returnedTaxable = round2((sale.returnedTaxable ?? 0) + plan.taxableAmount);
+    sale.returnedExempt = round2((sale.returnedExempt ?? 0) + plan.exemptAmount);
     sale.returnedVat = round2((sale.returnedVat ?? 0) + plan.vatAmount);
     sale.returnedTotal = round2((sale.returnedTotal ?? 0) + plan.totalAmount);
     sale.returnedCost = round2((sale.returnedCost ?? 0) + plan.totalCost);
@@ -888,12 +1037,33 @@ export async function returnSaleItems(
 
     await sale.save({ session: session ?? undefined });
 
+    let cbmsQueueId: string | null = null;
+    if ((sale.cbmsStatus ?? "none") !== "none") {
+      const { cbmsEnabled } = await getSettings(pharmacyId);
+      const queued = await queueCbms(
+        {
+          pharmacyId,
+          saleId: sale._id,
+          kind: "return",
+          returnIndex: sale.returns.length - 1,
+          documentNo: creditNoteNo,
+          issuedAt: returnedAt,
+          enabled: cbmsEnabled,
+        },
+        session,
+      );
+      if (cbmsEnabled) cbmsQueueId = queued;
+      onRollback(() => CbmsSync.deleteOne({ _id: queued }).exec());
+    }
+
     return {
       id: String(sale._id),
       billNo: sale.billNo,
       // The entry just pushed. Numbering returns by position keeps the receipt
       // addressable without a second id sequence to keep in step.
       returnIndex: sale.returns.length - 1,
+      creditNoteNo,
+      cbmsQueueId,
       units: plan.units,
       totalAmount: plan.totalAmount,
       refundPaid: split.paidOut,

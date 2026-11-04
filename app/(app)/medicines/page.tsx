@@ -512,9 +512,20 @@ export default async function MedicinesPage({
                       </td>
                       <td className="td tnum text-right">
                         {price == null ? (
-                          // No sellable batch, so nothing has a price yet. Not
-                          // a zero: zero is a real price somebody could set.
-                          <span className="text-slate-400">—</span>
+                          // No sellable batch, so nothing is on sale at a price.
+                          // The catalogue MRP still lets staff quote one. Not a
+                          // zero when unknown: zero is a real price.
+                          medicine.defaultSalePrice != null ? (
+                            <span
+                              className="text-slate-500"
+                              title="Default MRP. Nothing is in stock to sell at this price yet."
+                            >
+                              {money(medicine.defaultSalePrice)}
+                              <span className="block text-[11px] text-slate-400">Default MRP</span>
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )
                         ) : (
                           <>
                             <span className="font-medium text-slate-900">
@@ -628,6 +639,8 @@ export default async function MedicinesPage({
                   defaultCostPrice: editing.defaultCostPrice ?? null,
                   defaultSalePrice: editing.defaultSalePrice ?? null,
                   requiresPrescription: Boolean(editing.requiresPrescription),
+                  schedule: editing.schedule ?? "",
+                  vatExempt: editing.vatExempt !== false,
                   reorderLevel: editing.reorderLevel ?? null,
                   isActive: editing.isActive !== false,
                 }

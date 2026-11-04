@@ -31,7 +31,16 @@ import { settingsSchema } from "@/lib/validation";
 
 export interface SettingsValues {
   /** A percentage in this form. The API stores the fraction. */
-  vatRate: number;
+  /** Text while being typed, so a cleared box stays clear rather than reading 0. */
+  vatRate: number | string;
+  /** Rupees. */
+  abbreviatedInvoiceLimit: number | string;
+  cbmsEnabled: boolean;
+  cbmsUsername: string;
+  /** Write-only. Always blank when the form loads; blank on save keeps the saved one. */
+  cbmsPassword?: string;
+  /** Read-only: whether the server holds a password. */
+  cbmsPasswordSaved?: boolean;
   address: string;
   city: string;
   phone: string;
@@ -47,6 +56,11 @@ export interface SettingsValues {
 function editableOnly(record: SettingsValues): SettingsValues {
   return {
     vatRate: record.vatRate,
+    abbreviatedInvoiceLimit: record.abbreviatedInvoiceLimit,
+    cbmsEnabled: record.cbmsEnabled ?? false,
+    cbmsUsername: record.cbmsUsername ?? "",
+    cbmsPassword: "",
+    cbmsPasswordSaved: record.cbmsPasswordSaved ?? false,
     address: record.address,
     city: record.city,
     phone: record.phone,
@@ -177,15 +191,74 @@ export function SettingsForm({
             name="vatRate"
             value={String(values.vatRate)}
             error={errors.vatRate}
-            onChange={(value) => set("vatRate", Number(value))}
+            onChange={(value) => set("vatRate", value)}
             inputMode="decimal"
             suffix="%"
             hint={
               identity.vatRegistered
-                ? "13% in Nepal unless you have been told otherwise."
+                ? "13% in Nepal. Only charged on items not marked VAT exempt, so keep it at 13% even though medicines are exempt."
                 : "This pharmacy is not VAT registered, so no VAT line is printed."
             }
             className="tnum"
+          />
+          <Field
+            label="Abbreviated invoice limit"
+            name="abbreviatedInvoiceLimit"
+            value={String(values.abbreviatedInvoiceLimit)}
+            error={errors.abbreviatedInvoiceLimit}
+            onChange={(value) => set("abbreviatedInvoiceLimit", value)}
+            inputMode="numeric"
+            suffix="Rs."
+            hint="Bills up to this amount, to a buyer without a PAN, print as an abbreviated tax invoice. Above it the buyer's name is required. Check the current IRD limit."
+            className="tnum"
+          />
+        </Section>
+
+        <Section
+          title="IRD CBMS"
+          description="Send every bill, credit note and cancellation to IRD's Central Billing Monitoring System as it is issued. Anything IRD does not accept straight away is retried automatically."
+        >
+          <label className="flex items-start gap-2.5 text-sm text-slate-700 sm:col-span-2">
+            <input
+              type="checkbox"
+              name="cbmsEnabled"
+              checked={values.cbmsEnabled}
+              onChange={(event) => set("cbmsEnabled", event.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+            />
+            <span>
+              Report bills to CBMS in real time
+              <span className="block text-xs text-slate-500">
+                Uses the login IRD issued to this PAN. Bills raised while this is off are not sent.
+              </span>
+              {errors.cbmsEnabled ? (
+                <span className="block text-xs text-rose-600">{errors.cbmsEnabled}</span>
+              ) : null}
+            </span>
+          </label>
+          <Field
+            label="CBMS username"
+            name="cbmsUsername"
+            autoComplete="off"
+            value={values.cbmsUsername}
+            error={errors.cbmsUsername}
+            onChange={(value) => set("cbmsUsername", value)}
+          />
+          <Field
+            label="CBMS password"
+            name="cbmsPassword"
+            type="password"
+            // Otherwise password managers offer the owner's own sign-in here, and
+            // saving overwrites the working CBMS password with it.
+            autoComplete="new-password"
+            value={values.cbmsPassword ?? ""}
+            error={errors.cbmsPassword}
+            onChange={(value) => set("cbmsPassword", value)}
+            hint={
+              values.cbmsPasswordSaved
+                ? "A password is saved. Leave blank to keep it."
+                : "Stored encrypted. It is never shown again."
+            }
           />
         </Section>
 
@@ -555,14 +628,14 @@ function BillPreview({
             </div>
             {identity.vatRegistered ? (
               <div>
-                <dt>VAT {formatRate(values.vatRate)}%</dt>
-                <dd>{((100 * (values.vatRate || 0)) / 100).toFixed(2)}</dd>
+                <dt>VAT {formatRate(Number(values.vatRate))}%</dt>
+                <dd>{(Number(values.vatRate) || 0).toFixed(2)}</dd>
               </div>
             ) : null}
             <div className="grand">
               <dt>Grand total</dt>
               <dd>
-                {(100 + (identity.vatRegistered ? values.vatRate || 0 : 0)).toFixed(2)}
+                {(100 + (identity.vatRegistered ? Number(values.vatRate) || 0 : 0)).toFixed(2)}
               </dd>
             </div>
           </dl>
@@ -617,6 +690,7 @@ function Field({
   hint,
   required,
   type = "text",
+  autoComplete,
   inputMode,
   suffix,
   className,
@@ -629,6 +703,7 @@ function Field({
   hint?: string;
   required?: boolean;
   type?: string;
+  autoComplete?: string;
   inputMode?: "numeric" | "decimal" | "email" | "tel" | "text";
   suffix?: string;
   className?: string;
@@ -646,7 +721,8 @@ function Field({
         <input
           id={id}
           name={name}
-          type={type}
+          autoComplete={autoComplete}
+            type={type}
           inputMode={inputMode}
           value={value}
           onChange={(event) => onChange(event.target.value)}

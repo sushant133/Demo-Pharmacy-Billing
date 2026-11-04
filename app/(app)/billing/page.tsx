@@ -5,6 +5,7 @@ import { requirePagePermission } from "@/lib/auth";
 import { withDbRead } from "@/lib/db";
 import { branchForWrite } from "@/lib/branches";
 import { can } from "@/lib/roles";
+import { getSettings } from "@/lib/settings";
 import { BillingScreen } from "@/components/billing/BillingScreen";
 
 export const metadata: Metadata = { title: "New sale" };
@@ -25,8 +26,11 @@ export default async function BillingPage() {
   const user = await requirePagePermission("sale:create");
 
   let outlet;
+  let settings;
   try {
-    outlet = await withDbRead(() => branchForWrite(user));
+    [outlet, settings] = await withDbRead(() =>
+      Promise.all([branchForWrite(user), getSettings(user.pharmacyId, user.pharmacyName)]),
+    );
   } catch (error) {
     if (error instanceof ApiError) return <CannotBill reason={error.message} />;
     throw error;
@@ -41,6 +45,8 @@ export default async function BillingPage() {
       canDiscount={can(user.role, "sale:discount")}
       canSellOnCredit={can(user.role, "sale:credit")}
       canAddCustomer={can(user.role, "customer:write")}
+      buyerDetailThreshold={settings.abbreviatedInvoiceLimit}
+      vatRate={settings.vatRegistered ? settings.vatRate : 0}
     />
   );
 }

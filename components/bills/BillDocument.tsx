@@ -32,6 +32,8 @@ export interface BillDocumentIssuer {
   pan?: string;
   vat?: string;
   licence?: string;
+  /** The issuing branch, beneath the registered name. */
+  outlet?: string;
 }
 
 export interface BillDocumentItem {
@@ -132,6 +134,7 @@ function OneCopy({
         {issuer.legalName && issuer.legalName !== issuer.name ? (
           <p>{issuer.legalName}</p>
         ) : null}
+        {issuer.outlet ? <p>Branch: {issuer.outlet}</p> : null}
         {issuer.address ? <p>{issuer.address}</p> : null}
         {issuer.phone ? <p>Tel: {issuer.phone}</p> : null}
         {issuer.email ? <p>{issuer.email}</p> : null}

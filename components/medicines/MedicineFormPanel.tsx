@@ -7,6 +7,14 @@ import { apiFetch } from "@/lib/client";
 import { Combobox } from "@/components/Combobox";
 import { Field, SlideOver } from "@/components/SlideOver";
 import { medicineSchema } from "@/lib/validation";
+import {
+  MEDICINE_SCHEDULES,
+  MEDICINE_SCHEDULE_LABELS,
+  defaultVatExempt,
+  isControlledSchedule,
+  medicineSchedule,
+  type MedicineSchedule,
+} from "@/lib/constants";
 import { MEDICINE_UNITS, mergeMedicineCategories } from "@/lib/constants";
 import { canSellLoose, resolveUnitsPerStrip, unitWord } from "@/lib/pack";
 import { shrinkPhoto } from "@/lib/photo";
@@ -39,6 +47,8 @@ export interface MedicineFormValues {
   defaultCostPrice: number | null;
   defaultSalePrice: number | null;
   requiresPrescription: boolean;
+  schedule?: string;
+  vatExempt: boolean;
   reorderLevel: number | null;
   isActive: boolean;
 }
@@ -109,7 +119,9 @@ export function MedicineFormPanel({
           : "",
     defaultCostPrice: medicine?.defaultCostPrice?.toString() ?? "",
     defaultSalePrice: medicine?.defaultSalePrice?.toString() ?? "",
-    requiresPrescription: medicine?.requiresPrescription ?? false,
+    schedule: medicineSchedule(medicine ?? {}) as MedicineSchedule,
+    // New lines start exempt: medicines are, under Schedule 1 of the VAT Act.
+    vatExempt: medicine?.vatExempt ?? true,
     reorderLevel: medicine?.reorderLevel?.toString() ?? "",
     isActive: medicine?.isActive ?? true,
   });
@@ -138,6 +150,7 @@ export function MedicineFormPanel({
     null | "asking" | { done: DeleteResult }
   >(null);
   const inflight = useRef(false);
+  const vatDecided = useRef(false);
 
   const close = useCallback(() => {
     router.push(returnHref);
@@ -197,7 +210,13 @@ export function MedicineFormPanel({
         setScanError(read.note || "Nothing could be read from that photo. Try a closer, sharper one.");
         return;
       }
-      setValues((current) => ({ ...current, ...patch }));
+      // The scan chose the category and name, so it gets the same VAT starting
+      // point choosing them by hand does, unless someone has already decided.
+      const vatFromScan =
+        !isEdit && !vatDecided.current
+          ? { vatExempt: defaultVatExempt(patch.category ?? values.category, patch.name ?? values.name) }
+          : {};
+      setValues((current) => ({ ...current, ...patch, ...vatFromScan }));
       setErrors({});
       setFilled(new Set(keys));
       setScan({ note: read.note, mrpNote: read.mrpNote });
@@ -255,6 +274,7 @@ export function MedicineFormPanel({
     const unit = values.unit.trim();
     const parsed = medicineSchema.safeParse({
       ...values,
+      requiresPrescription: values.schedule !== "otc",
       category,
       unit,
       // A bottle or tube is sold whole; a strip count means nothing there.
@@ -591,7 +611,14 @@ export function MedicineFormPanel({
                   id="medicine-category"
                   mode="free"
                   value={values.category}
-                  onChange={(category) => set("category", category)}
+                  onChange={(category) => {
+                    set("category", category);
+                    // Cosmetics and supplements carry VAT. Only a suggestion: once
+                    // someone has decided the box, their answer stands.
+                    if (!isEdit && !vatDecided.current) {
+                      set("vatExempt", defaultVatExempt(category, values.name));
+                    }
+                  }}
                   options={categoryOptions}
                   placeholder="e.g. Analgesic"
                   invalid={Boolean(errors.category)}
@@ -780,19 +807,45 @@ export function MedicineFormPanel({
               />
             </Field>
 
+            <Field
+              label="Schedule"
+              htmlFor="medicine-schedule"
+              error={errors.schedule}
+              hint={
+                isControlledSchedule(values.schedule)
+                  ? "The till will require the patient, prescriber and prescription, and every unit goes on the DDA register."
+                  : "Rx shows a warning at the counter. Narcotic and psychotropic lines are controlled."
+              }
+            >
+              <select
+                id="medicine-schedule"
+                value={values.schedule}
+                onChange={(event) => set("schedule", event.target.value as MedicineSchedule)}
+                className="input"
+              >
+                {MEDICINE_SCHEDULES.map((schedule) => (
+                  <option key={schedule} value={schedule}>
+                    {MEDICINE_SCHEDULE_LABELS[schedule]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
             <label className="flex items-start gap-2.5 text-sm text-slate-700">
               <input
                 type="checkbox"
-                checked={values.requiresPrescription}
-                onChange={(event) =>
-                  set("requiresPrescription", event.target.checked)
-                }
+                checked={values.vatExempt}
+                onChange={(event) => {
+                  vatDecided.current = true;
+                  set("vatExempt", event.target.checked);
+                }}
                 className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
               />
               <span>
-                Prescription required
+                VAT exempt
                 <span className="block text-xs text-slate-500">
-                  Shows an Rx warning at the counter.
+                  On for medicines (VAT Act, Schedule 1). Turn off for cosmetics, supplements
+                  and other items that carry VAT.
                 </span>
               </span>
             </label>

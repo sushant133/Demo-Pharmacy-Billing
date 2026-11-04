@@ -1,4 +1,6 @@
+import { AuditLog } from "@/models/AuditLog";
 import { Batch } from "@/models/Batch";
+import { CbmsSync } from "@/models/CbmsSync";
 import { Branch } from "@/models/Branch";
 import { Customer } from "@/models/Customer";
 import { Expense } from "@/models/Expense";
@@ -6,6 +8,7 @@ import { Medicine } from "@/models/Medicine";
 import { Pharmacy } from "@/models/Pharmacy";
 import { PlatformEvent } from "@/models/PlatformEvent";
 import { Prescription } from "@/models/Prescription";
+import { PrescriptionImage } from "@/models/PrescriptionImage";
 import { Purchase } from "@/models/Purchase";
 import { Sale } from "@/models/Sale";
 import { Setting } from "@/models/Setting";
@@ -33,6 +36,7 @@ export async function syncTenantIndexes(): Promise<void> {
     Medicine.syncIndexes(),
     Batch.syncIndexes(),
     Sale.syncIndexes(),
+    PrescriptionImage.syncIndexes(),
     Purchase.syncIndexes(),
     Supplier.syncIndexes(),
     Customer.syncIndexes(),
@@ -43,5 +47,12 @@ export async function syncTenantIndexes(): Promise<void> {
     Expense.syncIndexes(),
     // Carries a TTL index, so Mongo sweeps spent reset links itself.
     PasswordReset.syncIndexes(),
+    // Also creates the collection up front: older MongoDB versions refuse to
+    // create one implicitly inside a transaction, which is where audit
+    // entries are written.
+    AuditLog.syncIndexes(),
+    // Its unique index is what stops a retried transaction queueing a bill
+    // for IRD twice.
+    CbmsSync.syncIndexes(),
   ]);
 }

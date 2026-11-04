@@ -554,6 +554,7 @@ describe("calculateTotals", () => {
       discount: 0,
       discountPercent: 0,
       taxableAmount: 1000,
+      exemptAmount: 0,
       vatAmount: 130,
       totalAmount: 1130,
     });
@@ -566,9 +567,35 @@ describe("calculateTotals", () => {
       discount: 100,
       discountPercent: 0,
       taxableAmount: 900,
+      exemptAmount: 0,
       vatAmount: 117,
       totalAmount: 1017,
     });
+  });
+
+  it("charges no VAT on exempt lines", () => {
+    const totals = calculateTotals({
+      grossSubtotal: 1000,
+      exemptSubtotal: 600,
+      vatRate: 0.13,
+    });
+    expect(totals.exemptAmount).toBe(600);
+    expect(totals.vatAmount).toBe(52);
+    expect(totals.totalAmount).toBe(1052);
+  });
+
+  it("shares the discount between exempt and taxable lines by value", () => {
+    const totals = calculateTotals({
+      grossSubtotal: 1000,
+      exemptSubtotal: 600,
+      discount: 100,
+      vatRate: 0.13,
+    });
+    expect(totals.taxableAmount).toBe(900);
+    expect(totals.exemptAmount).toBe(540);
+    // VAT on the 360 that is not exempt.
+    expect(totals.vatAmount).toBe(46.8);
+    expect(totals.totalAmount).toBe(946.8);
   });
 
   it("supports a zero VAT rate", () => {

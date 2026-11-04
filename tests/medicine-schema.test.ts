@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Types } from "mongoose";
 import { Medicine } from "@/models/Medicine";
-import { storedBillNo, displayBillNo } from "@/models/Counter";
+import { storedBillNo } from "@/models/Counter";
 import { medicineSchema } from "@/lib/validation";
 
 describe("Medicine.unitsPerStrip", () => {
@@ -99,8 +99,7 @@ describe("medicineSchema sku", () => {
 });
 
 describe("storedBillNo", () => {
-  it("looks up the printed slash form against the stored hyphen form", () => {
-    expect(displayBillNo("INV-2082-83-000173")).toBe("INV-2082/83-000173");
+  it("still finds a bill from paper printed with a slash in the fiscal year", () => {
     expect(storedBillNo("INV-2082/83-000173")).toBe("INV-2082-83-000173");
     expect(storedBillNo("inv-2082-83-000173")).toBe("INV-2082-83-000173");
   });

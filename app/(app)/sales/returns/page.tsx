@@ -22,7 +22,7 @@ import {
   returnEligibility,
 } from "@/lib/return-eligibility";
 import { pharmacyFilter } from "@/lib/tenant";
-import { displayBillNo, storedBillNo } from "@/models/Counter";
+import { storedBillNo } from "@/models/Counter";
 import { Medicine } from "@/models/Medicine";
 import { Sale } from "@/models/Sale";
 import {
@@ -259,7 +259,7 @@ export default async function SalesReturnsPage({
               id="q"
               name="q"
               defaultValue={q}
-              placeholder="INV-2083/84-000139"
+              placeholder="INV-2083-84-000139"
               className="input"
               autoCapitalize="characters"
               autoComplete="off"
@@ -285,7 +285,7 @@ export default async function SalesReturnsPage({
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3">
             <div className="min-w-0">
               <p className="font-mono text-sm font-semibold text-slate-900">
-                {displayBillNo(sale.billNo)}
+                {sale.billNo}
               </p>
               <p className="text-xs text-slate-500">
                 {formatDateTime(sale.createdAt as unknown as Date)} ·{" "}
@@ -325,7 +325,7 @@ export default async function SalesReturnsPage({
           <Card className="mb-6 overflow-hidden">
             <ReturnWorkflow
               saleId={String(sale._id)}
-              billNo={displayBillNo(sale.billNo)}
+              billNo={sale.billNo}
               lines={lines}
               // The bill's own discount rate, so a refund gives back what was
               // paid rather than the shelf price.
@@ -533,7 +533,7 @@ export default async function SalesReturnsPage({
                         href={`/sales/${String(row._id)}`}
                         className="font-mono font-medium text-brand-700 hover:underline"
                       >
-                        {displayBillNo(row.billNo)}
+                        {row.billNo}
                       </Link>
                     </td>
                     <td className="td">

@@ -14,7 +14,6 @@ import { formatUnitCount } from "@/lib/pack";
 import { pageRule, receiptVars } from "@/lib/print-templates";
 import { round2 } from "@/lib/sale-payment";
 import { getPrintTemplate, getSettings, printedIssuer } from "@/lib/settings";
-import { displayBillNo } from "@/models/Counter";
 import { Sale } from "@/models/Sale";
 import { pharmacyFilter } from "@/lib/tenant";
 import { AutoPrint } from "@/components/AutoPrint";
@@ -87,11 +86,15 @@ export default async function ReturnReceiptPage({
   }
 
   // Numbered from 1 for a human: "return 2 of 3 against INV-…".
-  const receiptNo = `${displayBillNo(sale.billNo)}/R${position + 1}`;
+  const receiptNo = `${sale.billNo}/R${position + 1}`;
   const vatPct = Math.round((sale.vatRate ?? 0.13) * 100);
-  const againstBill = displayBillNo(sale.billNo);
+  const againstBill = sale.billNo;
 
   const meta: BillDocumentRow[] = [
+    // Returns recorded before credit notes had their own series carry none.
+    ...(entry.creditNoteNo
+      ? [{ label: "Credit note no", value: entry.creditNoteNo }]
+      : []),
     { label: "Return no", value: receiptNo },
     { label: "Against bill", value: againstBill },
     ...(bsLabel ? [{ label: "Date (BS)", value: bsLabel }] : []),
@@ -100,6 +103,7 @@ export default async function ReturnReceiptPage({
 
   const party: BillDocumentRow[] = [
     { label: "Customer", value: sale.customerName || "Walk-in customer" },
+    ...(sale.customerPan ? [{ label: "PAN", value: sale.customerPan }] : []),
     ...(sale.customerPhone ? [{ label: "", value: `Tel: ${sale.customerPhone}` }] : []),
     { label: "Reason", value: entry.reason || "—" },
   ];
@@ -109,7 +113,11 @@ export default async function ReturnReceiptPage({
     ...(entry.discount > 0
       ? [{ label: "Less discount given", value: `− ${money(entry.discount)}` }]
       : []),
-    { label: "Taxable", value: money(entry.taxableAmount) },
+    { label: "Exempt", value: money(entry.exemptAmount ?? 0) },
+    {
+      label: "Taxable",
+      value: money(entry.taxableAmount - (entry.exemptAmount ?? 0)),
+    },
     { label: `VAT ${vatPct}%`, value: money(entry.vatAmount) },
     // Part of the value cleared what was still owed on the bill; only the
     // rest was handed back. Older returns carry no split and read as before.
@@ -156,6 +164,8 @@ export default async function ReturnReceiptPage({
           address: issuer.address || undefined,
           phone: issuer.phone || undefined,
           pan: issuer.pan || undefined,
+          licence: settings.drugLicenceNo || undefined,
+          outlet: issuer.outlet,
         }}
         copyLabel="CREDIT NOTE"
         meta={meta}

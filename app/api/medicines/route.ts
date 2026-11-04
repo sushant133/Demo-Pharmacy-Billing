@@ -7,6 +7,7 @@ import { Batch } from "@/models/Batch";
 import { Medicine } from "@/models/Medicine";
 import { pharmacyFilter } from "@/lib/tenant";
 import { resolveUnitsPerStrip } from "@/lib/pack";
+import { medicineSchedule } from "@/lib/constants";
 import { medicineQuerySchema, medicineSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
@@ -116,6 +117,8 @@ export const GET = withRoute(async (req) => {
         doc.unitsPerStrip,
       ),
       requiresPrescription: Boolean(doc.requiresPrescription),
+      schedule: medicineSchedule(doc),
+      vatExempt: doc.vatExempt !== false,
       reorderLevel: doc.reorderLevel ?? null,
       isActive: doc.isActive !== false,
       createdAt: doc.createdAt,
@@ -156,6 +159,8 @@ export const POST = withRoute(async (req) => {
     packSize: medicine.packSize ?? "",
     barcode: medicine.barcode ?? "",
     requiresPrescription: Boolean(medicine.requiresPrescription),
+    schedule: medicineSchedule(medicine),
+    vatExempt: medicine.vatExempt !== false,
     reorderLevel: medicine.reorderLevel ?? null,
     isActive: medicine.isActive !== false,
   });

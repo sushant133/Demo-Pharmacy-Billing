@@ -337,6 +337,12 @@ export interface BillTotalsInput {
   discountPercent?: number;
   /** e.g. 0.13 for 13%. */
   vatRate: number;
+  /**
+   * Gross value of the VAT-exempt lines, already included in grossSubtotal.
+   * Most medicines are exempt under the VAT Act schedule, so a pharmacy bill
+   * routinely mixes the two.
+   */
+  exemptSubtotal?: number;
 }
 
 export interface BillTotals {
@@ -344,7 +350,13 @@ export interface BillTotals {
   discount: number;
   /** 0 when the discount was entered as a rupee amount. */
   discountPercent: number;
+  /** subtotal - discount: every line, exempt or not. */
   taxableAmount: number;
+  /**
+   * The VAT-exempt share of taxableAmount, after its part of the discount.
+   * VAT is charged on taxableAmount - exemptAmount only.
+   */
+  exemptAmount: number;
   vatAmount: number;
   totalAmount: number;
 }
@@ -365,6 +377,7 @@ export function calculateTotals({
   discount = 0,
   discountPercent = 0,
   vatRate,
+  exemptSubtotal = 0,
 }: BillTotalsInput): BillTotals {
   const subtotal = round2(grossSubtotal);
 
@@ -389,13 +402,20 @@ export function calculateTotals({
 
   const appliedDiscount = round2(requested);
   const taxableAmount = round2(subtotal - appliedDiscount);
-  const vatAmount = round2(taxableAmount * vatRate);
+  // A bill-level discount is shared across lines by value, so the exempt lines
+  // carry their proportion of it and only the rest is charged VAT.
+  const exemptGross = Math.min(Math.max(0, round2(exemptSubtotal)), subtotal);
+  const exemptDiscount =
+    subtotal > 0 ? round2((appliedDiscount * exemptGross) / subtotal) : 0;
+  const exemptAmount = round2(exemptGross - exemptDiscount);
+  const vatAmount = round2((taxableAmount - exemptAmount) * vatRate);
 
   return {
     subtotal,
     discount: appliedDiscount,
     discountPercent: appliedPercent,
     taxableAmount,
+    exemptAmount,
     vatAmount,
     totalAmount: round2(taxableAmount + vatAmount),
   };

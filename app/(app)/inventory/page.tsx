@@ -283,7 +283,7 @@ export default async function InventoryPage({
         <StatCard
           label="At or below reorder"
           value={integer(lowCount)}
-          hint="Set a reorder level on a medicine to track it"
+          hint="Lines still on the shelf. Dashboard and Alerts add those already out."
           tone={lowCount > 0 ? "warning" : "default"}
           href={lowCount > 0 ? statusHref("low") : undefined}
         />

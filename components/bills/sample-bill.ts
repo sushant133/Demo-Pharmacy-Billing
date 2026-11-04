@@ -87,6 +87,7 @@ export function sampleBill(overrides: Partial<BillDocumentProps> = {}): BillDocu
     totals: [
       { label: "Subtotal", value: "1,112.00" },
       { label: "Discount (5%)", value: "− 55.60" },
+      { label: "Exempt", value: "0.00" },
       { label: "Taxable", value: "1,056.40" },
       { label: "VAT 13%", value: "137.33" },
       { label: "Grand total", value: "Rs. 1,193.73", grand: true },

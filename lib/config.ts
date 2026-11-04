@@ -89,6 +89,40 @@ export const config = {
   mongoDb,
   authSecret: process.env.AUTH_SECRET ?? "",
   sessionTtlSeconds: num(process.env.AUTH_SESSION_TTL, 60 * 60 * 12),
+  /** Sign out after this long without activity. 0 disables. Default 30 minutes. */
+  idleTimeoutSeconds: num(process.env.AUTH_IDLE_TIMEOUT, 60 * 30),
+  /** Signs each audit-log entry. Falls back to AUTH_SECRET when unset. */
+  auditSecret: process.env.AUDIT_SECRET ?? "",
+  /** Encrypts stored third-party passwords (CBMS). Falls back to AUTH_SECRET. */
+  credentialsSecret: process.env.CREDENTIALS_SECRET ?? "",
+  /**
+   * IRD's Central Billing Monitoring System. Each pharmacy turns it on and
+   * enters its own CBMS username and password in Settings; these only say
+   * where to send and how patiently.
+   */
+  ocrSpace: {
+    /** Blank leaves photo reading to Tesseract on this server. */
+    apiKey: unquoteEnv(process.env.OCR_SPACE_API_KEY),
+    /** The free plan's endpoint. Paid plans are given their own. */
+    apiUrl: unquoteEnv(process.env.OCR_SPACE_API_URL) || "https://api.ocr.space/parse/image",
+    /** Tried in order. 3 reads bill tables best; 2 has the larger allowance. */
+    engines: (unquoteEnv(process.env.OCR_SPACE_ENGINES) || "3,2")
+      .split(",")
+      .map(Number)
+      .filter((engine) => engine === 2 || engine === 3),
+    /** How long one engine gets, before moving on to the next reader. */
+    timeoutMs: num(process.env.OCR_SPACE_TIMEOUT_MS, 45_000),
+  },
+  cbms: {
+    /** Live: https://cbapi.ird.gov.np. IRD gives out a separate test server. */
+    apiUrl: unquoteEnv(process.env.CBMS_API_URL) || "https://cbapi.ird.gov.np",
+    /** How long the till waits for IRD before leaving the bill to the retry queue. */
+    timeoutMs: num(process.env.CBMS_TIMEOUT_MS, 8000),
+    /** How often the retry runner looks for bills that have not reached IRD. 0 disables it. */
+    retryIntervalMs: num(process.env.CBMS_RETRY_INTERVAL_MS, 60_000),
+    /** Bearer token for an external scheduler calling /api/cbms/run. Blank disables that route. */
+    cronSecret: unquoteEnv(process.env.CBMS_CRON_SECRET),
+  },
   vatRate: num(process.env.VAT_RATE, 0.13),
   lowStockThreshold: num(process.env.LOW_STOCK_THRESHOLD, 20),
   expiryAlertDays: num(process.env.EXPIRY_ALERT_DAYS, 90),

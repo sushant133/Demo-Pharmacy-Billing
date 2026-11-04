@@ -32,7 +32,7 @@ export const POST = withRoute<Ctx>(async (_req, ctx) => {
   if (!sale.printedAt) {
     await Sale.updateOne(
       { _id: sale._id, printedAt: null },
-      { $set: { printedAt: new Date() } },
+      { $set: { printedAt: new Date(), printedByName: user.name } },
     );
     return ok({ original: true, reprintCount: 0, label: "ORIGINAL" });
   }

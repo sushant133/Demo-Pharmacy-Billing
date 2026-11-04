@@ -10,6 +10,7 @@ import { Expense } from "@/models/Expense";
 import { Medicine } from "@/models/Medicine";
 import { Pharmacy } from "@/models/Pharmacy";
 import { Prescription } from "@/models/Prescription";
+import { PrescriptionImage, imageBytes } from "@/models/PrescriptionImage";
 import { Purchase } from "@/models/Purchase";
 import { Sale } from "@/models/Sale";
 import { Setting } from "@/models/Setting";
@@ -54,6 +55,7 @@ const COLLECTIONS = [
   "payments",
   "sales",
   "prescriptions",
+  "prescriptionImages",
   "movements",
   "expenses",
   "counters",
@@ -82,12 +84,22 @@ export function serializeValue(value: unknown): unknown {
   if (typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-      if (key === "passwordHash" || key === "__v") continue;
+      // Secrets stay out, sealed or not: a backup file gets passed around.
+      if (key === "passwordHash" || key === "cbmsPasswordEnc" || key === "__v") continue;
       out[key] = serializeValue(entry);
     }
     return out;
   }
   return value;
+}
+
+/** A prescription photo with its bytes as base64, because they are part of the controlled record. */
+export function serializeImage(doc: { data: unknown } & Record<string, unknown>): unknown {
+  const { data, ...rest } = doc;
+  return {
+    ...(serializeValue(rest) as Record<string, unknown>),
+    data: Buffer.from(imageBytes(data)).toString("base64"),
+  };
 }
 
 export function backupFilename(slug: string, at = new Date()): string {
@@ -132,6 +144,7 @@ export async function backupPharmacy(id: string): Promise<{
     payments,
     sales,
     prescriptions,
+    prescriptionImages,
     movements,
     expenses,
     counters,
@@ -147,6 +160,7 @@ export async function backupPharmacy(id: string): Promise<{
     loadAll(SupplierPayment, tenant),
     loadAll(Sale, tenant),
     loadAll(Prescription, tenant),
+    PrescriptionImage.find(tenant).lean(),
     loadAll(StockMovement, tenant),
     loadAll(Expense, tenant),
     Counter.find({ _id: { $regex: `^${prefix}` } }).lean(),
@@ -164,6 +178,7 @@ export async function backupPharmacy(id: string): Promise<{
     payments,
     sales,
     prescriptions,
+    prescriptionImages: prescriptionImages.map(serializeImage),
     movements,
     expenses,
     counters: counters.map(serializeValue),

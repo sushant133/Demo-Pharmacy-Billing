@@ -222,16 +222,37 @@ describe("issuerFor", () => {
     });
   });
 
-  it("lets a branch print its own identity", () => {
-    // A VAT invoice must carry the identity of the outlet that issued it.
+  it("heads every branch bill with the registered name and PAN", () => {
+    // Seller name and PAN must match the IRD registration. The branch says
+    // where the bill was issued, beneath it.
     const issuer = issuerFor(shop, {
-      name: "Sagarmatha Pharmacy, Pokhara",
+      name: "Sushant Kumar Mahato",
       address: "Lakeside",
       phone: "061-555000",
       panNo: "309999999",
     });
-    expect(issuer.name).toBe("Sagarmatha Pharmacy, Pokhara");
-    expect(issuer.pan).toBe("309999999");
+    expect(issuer.name).toBe("Sagarmatha Pharmacy");
+    expect(issuer.pan).toBe("301234567");
+    expect(issuer.outlet).toBe("Sushant Kumar Mahato");
+    expect(issuer.address).toBe("Lakeside");
+  });
+
+  it("never prints a PAN that is not nine digits", () => {
+    expect(issuerFor({ ...shop, pan: "" }, { panNo: "3333333333333" }).pan).toBe("");
+    expect(issuerFor({ ...shop, pan: "3333333333333" }, null).pan).toBe("");
+    expect(issuerFor({ ...shop, pan: "" }, { panNo: "309999999" }).pan).toBe("309999999");
+  });
+
+  it("does not repeat a branch that is named after the pharmacy", () => {
+    expect(issuerFor(shop, { name: "Sagarmatha Pharmacy" }).outlet).toBeUndefined();
+  });
+
+  it("tidies an address typed all in lower case, and only that", () => {
+    expect(issuerFor({ ...shop, address: "nepal", city: "" }, null).address).toBe("Nepal");
+    expect(issuerFor({ ...shop, address: "new road, kathmandu", city: "" }, null).address).toBe(
+      "New Road, Kathmandu",
+    );
+    expect(issuerFor({ ...shop, address: "GPO Box 12", city: "" }, null).address).toBe("GPO Box 12");
   });
 
   it("falls back field by field, not all or nothing", () => {
@@ -243,7 +264,7 @@ describe("issuerFor", () => {
       phone: "",
       panNo: "",
     });
-    expect(issuer.name).toBe("Pokhara counter");
+    expect(issuer.outlet).toBe("Pokhara counter");
     expect(issuer.address).toBe("Baneshwor, Kathmandu");
     expect(issuer.phone).toBe("01-4567890");
     expect(issuer.pan).toBe("301234567");

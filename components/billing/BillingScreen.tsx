@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { apiFetch, qs } from "@/lib/client";
+import { shrinkPhoto } from "@/lib/photo";
 import { describeExpiry, expiryTone, formatExpiry, money } from "@/lib/format";
 import {
   describeQuantity,
@@ -24,6 +25,7 @@ import { ConfirmSale } from "@/components/billing/ConfirmSale";
 import { SaleComplete, type CompletedSale } from "@/components/billing/SaleComplete";
 import {
   IRD_BUYER_DETAIL_THRESHOLD,
+  isControlledSchedule,
   PAYMENT_MODES,
   PAYMENT_MODE_LABELS,
   type PaymentMode,
@@ -99,6 +101,14 @@ const DISCOUNT_STEPS = [0, 5, 10, 15, 20] as const;
 /** Notes a cashier can hand over without counting: the common ones first. */
 const CASH_STEPS = [100, 500, 1000, 5000] as const;
 
+const EMPTY_CONTROLLED = {
+  patientName: "",
+  recipientName: "",
+  prescriberName: "",
+  prescriberNmcNo: "",
+  prescriptionRef: "",
+};
+
 const lineKey = (medicineId: string, batchId: string | null) =>
   `${medicineId}:${batchId ?? "auto"}`;
 
@@ -109,9 +119,15 @@ export function BillingScreen({
   canSellOnCredit = true,
   canAddCustomer = false,
   canReceivePayment = false,
+  buyerDetailThreshold = IRD_BUYER_DETAIL_THRESHOLD,
+  vatRate = 0,
 }: {
   cashierName: string;
   outletName: string;
+  /** The shop's abbreviated-invoice limit: above it, the buyer must be named. */
+  buyerDetailThreshold?: number;
+  /** The shop's rate as a fraction, so an empty cart shows the real one. */
+  vatRate?: number;
   canDiscount?: boolean;
   canSellOnCredit?: boolean;
   canAddCustomer?: boolean;
@@ -136,6 +152,9 @@ export function BillingScreen({
   const [customerAddress, setCustomerAddress] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [note, setNote] = useState("");
+  const [controlled, setControlled] = useState(EMPTY_CONTROLLED);
+  const [prescriptionImage, setPrescriptionImage] = useState<string | null>(null);
+  const [prescriptionPhotoError, setPrescriptionPhotoError] = useState<string | null>(null);
 
   const [plan, setPlan] = useState<SalePlan | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
@@ -371,6 +390,9 @@ export function BillingScreen({
     setCustomerAddress("");
     setCustomerPhone("");
     setNote("");
+    setControlled(EMPTY_CONTROLLED);
+    setPrescriptionImage(null);
+    setPrescriptionPhotoError(null);
     setPlan(null);
     setPlanError(null);
     setSubmitError(null);
@@ -416,7 +438,20 @@ export function BillingScreen({
   const paymentBlocked = settlement.remaining > 0 && !canSellOnCredit;
 
   const buyerNameMissing =
-    Boolean(plan) && total >= IRD_BUYER_DETAIL_THRESHOLD && !customerName.trim();
+    Boolean(plan) && total > buyerDetailThreshold && !customerName.trim();
+
+  // The server refuses these too. Asking here means the cashier fills them in
+  // with the prescription still in hand, rather than at the confirmation.
+  const controlledLines = (plan?.lines ?? []).filter((line) =>
+    isControlledSchedule(line.schedule),
+  );
+  const controlledIds = new Set(controlledLines.map((line) => line.medicineId));
+  const controlledIncomplete =
+    controlledLines.length > 0 &&
+    (controlled.patientName.trim().length < 2 ||
+      controlled.prescriberName.trim().length < 2 ||
+      !controlled.prescriberNmcNo.trim() ||
+      !(prescriptionImage || controlled.prescriptionRef.trim()));
 
   const readyToConfirm =
     Boolean(plan) &&
@@ -424,7 +459,26 @@ export function BillingScreen({
     !quoting &&
     !submitting &&
     !paymentBlocked &&
+    !controlledIncomplete &&
     !planError;
+
+  async function attachPrescriptionPhoto(file: File | undefined) {
+    setPrescriptionPhotoError(null);
+    if (!file) return;
+    try {
+      const blob = await shrinkPhoto(file);
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(blob);
+      });
+      setPrescriptionImage(dataUrl);
+    } catch {
+      setPrescriptionImage(null);
+      setPrescriptionPhotoError("That photo could not be read. Try another.");
+    }
+  }
 
   // --- Submit -------------------------------------------------------------
   const completeSale = useCallback(async () => {
@@ -448,6 +502,17 @@ export function BillingScreen({
           customerPan: customerPan.trim(),
           customerAddress: customerAddress.trim(),
           customerPhone: customerPhone.trim(),
+          controlled:
+            controlledLines.length > 0
+              ? {
+                  patientName: controlled.patientName.trim(),
+                  recipientName: controlled.recipientName.trim(),
+                  prescriberName: controlled.prescriberName.trim(),
+                  prescriberNmcNo: controlled.prescriberNmcNo.trim(),
+                  prescriptionRef: controlled.prescriptionRef.trim(),
+                  ...(prescriptionImage ? { prescriptionImage } : {}),
+                }
+              : null,
           discount: discountValue,
           discountPercent: percentValue,
           paymentMode,
@@ -488,6 +553,8 @@ export function BillingScreen({
   }, [
     cart,
     changeDue,
+    controlled,
+    controlledLines.length,
     customerAddress,
     customerId,
     customerName,
@@ -498,6 +565,7 @@ export function BillingScreen({
     paymentMode,
     percentValue,
     plan,
+    prescriptionImage,
     quantityFor,
     receivedValue,
     settlement.paid,
@@ -585,7 +653,7 @@ export function BillingScreen({
   );
   const buyerDetailsNeeded =
     buyerDetailsFilled ||
-    Boolean(plan && plan.totalAmount >= IRD_BUYER_DETAIL_THRESHOLD);
+    Boolean(plan && plan.totalAmount > buyerDetailThreshold);
 
   // The sale is done. Nothing navigates on its own - the counter chooses.
   if (completed) {
@@ -974,7 +1042,17 @@ export function BillingScreen({
                       ? planLine.lineTotal / plan.subtotal
                       : 0;
                   const lineDiscount = plan ? plan.discount * share : 0;
-                  const lineVat = plan ? plan.vatAmount * share : 0;
+                  // VAT only falls on the lines that are not exempt, so it is
+                  // shared across those alone.
+                  const vatableGross = plan
+                    ? plan.lines
+                        .filter((entry) => !entry.vatExempt)
+                        .reduce((sum, entry) => sum + entry.lineTotal, 0)
+                    : 0;
+                  const lineVat =
+                    plan && planLine && !planLine.vatExempt && vatableGross > 0
+                      ? (plan.vatAmount * planLine.lineTotal) / vatableGross
+                      : 0;
                   const linePayable = planLine
                     ? planLine.lineTotal - lineDiscount + lineVat
                     : 0;
@@ -1007,6 +1085,11 @@ export function BillingScreen({
                             {line.requiresPrescription ? (
                               <Badge tone="amber" className="ml-2">
                                 Rx
+                              </Badge>
+                            ) : null}
+                            {controlledIds.has(line.medicineId) ? (
+                              <Badge tone="rose" className="ml-2">
+                                Controlled
                               </Badge>
                             ) : null}
                             {line.batchId ? (
@@ -1193,7 +1276,7 @@ export function BillingScreen({
             <h2 className="text-sm font-semibold text-slate-900">Checkout</h2>
             <p className="text-[11px] text-slate-500">
               Walk-in is fine. Name is required above Rs.{" "}
-              {IRD_BUYER_DETAIL_THRESHOLD.toLocaleString("en-NP")}.
+              {buyerDetailThreshold.toLocaleString("en-NP")}.
             </p>
           </div>
 
@@ -1552,6 +1635,60 @@ export function BillingScreen({
             </section>
 
             <section className="px-4 py-3">
+              {controlledLines.length > 0 ? (
+                <div className="mb-3 space-y-2 rounded-xl border border-rose-200 bg-rose-50/60 p-3">
+                  <p className="text-xs font-medium text-rose-800">
+                    Controlled drug: {controlledLines.map((line) => line.medicineName).join(", ")}.
+                    Required for the DDA register.
+                  </p>
+                  {(
+                    [
+                      ["patientName", "Patient name"],
+                      ["recipientName", "Collected by, if not the patient"],
+                      ["prescriberName", "Prescribed by"],
+                      ["prescriberNmcNo", "Prescriber NMC no."],
+                      ["prescriptionRef", "Paper prescription filed as"],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <div key={key}>
+                      <label htmlFor={`controlled-${key}`} className="label">
+                        {label}
+                      </label>
+                      <input
+                        id={`controlled-${key}`}
+                        value={controlled[key]}
+                        onChange={(event) =>
+                          setControlled((current) => ({ ...current, [key]: event.target.value }))
+                        }
+                        className="input"
+                      />
+                    </div>
+                  ))}
+                  <div>
+                    <label htmlFor="controlled-photo" className="label">
+                      Prescription photo
+                    </label>
+                    <input
+                      id="controlled-photo"
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onChange={(event) => void attachPrescriptionPhoto(event.target.files?.[0])}
+                      className="block w-full text-xs text-slate-600"
+                    />
+                    {prescriptionPhotoError ? (
+                      <p className="mt-1 text-xs text-rose-700">{prescriptionPhotoError}</p>
+                    ) : (
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        {prescriptionImage
+                          ? "Photo attached."
+                          : "A photo, or the filing reference above, is required."}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+
               <label htmlFor="sale-note" className="label">
                 Note <span className="font-normal text-slate-400">optional</span>
               </label>
@@ -1586,8 +1723,11 @@ export function BillingScreen({
                   className="text-rose-600"
                 />
               ) : null}
+              {plan && plan.exemptAmount > 0 ? (
+                <Row label="VAT exempt" value={money(plan.exemptAmount)} />
+              ) : null}
               <Row
-                label={`VAT (${plan ? Math.round(plan.vatRate * 100) : 13}%)`}
+                label={`VAT (${Math.round((plan ? plan.vatRate : vatRate) * 100)}%)`}
                 value={plan ? money(plan.vatAmount) : "—"}
               />
               {quoting ? (
@@ -1636,8 +1776,8 @@ export function BillingScreen({
                   className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
                 >
                   IRD requires the buyer&apos;s name (and PAN if they have one) on
-                  bills of Rs. {IRD_BUYER_DETAIL_THRESHOLD.toLocaleString("en-NP")}{" "}
-                  or more. Add them above before completing.
+                  bills above Rs. {buyerDetailThreshold.toLocaleString("en-NP")}.
+                  Add them above before completing.
                 </div>
               ) : null}
 

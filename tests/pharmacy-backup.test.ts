@@ -3,6 +3,7 @@ import { Types } from "mongoose";
 import {
   BACKUP_FORMAT,
   backupFilename,
+  serializeImage,
   serializeValue,
 } from "@/lib/pharmacy-backup";
 
@@ -17,6 +18,20 @@ describe("backupFilename", () => {
     expect(backupFilename("Sagarmatha Pharmacy", new Date("2026-01-02T00:00:00Z"))).toBe(
       "sagarmatha-pharmacy-2026-01-02.json",
     );
+  });
+});
+
+describe("what a backup carries", () => {
+  it("leaves the sealed CBMS password out", () => {
+    const out = serializeValue({ cbmsUsername: "shop", cbmsPasswordEnc: "sealed" }) as Record<string, unknown>;
+    expect(out.cbmsUsername).toBe("shop");
+    expect(out.cbmsPasswordEnc).toBeUndefined();
+  });
+
+  it("keeps a prescription photo's bytes, readable again from the file", () => {
+    const out = serializeImage({ contentType: "image/jpeg", data: Buffer.from("photo-bytes") }) as Record<string, string>;
+    expect(Buffer.from(out.data!, "base64").toString()).toBe("photo-bytes");
+    expect(out.contentType).toBe("image/jpeg");
   });
 });
 

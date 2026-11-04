@@ -181,9 +181,12 @@ export function CreatePharmacyForm() {
           </div>
           <div>
             <label htmlFor="drugLicenceNo" className="label">
-              DDA drug licence <span className="font-normal text-slate-400">(optional)</span>
+              DDA drug licence
             </label>
-            <input id="drugLicenceNo" name="drugLicenceNo" className="input" />
+            <input id="drugLicenceNo" name="drugLicenceNo" required className="input" />
+            {errors.drugLicenceNo ? (
+              <p className="mt-1.5 text-xs text-rose-600">{errors.drugLicenceNo}</p>
+            ) : null}
           </div>
           <div>
             <label htmlFor="licenceExpiry" className="label">

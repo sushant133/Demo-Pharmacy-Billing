@@ -35,9 +35,10 @@ describe("isLowStock", () => {
     expect(isLowStock(level({ sellable: 21, reorderLevel: 20 }))).toBe(false);
   });
 
-  it("is never low when the medicine has no reorder level set", () => {
-    expect(isLowStock(level({ sellable: 1, reorderLevel: null }))).toBe(false);
-    expect(isLowStock(level({ sellable: 0, reorderLevel: null }))).toBe(false);
+  it("uses the shop default when the medicine has no reorder level of its own", () => {
+    const limit = config.lowStockThreshold;
+    expect(isLowStock(level({ sellable: limit, reorderLevel: null }))).toBe(true);
+    expect(isLowStock(level({ sellable: limit + 1, reorderLevel: null }))).toBe(false);
   });
 });
 

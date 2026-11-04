@@ -254,6 +254,33 @@ export default async function SaleDetailPage({
         </Card>
 
         <div className="space-y-4">
+          {sale.controlled ? (
+            <Card className="p-4">
+              <h2 className="text-sm font-semibold text-slate-900">Controlled drug record</h2>
+              <dl className="mt-3 space-y-2 text-sm">
+                <Row label="Patient" value={sale.controlled.patientName} />
+                {sale.controlled.recipientName ? (
+                  <Row label="Collected by" value={sale.controlled.recipientName} />
+                ) : null}
+                <Row label="Prescribed by" value={sale.controlled.prescriberName} />
+                <Row label="NMC no." value={sale.controlled.prescriberNmcNo} />
+                {sale.controlled.prescriptionRef ? (
+                  <Row label="Filed as" value={sale.controlled.prescriptionRef} />
+                ) : null}
+              </dl>
+              {sale.controlled.hasImage ? (
+                <a
+                  href={`/api/sales/${String(sale._id)}/prescription-image`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-3 inline-block text-xs font-medium text-brand-700 hover:underline"
+                >
+                  View prescription photo
+                </a>
+              ) : null}
+            </Card>
+          ) : null}
+
           <Card className="p-4">
             <h2 className="text-sm font-semibold text-slate-900">Payment</h2>
             <dl className="mt-3 space-y-2 text-sm">
@@ -268,7 +295,11 @@ export default async function SaleDetailPage({
                   value={`− ${money(sale.discount)}`}
                 />
               ) : null}
-              <Row label="Taxable" value={money(sale.taxableAmount)} />
+              <Row label="Exempt" value={money(sale.exemptAmount ?? 0)} />
+              <Row
+                label="Taxable"
+                value={money(sale.taxableAmount - (sale.exemptAmount ?? 0))}
+              />
               <Row
                 label={`VAT @ ${Math.round(sale.vatRate * 100)}%`}
                 value={money(sale.vatAmount)}
@@ -470,6 +501,30 @@ export default async function SaleDetailPage({
               <Row label="Customer" value={sale.customerName || "Walk-in"} />
               <Row label="Cashier" value={sale.soldByName || "—"} />
               <Row label="Branch" value={sale.branchName || "—"} />
+              <Row
+                label="Invoice type"
+                value={sale.invoiceType === "abbreviated" ? "Abbreviated" : "Full tax invoice"}
+              />
+              <Row
+                label="Printed"
+                value={
+                  sale.printedAt
+                    ? `Original + ${sale.reprintCount ?? 0} cop${(sale.reprintCount ?? 0) === 1 ? "y" : "ies"}`
+                    : "Not yet"
+                }
+              />
+              <Row
+                label="IRD CBMS"
+                value={
+                  {
+                    none: "Not reported",
+                    pending: "Sending",
+                    synced: `Accepted${sale.cbmsSyncedAt ? ` ${formatDateTime(sale.cbmsSyncedAt)}` : ""}`,
+                    failed: `Failed - retrying (${sale.cbmsMessage || "no answer"})`,
+                    disabled: "Not sent - CBMS off",
+                  }[sale.cbmsStatus ?? "none"] ?? "Not reported"
+                }
+              />
             </dl>
             {sale.note ? (
               <p className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-600">

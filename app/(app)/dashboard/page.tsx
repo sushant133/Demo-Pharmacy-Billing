@@ -446,7 +446,7 @@ export default async function DashboardPage({
           {showTill ? (
           <Card className="order-7">
             <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-              <h2 className="text-sm font-semibold text-slate-900">Recent sales</h2>
+              <h2 className="text-sm font-semibold text-slate-900">Latest bills, any day</h2>
               <Link href="/sales" className="text-xs font-medium text-brand-700 hover:text-brand-800">
                 View all
               </Link>
@@ -624,9 +624,9 @@ export default async function DashboardPage({
                   hint="At cost"
                 />
                 <HealthRow
-                  label="Needs reorder"
-                  value={integer(summary.lowStockCount)}
-                  tone={summary.lowStockCount > 0 ? "warning" : undefined}
+                  label="Needs ordering"
+                  value={integer(needsOrdering)}
+                  tone={needsOrdering > 0 ? "warning" : undefined}
                 />
                 <HealthRow
                   label={`Expiring in ${summary.expiryWindowDays} days`}

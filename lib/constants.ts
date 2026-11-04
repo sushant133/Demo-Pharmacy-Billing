@@ -140,3 +140,64 @@ export const SUPPLIER_PAYMENT_METHOD_LABELS: Record<SupplierPaymentMethod, strin
   khalti: "Khalti",
   adjustment: "Adjustment",
 };
+
+/**
+ * Where a medicine sits under the Drugs Act 2035.
+ *
+ * Over-the-counter and prescription lines differ only by a warning at the till.
+ * Narcotic and psychotropic lines are controlled: the sale is refused until the
+ * patient, prescriber and prescription are recorded, and every unit in and out
+ * appears on the record DDA asks a retailer to keep.
+ */
+export const MEDICINE_SCHEDULES = ["otc", "rx", "psychotropic", "narcotic"] as const;
+export type MedicineSchedule = (typeof MEDICINE_SCHEDULES)[number];
+
+export const MEDICINE_SCHEDULE_LABELS: Record<MedicineSchedule, string> = {
+  otc: "Over the counter",
+  rx: "Prescription (Rx)",
+  psychotropic: "Psychotropic",
+  narcotic: "Narcotic",
+};
+
+export const CONTROLLED_SCHEDULES: readonly MedicineSchedule[] = ["psychotropic", "narcotic"];
+
+export function isControlledSchedule(schedule: unknown): boolean {
+  return schedule === "psychotropic" || schedule === "narcotic";
+}
+
+/**
+ * A medicine's schedule, read safely from a record that may predate the field.
+ * Those only ever carried the Rx flag, so that flag decides between the two
+ * uncontrolled schedules.
+ */
+export function medicineSchedule(medicine: {
+  schedule?: unknown;
+  requiresPrescription?: unknown;
+}): MedicineSchedule {
+  if (isControlledSchedule(medicine.schedule)) {
+    return medicine.schedule as MedicineSchedule;
+  }
+  if (medicine.schedule === "rx" || medicine.requiresPrescription) return "rx";
+  return "otc";
+}
+
+/**
+ * Categories a pharmacy sells that are not medicines, and so carry VAT.
+ * Schedule 1 of the VAT Act 2052 exempts medicines, not everything on the shelf.
+ */
+const TAXABLE_CATEGORY = /supplement|cosmetic|nutrition|device|equipment|personal care|baby|food/i;
+
+/**
+ * Names that say a product is toiletry, for lines with no category yet, such as
+ * those arriving on a supplier's bill. No word boundaries: bills run words
+ * together, as in "SOAP75GM" and "FACEWASH".
+ */
+const TAXABLE_NAME = /soap|face\s*wash|shampoo|conditioner|sunscreen|saniti[sz]er|moisturi[sz]er|toothpaste|mouth\s*wash|lotion|diaper|perfume/i;
+
+/**
+ * Whether a new catalogue line starts as VAT exempt. Only a starting point: the
+ * shop can change it per item, because the schedule is the shop's to apply.
+ */
+export function defaultVatExempt(category?: string | null, name?: string | null): boolean {
+  return !TAXABLE_CATEGORY.test(category ?? "") && !TAXABLE_NAME.test(name ?? "");
+}

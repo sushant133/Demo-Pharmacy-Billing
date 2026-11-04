@@ -7,7 +7,6 @@ import { localParts } from "@/lib/dates";
 import { formatExpiry } from "@/lib/format";
 import { getPrintTemplate, getSettings, printedIssuer } from "@/lib/settings";
 import { INVOICE_CONTENT_TYPE, toInvoicePdf } from "@/lib/export/invoice-pdf";
-import { displayBillNo } from "@/models/Counter";
 import { Sale } from "@/models/Sale";
 import type { PaymentMode } from "@/lib/constants";
 import { pharmacyFilter } from "@/lib/tenant";
@@ -65,7 +64,7 @@ export const GET = withRoute<Ctx>(async (_req, ctx) => {
   }
 
   const pdf = await toInvoicePdf({
-    billNo: displayBillNo(sale.billNo),
+    billNo: sale.billNo,
     issuedAt,
     bsDate,
     fiscalYear: sale.fiscalYear?.replace("-", "/") ?? "",
@@ -76,6 +75,8 @@ export const GET = withRoute<Ctx>(async (_req, ctx) => {
       pan: issuer.pan,
       vatNumber: settings.vatRegistered ? settings.vatNumber : "",
       email: settings.email,
+      licence: settings.drugLicenceNo,
+      outlet: issuer.outlet,
     },
     buyer: {
       name: sale.customerName ?? "",
@@ -96,6 +97,7 @@ export const GET = withRoute<Ctx>(async (_req, ctx) => {
     discount: sale.discount,
     discountPercent: sale.discountPercent ?? 0,
     taxableAmount: sale.taxableAmount,
+    exemptAmount: sale.exemptAmount ?? 0,
     vatRate: sale.vatRate ?? 0.13,
     vatAmount: sale.vatAmount,
     totalAmount: sale.totalAmount,
@@ -107,10 +109,11 @@ export const GET = withRoute<Ctx>(async (_req, ctx) => {
     terms: settings.billTerms,
     footerNote: settings.billFooterNote,
     voided: Boolean(sale.voidedAt),
+    invoiceType: sale.invoiceType === "abbreviated" ? "abbreviated" : "full",
     reprintCount: sale.reprintCount ?? 0,
   }, template.id);
 
-  const fileName = `invoice-${displayBillNo(sale.billNo).replace(/[^\w.-]+/g, "-")}.pdf`;
+  const fileName = `invoice-${sale.billNo.replace(/[^\w.-]+/g, "-")}.pdf`;
 
   return new Response(new Uint8Array(pdf), {
     headers: {

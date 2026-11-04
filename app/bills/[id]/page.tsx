@@ -12,7 +12,7 @@ import { formatDateTime, formatExpiry, money } from "@/lib/format";
 import { formatUnitCount } from "@/lib/pack";
 import { amountInWords } from "@/lib/money-words";
 import { pageRule, receiptVars } from "@/lib/print-templates";
-import { displayBillNo } from "@/models/Counter";
+import { storedBillNo } from "@/models/Counter";
 import { Sale, PAYMENT_MODE_LABELS, type PaymentMode } from "@/models/Sale";
 import { pharmacyFilter } from "@/lib/tenant";
 import { objectIdSchema } from "@/lib/validation";
@@ -57,7 +57,7 @@ export default async function BillPage({
       objectIdSchema.safeParse(id).success
         ? { _id: id, ...pharmacyFilter(user) }
         : {
-            billNo: decodeURIComponent(id).toUpperCase(),
+            billNo: storedBillNo(decodeURIComponent(id)),
             ...pharmacyFilter(user),
           },
     ).lean();
@@ -97,7 +97,7 @@ export default async function BillPage({
   // the counter asked for it reads. It is not the same as "paid nothing".
   const received = sale.amountReceived ?? 0;
   const change = received - sale.totalAmount;
-  const shownBillNo = displayBillNo(sale.billNo);
+  const shownBillNo = sale.billNo;
   const voided = Boolean(sale.voidedAt);
   const alreadyPrinted = Boolean(sale.printedAt);
   const paymentLabel =
@@ -122,6 +122,8 @@ export default async function BillPage({
     ...(sale.customerPhone ? [{ label: "", value: `Tel: ${sale.customerPhone}` }] : []),
   ];
 
+  const exemptAmount = sale.exemptAmount ?? 0;
+  const taxableNet = Math.max(0, sale.taxableAmount - exemptAmount);
   const totals: BillDocumentTotal[] = [
     { label: "Subtotal", value: money(sale.subtotal) },
     // Naming the percentage saves the customer working backwards from a
@@ -137,7 +139,9 @@ export default async function BillPage({
           },
         ]
       : []),
-    { label: "Taxable", value: money(sale.taxableAmount) },
+    // IRD wants exempt and taxable sales stated apart; VAT is on the second.
+    { label: "Exempt", value: money(exemptAmount) },
+    { label: "Taxable", value: money(taxableNet) },
     { label: `VAT ${vatPct}%`, value: money(sale.vatAmount) },
     { label: "Grand total", value: money(sale.totalAmount), grand: true },
     // Only printed when the till was actually told what was handed over. A
@@ -154,9 +158,12 @@ export default async function BillPage({
       : []),
   ];
 
+  const abbreviated = sale.invoiceType === "abbreviated";
   const document: Omit<BillDocumentProps, "copyLabel"> = {
     templateId: template.id,
-    kicker: "कर बीजक / TAX INVOICE",
+    kicker: abbreviated
+      ? "संक्षिप्त कर बीजक / ABBREVIATED TAX INVOICE"
+      : "कर बीजक / TAX INVOICE",
     issuer: {
       name: issuer.name,
       legalName: settings.legalName || undefined,
@@ -166,6 +173,7 @@ export default async function BillPage({
       pan: issuer.pan || undefined,
       vat: vatNumber,
       licence: settings.drugLicenceNo || undefined,
+      outlet: issuer.outlet,
     },
     banner: voided
       ? `VOID — ${formatDateTime(sale.voidedAt as unknown as Date)}${
@@ -197,6 +205,8 @@ export default async function BillPage({
 
   const receipt: ThermalReceipt = {
     shop: issuer.name,
+    outlet: issuer.outlet,
+    abbreviated,
     address: issuer.address || undefined,
     phone: issuer.phone || undefined,
     pan: issuer.pan || undefined,
@@ -221,7 +231,8 @@ export default async function BillPage({
     })),
     subtotal: money(sale.subtotal),
     discount: sale.discount > 0 ? `− ${money(sale.discount)}` : undefined,
-    taxable: money(sale.taxableAmount),
+    exempt: money(exemptAmount),
+    taxable: money(taxableNet),
     vatLabel: `VAT ${vatPct}%`,
     vatAmount: money(sale.vatAmount),
     total: money(sale.totalAmount),
@@ -257,12 +268,15 @@ export default async function BillPage({
 
       {!issuer.pan ? (
         <p className="no-print receipt-notice border-amber-200 bg-amber-50 text-amber-800">
-          No seller PAN is set, and a tax invoice without one is not valid. Add
-          it under{" "}
-          <Link href="/settings" className="font-medium underline">
-            Settings
-          </Link>
-          , or on the outlet itself if branches file separately.
+          No valid seller PAN is on record, and a tax invoice without one is not
+          valid. The platform administrator sets it on the pharmacy record.
+        </p>
+      ) : null}
+
+      {!settings.drugLicenceNo ? (
+        <p className="no-print receipt-notice border-amber-200 bg-amber-50 text-amber-800">
+          No DDA drug licence is on record, so none prints on this bill. The
+          platform administrator sets it on the pharmacy record.
         </p>
       ) : null}
 

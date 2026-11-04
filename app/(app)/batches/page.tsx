@@ -159,7 +159,7 @@ export default async function BatchesPage({
         <StatCard
           label="Expiry window"
           value={`${config.expiryAlertDays} days`}
-          hint="Configured via EXPIRY_ALERT_DAYS"
+          hint="Lots inside this window show as expiring"
         />
       </div>
 

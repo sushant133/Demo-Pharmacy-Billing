@@ -150,7 +150,7 @@ describe("thermal text at the template's width", () => {
     shop: "Sagarmatha Pharmacy",
     pan: "301234567",
     copyLabel: "ORIGINAL",
-    billNo: "INV-2082/83-000001",
+    billNo: "INV-2082-83-000001",
     dateAd: "05 Sep 2026, 14:05",
     payment: "Cash",
     buyer: "Walk-in customer",

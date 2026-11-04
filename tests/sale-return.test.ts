@@ -46,6 +46,17 @@ describe("planSaleReturn", () => {
     expect(plan.items[0]?.batchNumber).toBe("CTZ-2201");
   });
 
+  it("gives no VAT back on an exempt line", () => {
+    const plan = planSaleReturn(
+      { ...sale, items: [{ ...line, vatExempt: true }] },
+      [{ lineIndex: 0, quantity: 2 }],
+    );
+    expect(plan.taxableAmount).toBe(18);
+    expect(plan.exemptAmount).toBe(18);
+    expect(plan.vatAmount).toBe(0);
+    expect(plan.totalAmount).toBe(18);
+  });
+
   it("refuses more units than are still on the customer", () => {
     expect(() =>
       planSaleReturn(

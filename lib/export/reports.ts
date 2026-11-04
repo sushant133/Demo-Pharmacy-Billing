@@ -20,6 +20,20 @@ import { Supplier } from "@/models/Supplier";
 import { SupplierPayment } from "@/models/SupplierPayment";
 import { getBalancesFor } from "@/lib/suppliers";
 import type { ReportDataset } from "@/lib/export/dataset";
+import {
+  billNumberGaps,
+  cancelledInvoices,
+  cbmsUnsynced,
+  controlledRegister,
+  creditNoteBook,
+  debitNoteBook,
+  invoiceRegister,
+  materializedView,
+  partiesAboveLakh,
+  purchaseBook,
+  salesBook,
+  vatReturn,
+} from "@/lib/export/ird-reports";
 
 /**
  * Report builders.
@@ -40,6 +54,18 @@ export const REPORT_KEYS = [
   "reorder",
   "purchase-register",
   "payables",
+  "invoice-register",
+  "cancelled-invoices",
+  "sales-book",
+  "purchase-book",
+  "credit-note-book",
+  "debit-note-book",
+  "parties-above-lakh",
+  "vat-return",
+  "cbms-unsynced",
+  "bill-number-gaps",
+  "materialized-view",
+  "controlled-register",
 ] as const;
 export type ReportKey = (typeof REPORT_KEYS)[number];
 
@@ -72,6 +98,18 @@ export const REPORT_LABELS: Record<ReportKey, string> = {
   reorder: "Reorder report",
   "purchase-register": "Purchase register",
   payables: "Supplier payables",
+  "invoice-register": "Invoice register",
+  "cancelled-invoices": "Cancelled invoices",
+  "sales-book": "Sales book (IRD)",
+  "purchase-book": "Purchase book (IRD)",
+  "credit-note-book": "Credit note book",
+  "debit-note-book": "Debit note book",
+  "parties-above-lakh": "Customers & suppliers above NPR 1 lakh",
+  "vat-return": "VAT return",
+  "cbms-unsynced": "Bills not yet in CBMS",
+  "bill-number-gaps": "Bill number gaps",
+  "materialized-view": "Materialized view (IRD)",
+  "controlled-register": "Narcotic & psychotropic register (DDA)",
 };
 
 export const REPORT_DESCRIPTIONS: Record<ReportKey, string> = {
@@ -85,7 +123,35 @@ export const REPORT_DESCRIPTIONS: Record<ReportKey, string> = {
   reorder: "What to order, with a suggested quantity.",
   "purchase-register": "Deliveries received, with VAT and payment status.",
   payables: "What is owed to each supplier, and what is overdue.",
+  "invoice-register": "Every invoice in number order, cancelled ones included.",
+  "cancelled-invoices": "Cancelled invoices with who cancelled them and why.",
+  "sales-book": "IRD sales book: buyer PAN, exempt, taxable and VAT.",
+  "purchase-book": "IRD purchase book: supplier PAN, exempt, taxable and VAT.",
+  "credit-note-book": "Sales returns, each against its original invoice.",
+  "debit-note-book": "Returns to suppliers, each against the purchase invoice.",
+  "parties-above-lakh": "Parties whose dealings exceed NPR 1,00,000. Run for a full fiscal year.",
+  "vat-return": "Output VAT, input VAT and the amount payable for the period.",
+  "cbms-unsynced": "Invoices and credit notes IRD's CBMS has not accepted yet.",
+  "bill-number-gaps": "Any number missing from the bill series, across every branch.",
+  "materialized-view": "One row per bill, in the columns IRD's e-billing procedure names.",
+  "controlled-register": "DDA's retailer's record: every controlled unit in and out, with patient and prescriber.",
 };
+
+/** The books kept for IRD, listed apart from the management reports. */
+export const IRD_REPORTS: ReadonlySet<ReportKey> = new Set([
+  "invoice-register",
+  "cancelled-invoices",
+  "sales-book",
+  "purchase-book",
+  "credit-note-book",
+  "debit-note-book",
+  "parties-above-lakh",
+  "vat-return",
+  "cbms-unsynced",
+  "bill-number-gaps",
+  "materialized-view",
+  "controlled-register",
+]);
 
 /** Which reports are scoped by the date range (the rest are point-in-time). */
 export const DATED_REPORTS: ReadonlySet<ReportKey> = new Set([
@@ -95,6 +161,18 @@ export const DATED_REPORTS: ReadonlySet<ReportKey> = new Set([
   "stock-movements",
   "profit-by-medicine",
   "purchase-register",
+  "invoice-register",
+  "cancelled-invoices",
+  "sales-book",
+  "purchase-book",
+  "credit-note-book",
+  "debit-note-book",
+  "parties-above-lakh",
+  "vat-return",
+  "cbms-unsynced",
+  "bill-number-gaps",
+  "materialized-view",
+  "controlled-register",
 ]);
 
 const round2 = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
@@ -765,6 +843,18 @@ const BUILDERS: Record<ReportKey, (request: ReportRequest) => Promise<ReportData
   reorder: reorderReport,
   "purchase-register": purchaseRegister,
   payables: payablesReport,
+  "invoice-register": invoiceRegister,
+  "cancelled-invoices": cancelledInvoices,
+  "sales-book": salesBook,
+  "purchase-book": purchaseBook,
+  "credit-note-book": creditNoteBook,
+  "debit-note-book": debitNoteBook,
+  "parties-above-lakh": partiesAboveLakh,
+  "vat-return": vatReturn,
+  "cbms-unsynced": cbmsUnsynced,
+  "bill-number-gaps": billNumberGaps,
+  "materialized-view": materializedView,
+  "controlled-register": controlledRegister,
 };
 
 export function isReportKey(value: string): value is ReportKey {

@@ -55,13 +55,14 @@ export const STOCK_FILTER_LABELS: Record<StockFilter, string> = {
 };
 
 /**
- * At or under the reorder level the pharmacy set for this medicine.
+ * At or under this medicine's reorder level, or the shop default if it has none,
+ * which is the rule the medicine form promises and the Alerts screen applies.
  *
  * Counted on sellable units only. Counting expired boxes towards the reorder
  * level is how a shop ends up not reordering something it cannot sell.
  */
 export function isLowStock(row: StockLevel): boolean {
-  return row.reorderLevel != null && row.sellable <= row.reorderLevel;
+  return row.sellable <= (row.reorderLevel ?? config.lowStockThreshold);
 }
 
 /** Whole days until the earliest sellable lot turns. Null when none is. */

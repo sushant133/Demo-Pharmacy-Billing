@@ -1,3 +1,4 @@
+import { defaultVatExempt } from "@/lib/constants";
 import { medicineSchema } from "@/lib/validation";
 
 /**
@@ -47,6 +48,8 @@ const COLUMN_ALIASES: Record<string, readonly string[]> = {
   defaultSalePrice: ["mrp", "sale price", "selling price", "price", "sp", "rate", "sale rate", "selling rate"],
   reorderLevel: ["reorder", "reorder level", "min stock", "minimum stock"],
   requiresPrescription: ["rx", "prescription", "requires prescription", "prescription required"],
+  vatExempt: ["vat exempt", "exempt", "tax exempt", "non vat"],
+  schedule: ["schedule", "drug schedule", "drug class", "controlled"],
 };
 
 /** Header text to a known field, or null when the column is not one we use. */
@@ -224,9 +227,29 @@ function normaliseUnit(value: string | undefined): string | undefined {
   return unit;
 }
 
+/** Cells meaning "nothing special". */
+const NOT_SCHEDULED = new Set(["", "otc", "over the counter", "no", "n", "none", "false", "0", "-", "nil"]);
+
+/**
+ * A schedule cell, in the words a sheet uses. Blank or OTC leaves it unset.
+ *
+ * Anything else it cannot place is refused rather than dropped. A "Controlled"
+ * column saying "Yes" cannot tell narcotic from psychotropic, and quietly losing
+ * it would sell a controlled drug with no prescription and keep it off the DDA
+ * register, which is far worse than one row to fix.
+ */
+function parseSchedule(value: string): { schedule?: "rx" | "psychotropic" | "narcotic"; error?: string } {
+  const text = value.trim().toLowerCase();
+  if (text.startsWith("narc")) return { schedule: "narcotic" };
+  if (text.startsWith("psych")) return { schedule: "psychotropic" };
+  if (text === "rx" || text.startsWith("presc")) return { schedule: "rx" };
+  if (NOT_SCHEDULED.has(text)) return {};
+  return { error: `Schedule "${value.trim()}" is not clear. Write Narcotic, Psychotropic, Rx or OTC.` };
+}
+
 /** Truthy spellings a spreadsheet uses for a yes/no column. */
 function parseBoolean(value: string): boolean {
-  return ["yes", "y", "true", "1", "rx", "required"].includes(
+  return ["yes", "y", "true", "1", "rx", "required", "exempt"].includes(
     value.trim().toLowerCase(),
   );
 }
@@ -328,9 +351,21 @@ export function parseMedicineCsv(text: string): ImportPlan {
       continue;
     }
 
+    const { schedule, error: scheduleError } = parseSchedule(raw.schedule ?? "");
+    if (scheduleError) {
+      rows.push({ line, name, value: null, error: scheduleError });
+      continue;
+    }
+
     const parsed = medicineSchema.safeParse({
       ...raw,
-      requiresPrescription: parseBoolean(raw.requiresPrescription ?? ""),
+      requiresPrescription:
+        parseBoolean(raw.requiresPrescription ?? "") || schedule !== undefined,
+      schedule,
+      // A sheet with no answer gets the same starting point as the add form.
+      vatExempt: raw.vatExempt?.trim()
+        ? parseBoolean(raw.vatExempt)
+        : defaultVatExempt(raw.category, name),
       // Blank cells must reach the schema as "" so its own empty-to-null
       // transforms run, rather than as undefined which would skip them.
       unitsPerStrip: raw.unitsPerStrip ?? "",

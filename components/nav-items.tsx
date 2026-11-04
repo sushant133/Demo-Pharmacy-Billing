@@ -272,6 +272,20 @@ export const NAV_SECTIONS: NavSection[] = [
         ],
       },
       {
+        // What IRD's CBMS has and has not accepted.
+        href: "/cbms",
+        label: "CBMS sync",
+        permission: "report:export",
+        icon: icon("M4 12a8 8 0 0114-5.3M20 12a8 8 0 01-14 5.3M18 3v4h-4M6 21v-4h4"),
+      },
+      {
+        // Owner and auditor only. Every change, sign-in and sign-out.
+        href: "/audit",
+        label: "Audit trail",
+        permission: "audit:read",
+        icon: icon("M9 12l2 2 4-4M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z"),
+      },
+      {
         href: "/branches",
         label: "Branches",
         permission: "branch:manage",

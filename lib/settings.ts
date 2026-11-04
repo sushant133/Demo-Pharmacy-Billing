@@ -1,5 +1,8 @@
 import { Types } from "mongoose";
 import { config } from "@/lib/config";
+import { IRD_BUYER_DETAIL_THRESHOLD } from "@/lib/constants";
+import { sealSecret } from "@/lib/secret-box";
+import { ApiError } from "@/lib/api";
 import { connectDB } from "@/lib/db";
 import {
   DEFAULT_PRINT_TEMPLATE,
@@ -45,6 +48,13 @@ export interface BusinessSettings {
   vatNumber: string;
   /** A fraction, not a percentage: 0.13 is 13%. */
   vatRate: number;
+  /** Rupees. Bills up to this, to a buyer with no PAN, may be abbreviated invoices. */
+  abbreviatedInvoiceLimit: number;
+  /** Bills and returns are sent to IRD's CBMS. The password is never in here. */
+  cbmsEnabled: boolean;
+  cbmsUsername: string;
+  /** A CBMS password is saved (sealed). The value itself never leaves the server. */
+  cbmsPasswordSaved: boolean;
   drugLicenceNo: string;
   registrationNo: string;
   address: string;
@@ -112,6 +122,10 @@ export const DEFAULT_SETTINGS: BusinessSettings = {
   vatRegistered: true,
   vatNumber: config.business.pan,
   vatRate: config.vatRate,
+  abbreviatedInvoiceLimit: IRD_BUYER_DETAIL_THRESHOLD,
+  cbmsEnabled: false,
+  cbmsUsername: "",
+  cbmsPasswordSaved: false,
   drugLicenceNo: "",
   registrationNo: "",
   address: config.business.address,
@@ -126,7 +140,7 @@ export const DEFAULT_SETTINGS: BusinessSettings = {
   medicineCategories: [],
 };
 
-type SettingsShape = Partial<Record<keyof BusinessSettings, unknown>>;
+type SettingsShape = Partial<Record<keyof BusinessSettings | "cbmsPasswordEnc", unknown>>;
 
 /**
  * The platform's record of one shop, as the overlay reads it.
@@ -195,6 +209,13 @@ function hydrate(
       typeof doc.vatRate === "number" && doc.vatRate >= 0 && doc.vatRate <= 1
         ? doc.vatRate
         : DEFAULT_SETTINGS.vatRate,
+    abbreviatedInvoiceLimit:
+      typeof doc.abbreviatedInvoiceLimit === "number" && doc.abbreviatedInvoiceLimit >= 0
+        ? doc.abbreviatedInvoiceLimit
+        : DEFAULT_SETTINGS.abbreviatedInvoiceLimit,
+    cbmsEnabled: doc.cbmsEnabled === true,
+    cbmsUsername: str(doc.cbmsUsername),
+    cbmsPasswordSaved: typeof doc.cbmsPasswordEnc === "string" && doc.cbmsPasswordEnc !== "",
     drugLicenceNo: str(doc.drugLicenceNo),
     registrationNo: str(doc.registrationNo),
     address: str(doc.address),
@@ -292,8 +313,28 @@ export async function saveSettings(
 
   // The form asks for a percentage because that is how people say it; the
   // record stores a fraction because that is how the VAT maths uses it.
-  const { vatRate, ...rest } = input;
+  const { vatRate, cbmsPassword, ...rest } = input;
   const id = asObjectId(pharmacyId);
+
+  // The CBMS password is write-only: blank means "keep the one saved", and a
+  // new one is sealed before it touches the database.
+  const password = (cbmsPassword ?? "").trim();
+  const sealed = password ? { cbmsPasswordEnc: sealSecret(password) } : {};
+
+  if (rest.cbmsEnabled) {
+    const saved = password
+      ? true
+      : Boolean(
+          (await Setting.findOne({ pharmacyId: id, key: "business" })
+            .select("cbmsPasswordEnc")
+            .lean())?.cbmsPasswordEnc,
+        );
+    if (!rest.cbmsUsername || !saved) {
+      throw ApiError.badRequest(
+        "Enter the CBMS username and password IRD issued before switching CBMS on.",
+      );
+    }
+  }
 
   /*
     `rest` cannot contain a name, a PAN, a VAT number or a licence: those are
@@ -304,7 +345,7 @@ export async function saveSettings(
   await Setting.findOneAndUpdate(
     { pharmacyId: id, key: "business" },
     {
-      $set: { ...rest, vatRate: round4(vatRate / 100) },
+      $set: { ...rest, ...sealed, vatRate: round4(vatRate / 100) },
       $setOnInsert: { pharmacyId: id, key: "business" },
     },
     { new: true, upsert: true, runValidators: true },
@@ -377,16 +418,30 @@ export function invalidatePrintTemplate(pharmacyId: string | Types.ObjectId): vo
 /**
  * The identity to print, given the outlet that issued the document.
  *
- * A branch that has been given its own name, address, phone or PAN prints
- * those - a VAT invoice must carry the issuing outlet's identity. Anything the
- * branch left blank falls through to the shop's own record, which is what a
- * single-outlet pharmacy relies on entirely.
+ * The seller's name and PAN must match the IRD registration exactly, so those
+ * come from the pharmacy's registered record on every bill, and the branch
+ * prints beneath as `outlet`. An outlet's own address and phone do take over:
+ * they say where this bill was actually issued.
+ *
+ * A PAN that is not nine digits is never printed: it would invalidate the
+ * invoice, and a blank is at least caught by the warning above the bill.
  */
 export interface Issuer {
   name: string;
   address: string;
   phone: string;
   pan: string;
+  /** The issuing branch, when it reads differently from the registered name. */
+  outlet?: string;
+}
+
+const validPan = (value?: string | null): string =>
+  /^\d{9}$/.test((value ?? "").trim()) ? (value ?? "").trim() : "";
+
+/** "nepal" → "Nepal". Text someone already cased is theirs and is left alone. */
+export function tidyAddress(address: string): string {
+  if (/[A-Z]/.test(address)) return address;
+  return address.replace(/(^|[\s,/-])([a-z])/g, (_, gap: string, letter: string) => gap + letter.toUpperCase());
 }
 
 export function issuerFor(
@@ -398,11 +453,15 @@ export function issuerFor(
     panNo?: string | null;
   } | null,
 ): Issuer {
+  const name = settings.businessName || branch?.name || "";
   return {
-    name: branch?.name || settings.businessName,
-    address: branch?.address || [settings.address, settings.city].filter(Boolean).join(", "),
+    name,
+    address: tidyAddress(
+      branch?.address || [settings.address, settings.city].filter(Boolean).join(", "),
+    ),
     phone: branch?.phone || settings.phone,
-    pan: branch?.panNo || settings.pan,
+    pan: validPan(settings.pan) || validPan(branch?.panNo),
+    ...(branch?.name && branch.name !== name ? { outlet: branch.name } : {}),
   };
 }
 
@@ -410,9 +469,8 @@ export function issuerFor(
  * The identity to print on a document issued by a given outlet.
  *
  * A single-outlet pharmacy - nearly all of them - prints what Settings says,
- * and nothing else gets a vote. Once a second outlet is open, each one's own
- * name, address, phone and PAN take over wherever it has them, because a VAT
- * invoice must carry the identity of the outlet that issued it.
+ * and nothing else gets a vote. Once a second outlet is open, the bill also
+ * says which one issued it, under the registered name. See `Issuer`.
  *
  * The branch count is what makes editing Settings actually change the bill.
  * `ensureDefaultBranch` creates the first outlet by copying the shop's name

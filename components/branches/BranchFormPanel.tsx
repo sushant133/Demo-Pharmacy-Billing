@@ -114,7 +114,7 @@ export function BranchFormPanel({
   return (
     <SlideOver
       title="Edit branch"
-      description="Printed bills from this outlet use this name, address and PAN."
+      description="Printed bills show the pharmacy's registered name and PAN, with this outlet's name, address and phone beneath."
       onClose={close}
       footer={
         <div className="flex flex-col gap-2">
@@ -196,7 +196,7 @@ export function BranchFormPanel({
           label="PAN"
           htmlFor="panNo"
           error={errors.panNo}
-          hint="Blank uses the company PAN on printed bills."
+          hint="Leave blank. Bills print the pharmacy's registered PAN."
         >
           <input
             id="panNo"

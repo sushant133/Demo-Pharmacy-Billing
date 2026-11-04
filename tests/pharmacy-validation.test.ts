@@ -12,18 +12,26 @@ import {
  * The platform's intake form.
  *
  * The rule worth protecting here is that an account can be opened with a
- * name and a person and nothing else (the server generates the password): every licence, PAN and
- * KYC field is optional on purpose, because a form that demands them gets
- * invented values typed into it, and an invented PAN prints on a tax invoice.
+ * name, a person and its DDA licence (the server generates the password). Every
+ * other licence, PAN and KYC field is optional on purpose, because a form that
+ * demands them gets invented values typed into it, and an invented PAN prints on
+ * a tax invoice.
  */
 
 const minimum = {
   name: "Sagarmatha Pharmacy",
   ownerName: "Bimala Shrestha",
   ownerEmail: "Bimala@Example.com ",
+  drugLicenceNo: "DDA-4471",
 };
 
 describe("createPharmacySchema", () => {
+  it("will not open an account without a DDA licence", () => {
+    const { drugLicenceNo: _licence, ...withoutLicence } = minimum;
+    expect(createPharmacySchema.safeParse(withoutLicence).success).toBe(false);
+    expect(createPharmacySchema.safeParse({ ...minimum, drugLicenceNo: "  " }).success).toBe(false);
+  });
+
   it("opens an account from a name and a person - the password is generated", () => {
     const parsed = createPharmacySchema.parse(minimum);
 
@@ -31,7 +39,7 @@ describe("createPharmacySchema", () => {
     expect(parsed.ownerEmail).toBe("bimala@example.com");
     expect(parsed.pan).toBe("");
     expect(parsed.registrationNo).toBe("");
-    expect(parsed.drugLicenceNo).toBe("");
+    expect(parsed.drugLicenceNo).toBe("DDA-4471");
     expect(parsed.licenceExpiry).toBeNull();
     expect(parsed.ownerCitizenshipNo).toBe("");
     expect(parsed.slug).toBeUndefined();

@@ -15,7 +15,12 @@ import {
   granularityFor,
 } from "@/lib/analytics";
 import { PAYMENT_MODE_LABELS, type PaymentMode } from "@/lib/constants";
-import { REPORT_DESCRIPTIONS, REPORT_KEYS, REPORT_LABELS } from "@/lib/export/reports";
+import {
+  IRD_REPORTS,
+  REPORT_DESCRIPTIONS,
+  REPORT_KEYS,
+  REPORT_LABELS,
+} from "@/lib/export/reports";
 import { Card, PageHeader, StatCard, TableWrap } from "@/components/ui";
 import { LineChart } from "@/components/charts/LineChart";
 import { BarChart } from "@/components/charts/BarChart";
@@ -284,39 +289,55 @@ export default async function ReportsPage({
             Excel keeps numbers numeric and sortable; PDF is fixed for filing.
           </p>
 
-          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {REPORT_KEYS.map((key) => (
-              <div
-                key={key}
-                className="flex flex-col gap-2 rounded-lg border border-slate-200 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:py-2"
-              >
-                {/*
-                  Stacked on a phone: side by side, the three buttons left the
-                  description a truncated sliver - with larger system text,
-                  nothing at all.
-                */}
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-slate-900 sm:truncate">
-                    {REPORT_LABELS[key]}
-                  </p>
-                  <p className="text-xs text-pretty text-slate-500 sm:truncate">
-                    {REPORT_DESCRIPTIONS[key]}
-                  </p>
-                </div>
-                <div className="flex shrink-0 gap-1">
-                  {(["xlsx", "csv", "pdf"] as const).map((format) => (
-                    <a
-                      key={format}
-                      href={`/api/export?report=${key}&format=${format}&${exportQuery}`}
-                      className="rounded border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 uppercase hover:bg-slate-50 hover:text-brand-700 sm:px-2 sm:py-1 sm:text-[11px]"
-                    >
-                      {format === "xlsx" ? "Excel" : format}
-                    </a>
-                  ))}
-                </div>
+          {[
+            {
+              heading: "IRD and DDA books",
+              keys: REPORT_KEYS.filter((key) => IRD_REPORTS.has(key)),
+            },
+            {
+              heading: "Business reports",
+              keys: REPORT_KEYS.filter((key) => !IRD_REPORTS.has(key)),
+            },
+          ].map((group) => (
+            <section key={group.heading} className="mt-3">
+              <h3 className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                {group.heading}
+              </h3>
+              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {group.keys.map((key) => (
+                  <div
+                    key={key}
+                    className="flex flex-col gap-2 rounded-lg border border-slate-200 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:py-2"
+                  >
+                    {/*
+                      Stacked on a phone: side by side, the three buttons left the
+                      description a truncated sliver - with larger system text,
+                      nothing at all.
+                    */}
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-900 sm:truncate">
+                        {REPORT_LABELS[key]}
+                      </p>
+                      <p className="text-xs text-pretty text-slate-500 sm:truncate">
+                        {REPORT_DESCRIPTIONS[key]}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 gap-1">
+                      {(["xlsx", "csv", "pdf"] as const).map((format) => (
+                        <a
+                          key={format}
+                          href={`/api/export?report=${key}&format=${format}&${exportQuery}`}
+                          className="rounded border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 uppercase hover:bg-slate-50 hover:text-brand-700 sm:px-2 sm:py-1 sm:text-[11px]"
+                        >
+                          {format === "xlsx" ? "Excel" : format}
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </section>
+          ))}
         </Card>
       ) : null}
     </>

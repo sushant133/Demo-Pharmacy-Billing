@@ -152,6 +152,9 @@ export function ConfirmSale({
                   tone="text-rose-600"
                 />
               ) : null}
+              {plan.exemptAmount > 0 ? (
+                <Line term="VAT exempt" value={money(plan.exemptAmount)} />
+              ) : null}
               <Line
                 term={`VAT (${Math.round(plan.vatRate * 100)}%)`}
                 value={money(plan.vatAmount)}

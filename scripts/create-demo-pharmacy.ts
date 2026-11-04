@@ -42,6 +42,7 @@ async function main() {
     name: DEMO.name,
     slug: "demo-pharmacy",
     pan: DEMO.pan,
+    drugLicenceNo: "DEMO-LICENCE",
     email: DEMO.email,
     ownerName: "Demo Admin",
     ownerEmail: DEMO.email,

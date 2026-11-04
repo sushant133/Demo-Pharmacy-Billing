@@ -18,6 +18,10 @@ export interface ThermalLine {
 
 export interface ThermalReceipt {
   shop: string;
+  /** The issuing branch, beneath the registered name. */
+  outlet?: string;
+  /** An abbreviated tax invoice, for a small sale to a buyer with no PAN. */
+  abbreviated?: boolean;
   address?: string;
   phone?: string;
   pan?: string;
@@ -34,6 +38,8 @@ export interface ThermalReceipt {
   items: ThermalLine[];
   subtotal: string;
   discount?: string;
+  /** VAT-exempt sales. Omitted on receipts built before exempt lines existed. */
+  exempt?: string;
   taxable: string;
   vatLabel: string;
   vatAmount: string;
@@ -88,7 +94,11 @@ export function formatThermalReceipt(
   width = THERMAL_WIDTH,
 ): string[] {
   const dash = "-".repeat(width);
-  const lines: string[] = ["TAX INVOICE", receipt.shop.toUpperCase()];
+  const lines: string[] = [
+    receipt.abbreviated ? "ABBREVIATED TAX INVOICE" : "TAX INVOICE",
+    receipt.shop.toUpperCase(),
+  ];
+  if (receipt.outlet) lines.push(...wrapWords(`Branch: ${receipt.outlet}`, width));
   if (receipt.address) lines.push(...wrapWords(receipt.address, width));
   if (receipt.phone) lines.push(`Tel: ${receipt.phone}`);
   if (receipt.pan) lines.push(`PAN: ${receipt.pan}`);
@@ -111,6 +121,7 @@ export function formatThermalReceipt(
   lines.push(dash);
   lines.push(padLine("Subtotal", receipt.subtotal, width));
   if (receipt.discount) lines.push(padLine("Discount", receipt.discount, width));
+  if (receipt.exempt) lines.push(padLine("Exempt", receipt.exempt, width));
   lines.push(padLine("Taxable", receipt.taxable, width));
   lines.push(padLine(receipt.vatLabel, receipt.vatAmount, width));
   lines.push(padLine("TOTAL", receipt.total, width));
