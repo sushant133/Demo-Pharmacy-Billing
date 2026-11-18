@@ -1,6 +1,10 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
+
+/** Silent retries per screen before the error is shown. Most failures are a cold pool. */
+const AUTO_RETRY_KEY = "mp_error_autoretry";
+const AUTO_RETRY_WINDOW_MS = 30_000;
 
 /**
  * What a staff member sees when a screen fails to render.
@@ -27,11 +31,43 @@ export function ErrorScreen({
   title?: string;
   full?: boolean;
 }) {
+  /*
+    A reference that is unique to this failure. Next's digest is a hash of the
+    error, so the same fault gives the same digest every time - useless for
+    telling two reports apart. The digest stays (it finds the stack in the
+    server log, logged by instrumentation's onRequestError) and a timestamp
+    plus a random tag make the whole reference unique.
+  */
+  const reference = useMemo(() => {
+    const now = new Date();
+    const stamp = now.toISOString().replace(/[-:]/g, "").slice(0, 15); // YYYYMMDDTHHMMSS
+    const tag = Math.random().toString(36).slice(2, 6).toUpperCase();
+    return `${error.digest ?? "client"}-${stamp}-${tag}`;
+  }, [error]);
+
   useEffect(() => {
     // Production strips the message from the client, so this is mostly for
     // local debugging - but a digest here still matches the server log.
-    console.error("[render error]", error.digest ?? "", error);
-  }, [error]);
+    console.error("[render error]", reference, error);
+  }, [error, reference]);
+
+  // One silent retry per screen: a thawed server's first query is the usual
+  // cause, and the second render almost always succeeds. Guarded so a screen
+  // that really is broken shows this page instead of looping.
+  useEffect(() => {
+    try {
+      const path = window.location.pathname;
+      const last = JSON.parse(sessionStorage.getItem(AUTO_RETRY_KEY) ?? "null") as
+        | { path: string; at: number }
+        | null;
+      if (last && last.path === path && Date.now() - last.at < AUTO_RETRY_WINDOW_MS) return;
+      sessionStorage.setItem(AUTO_RETRY_KEY, JSON.stringify({ path, at: Date.now() }));
+      const timer = window.setTimeout(reset, 800);
+      return () => window.clearTimeout(timer);
+    } catch {
+      // No storage: never auto-retry, so a broken screen cannot loop.
+    }
+  }, [reset]);
 
   return (
     <div
@@ -63,8 +99,9 @@ export function ErrorScreen({
           {title}
         </h1>
         <p className="mt-2 text-sm leading-relaxed text-slate-500">
-          The shop&rsquo;s database didn&rsquo;t answer in time. Nothing was
-          saved or changed - try again and it should come straight back.
+          The server didn&rsquo;t answer in time or hit a problem. Nothing was
+          saved or changed - try again and it should come straight back. If it
+          keeps happening, send the reference below to support.
         </p>
 
         <div className="mt-6 flex items-center justify-center gap-2">
@@ -76,11 +113,9 @@ export function ErrorScreen({
           </a>
         </div>
 
-        {error.digest ? (
-          <p className="mt-6 font-mono text-[11px] text-slate-400">
-            Reference {error.digest}
-          </p>
-        ) : null}
+        <p className="mt-6 font-mono text-[11px] text-slate-500 select-all">
+          Reference {reference}
+        </p>
       </div>
     </div>
   );

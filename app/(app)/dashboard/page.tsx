@@ -6,7 +6,7 @@ import { withDbRead } from "@/lib/db";
 import { hasMultipleBranches, resolveViewScope } from "@/lib/branch-scope";
 import { adToBs, formatBs } from "@/lib/bs-date";
 import { config } from "@/lib/config";
-import { amount, formatTime, integer, money } from "@/lib/format";
+import { amount, formatDate, formatDateTime, formatTime, integer, money } from "@/lib/format";
 import { getDashboardSummary } from "@/lib/reports";
 import { getExpiryAlerts, getStockAlerts } from "@/lib/alerts";
 import {
@@ -127,7 +127,10 @@ export default async function DashboardPage({
   const currentHour = localHour(now);
 
   const needsOrdering = stockAlerts.counts.out + stockAlerts.counts.critical + stockAlerts.counts.low;
-  const expiringSoon = expiryAlerts.counts.critical + expiryAlerts.counts.warning;
+  // Every lot inside the expiry window (critical, warning and watch), so this
+  // matches "Expiring in N days" and the Alerts tab.
+  const expiringSoon =
+    expiryAlerts.counts.critical + expiryAlerts.counts.warning + expiryAlerts.counts.watch;
   const attention =
     expiryAlerts.counts.expired +
     expiryAlerts.counts.critical +
@@ -318,13 +321,20 @@ export default async function DashboardPage({
           icon="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
           tone={stockAlerts.counts.out + stockAlerts.counts.critical > 0 ? "warning" : "default"}
         />
+        {/*
+          Lots that will expire, counted the same way as "Expiring in N days"
+          under Inventory health. Lots already expired are a separate fact,
+          said in the hint (and the red banner above), not folded in.
+        */}
         <Kpi
           label="Expiring soon"
-          value={integer(expiringSoon + expiryAlerts.counts.expired)}
+          value={integer(expiringSoon)}
           hint={
-            showMoney && expiryAlerts.totalValueAtRisk > 0
-              ? `${money(expiryAlerts.totalValueAtRisk)} at risk`
-              : `${summary.expiryWindowDays}-day window`
+            expiryAlerts.counts.expired > 0
+              ? `+ ${integer(expiryAlerts.counts.expired)} already expired`
+              : showMoney && expiryAlerts.totalValueAtRisk > 0
+                ? `${money(expiryAlerts.totalValueAtRisk)} at risk`
+                : `${summary.expiryWindowDays}-day window`
           }
           href="/alerts?tab=expiry"
           icon="M12 8v4l2.5 2.5M12 21a9 9 0 100-18 9 9 0 000 18z"
@@ -498,7 +508,10 @@ export default async function DashboardPage({
                         {money(sale.totalAmount)}
                       </td>
                       <td className="td tnum text-right text-slate-500">
-                        {formatTime(sale.createdAt)}
+                        {/* "any day": a time alone made yesterday's bills look out of order. */}
+                        {formatDate(sale.createdAt) === formatDate(now)
+                          ? formatTime(sale.createdAt)
+                          : formatDateTime(sale.createdAt)}
                       </td>
                     </tr>
                   ))}
@@ -601,7 +614,10 @@ export default async function DashboardPage({
               title="Expiring on the shelf"
               href="/alerts?tab=expiry"
               empty="Nothing on the shelf is near its expiry."
-              items={expiryAlerts.rows.map((row) => ({
+              items={[...expiryAlerts.rows]
+                // Soonest first: expired lots, then what turns next.
+                .sort((a, b) => a.daysRemaining - b.daysRemaining)
+                .map((row) => ({
                 key: row.batchId,
                 name: row.medicineName,
                 meta:
@@ -630,8 +646,8 @@ export default async function DashboardPage({
                 />
                 <HealthRow
                   label={`Expiring in ${summary.expiryWindowDays} days`}
-                  value={integer(summary.expiringSoonCount)}
-                  tone={summary.expiringSoonCount > 0 ? "warning" : undefined}
+                  value={integer(expiringSoon)}
+                  tone={expiringSoon > 0 ? "warning" : undefined}
                 />
                 <HealthRow
                   label="Not moving"

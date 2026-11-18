@@ -94,7 +94,7 @@ export default async function SuppliersPage({
   });
 
   let rows = docs.map((doc) => {
-    const balance = balances.get(String(doc._id)) ?? { purchased: 0, paid: 0 };
+    const balance = balances.get(String(doc._id)) ?? { purchased: 0, returned: 0, paid: 0 };
     return {
       id: String(doc._id),
       name: doc.name,
@@ -108,8 +108,9 @@ export default async function SuppliersPage({
       notes: doc.notes ?? "",
       isActive: doc.isActive !== false,
       purchased: balance.purchased,
+      // Net of goods sent back, exactly as Payables and the ledger compute it.
       outstanding: round2(
-        (doc.openingBalance ?? 0) + balance.purchased - balance.paid,
+        (doc.openingBalance ?? 0) + balance.purchased - balance.returned - balance.paid,
       ),
     };
   });
@@ -153,6 +154,7 @@ export default async function SuppliersPage({
         <StatCard
           label="Total payable"
           value={money(payables.outstanding)}
+          hint="Includes suppliers' opening balances"
           tone={payables.outstanding > 0 ? "warning" : "default"}
         />
         <StatCard

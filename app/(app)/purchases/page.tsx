@@ -14,6 +14,7 @@ import {
   type PurchaseStatus,
 } from "@/lib/constants";
 import { pharmacyFilter } from "@/lib/tenant";
+import { displayPaymentStatus, purchaseOutstanding } from "@/lib/purchase-math";
 import { Purchase } from "@/models/Purchase";
 import { Supplier } from "@/models/Supplier";
 import { ActionBar, ActionIcon } from "@/components/action-icons";
@@ -91,7 +92,7 @@ export default async function PurchasesPage({
   const sort: SortKey = isSortKey(params.sort) ? params.sort : "received";
   const dir: "asc" | "desc" = params.dir === "asc" ? "asc" : "desc";
 
-  const { purchases, total, purchased, paid, units, suppliers } = await withDbRead(
+  const { purchases, total, purchased, returned, paid, units, suppliers } = await withDbRead(
     async () => {
       const scope = await resolveViewScope(user, params.branch);
       const filter: Record<string, unknown> = {
@@ -145,6 +146,7 @@ export default async function PurchasesPage({
             $group: {
               _id: null,
               purchased: { $sum: "$totalAmount" },
+              returned: { $sum: { $ifNull: ["$returnedTotal", 0] } },
               paid: { $sum: "$amountPaid" },
               units: {
                 $sum: {
@@ -165,6 +167,7 @@ export default async function PurchasesPage({
 
       const summary = (summaryAgg[0] ?? {}) as {
         purchased?: number;
+        returned?: number;
         paid?: number;
         units?: number;
       };
@@ -173,6 +176,7 @@ export default async function PurchasesPage({
         purchases,
         total,
         purchased: summary.purchased ?? 0,
+        returned: summary.returned ?? 0,
         paid: summary.paid ?? 0,
         units: summary.units ?? 0,
         suppliers,
@@ -223,8 +227,9 @@ export default async function PurchasesPage({
         <StatCard label="Posted value" value={money(purchased)} />
         <StatCard
           label="Still owed"
-          value={money(purchased - paid)}
-          tone={purchased - paid > 0 ? "warning" : "default"}
+          value={money(Math.max(0, purchased - returned - paid))}
+          hint="On these deliveries, net of returns. Suppliers' opening balances are on Suppliers."
+          tone={purchased - returned - paid > 0.005 ? "warning" : "default"}
         />
         <StatCard label="Units received" value={integer(units)} />
       </div>
@@ -387,24 +392,18 @@ export default async function PurchasesPage({
                     (sum, item) => sum + item.quantity + item.freeQuantity,
                     0,
                   );
-                  const overdue = Boolean(
-                    purchase.status === "posted" &&
-                      purchase.paymentStatus !== "paid" &&
-                      purchase.dueDate &&
-                      new Date(purchase.dueDate).getTime() < now,
-                  );
-
                   const id = String(purchase._id);
                   // Net of anything sent back on a debit note, which is what
                   // the supplier ledger also nets off.
-                  const outstanding = Math.max(
-                    0,
-                    Math.round(
-                      (purchase.totalAmount -
-                        (purchase.returnedTotal ?? 0) -
-                        (purchase.amountPaid ?? 0)) *
-                        100,
-                    ) / 100,
+                  const outstanding = purchaseOutstanding(purchase);
+                  // From the money, not the stored flag, so a Rs. 0 delivery
+                  // is never "Overdue" and a part payment always shows.
+                  const payState = displayPaymentStatus(purchase);
+                  const overdue = Boolean(
+                    purchase.status === "posted" &&
+                      outstanding > 0 &&
+                      purchase.dueDate &&
+                      new Date(purchase.dueDate).getTime() < now,
                   );
 
                   return (
@@ -475,18 +474,20 @@ export default async function PurchasesPage({
                         {purchase.status === "posted" ? (
                           <Badge
                             tone={
-                              purchase.paymentStatus === "paid"
+                              payState === "paid"
                                 ? "green"
                                 : overdue
                                   ? "rose"
-                                  : "slate"
+                                  : payState === "partial"
+                                    ? "amber"
+                                    : "slate"
                             }
                           >
                             {overdue
-                              ? "Overdue"
-                              : (PAYMENT_STATUS_LABELS[
-                                  purchase.paymentStatus as PaymentStatus
-                                ] ?? purchase.paymentStatus)}
+                              ? payState === "partial"
+                                ? "Partly paid · overdue"
+                                : "Overdue"
+                              : PAYMENT_STATUS_LABELS[payState as PaymentStatus]}
                           </Badge>
                         ) : (
                           <span className="text-xs text-slate-400">—</span>

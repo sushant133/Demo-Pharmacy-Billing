@@ -1,7 +1,7 @@
 import { Types } from "mongoose";
 import { ApiError } from "@/lib/api";
 import { connectDB } from "@/lib/db";
-import { round2 } from "@/lib/purchase-math";
+import { round2, STILL_OWING_MATCH } from "@/lib/purchase-math";
 import { refreshPaymentStatus } from "@/lib/purchases";
 import { pharmacyFilter, pharmacyObjectId } from "@/lib/tenant";
 import { Purchase } from "@/models/Purchase";
@@ -22,6 +22,33 @@ import type { SessionUser } from "@/lib/session";
  * purchases are excluded - a draft is not yet a liability, and a cancelled GRN
  * never was.
  */
+
+/**
+ * A PAN identifies one business. Two suppliers sharing one is a typo or a
+ * duplicate record, and either way their purchases would be reported to IRD
+ * against the wrong party. Refused with the name of the supplier that has it.
+ */
+export async function assertSupplierPanFree(
+  user: SessionUser,
+  panNo: string | undefined,
+  excludeId?: string,
+): Promise<void> {
+  const pan = (panNo ?? "").trim();
+  if (!pan) return;
+  await connectDB();
+  const clash = await Supplier.findOne({
+    ...pharmacyFilter(user),
+    panNo: pan,
+    ...(excludeId ? { _id: { $ne: new Types.ObjectId(excludeId) } } : {}),
+  })
+    .select("name")
+    .lean();
+  if (clash) {
+    throw ApiError.conflict(`PAN ${pan} already belongs to supplier "${clash.name}".`, {
+      panNo: [`Already used by ${clash.name}.`],
+    });
+  }
+}
 
 export interface SupplierBalance {
   supplierId: string;
@@ -63,7 +90,7 @@ export async function getSupplierBalance(
           returned: { $sum: { $ifNull: ["$returnedTotal", 0] } },
           count: { $sum: 1 },
           unpaid: {
-            $sum: { $cond: [{ $ne: ["$paymentStatus", "paid"] }, 1, 0] },
+            $sum: { $cond: [STILL_OWING_MATCH.$expr, 1, 0] },
           },
         },
       },
@@ -77,7 +104,7 @@ export async function getSupplierBalance(
         $match: {
           ...tenant,
           status: "posted",
-          paymentStatus: { $ne: "paid" },
+          ...STILL_OWING_MATCH,
           dueDate: { $lt: now },
         },
       },
@@ -298,7 +325,7 @@ export async function getTotalPayables(user: SessionUser): Promise<{
           $match: {
             ...scoped,
             status: "posted",
-            paymentStatus: { $ne: "paid" },
+            ...STILL_OWING_MATCH,
             dueDate: { $lt: new Date() },
           },
         },

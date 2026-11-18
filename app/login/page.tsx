@@ -7,8 +7,13 @@ import { cx } from "@/components/ui";
 import { adToBs, formatBs, nepaliFiscalYear } from "@/lib/bs-date";
 import { config } from "@/lib/config";
 import { localParts } from "@/lib/dates";
+import { isSafeAppPath } from "@/lib/safe-path";
 
-export const metadata: Metadata = { title: "Sign in" };
+export const metadata: Metadata = {
+  title: "Sign in",
+  // Nothing on the sign-in page is worth a search result.
+  robots: { index: false, follow: false },
+};
 
 /**
  * The supplied emblem, and its intrinsic size.
@@ -18,7 +23,13 @@ export const metadata: Metadata = { title: "Sign in" };
  * copies of them are two chances for one to drift and start shifting the
  * page on load.
  */
-const LOGO = { src: "/mantramed-logo.png", width: 1254, height: 1254 } as const;
+const LOGO = { src: "/mantramed-logo.png", width: 512, height: 512 } as const;
+/**
+ * Both lockups ask for the same rendered size, so the browser picks the same
+ * file for each and downloads it once, at a size near what is drawn - not the
+ * 3840px variant next/image offers when it is not told.
+ */
+const LOGO_SIZES = "112px";
 
 /**
  * Sign-in screen.
@@ -48,10 +59,8 @@ export default async function LoginPage({
   const params = await searchParams;
   // Only accept same-origin relative paths, so ?next= cannot be used as an
   // open redirect to another site.
-  const safeNext =
-    params.next && params.next.startsWith("/") && !params.next.startsWith("//")
-      ? params.next
-      : null;
+  // See lib/safe-path.ts for what that refuses (//host, /\host, control chars).
+  const safeNext = isSafeAppPath(params.next) ? params.next : null;
   const next = safeNext ?? "/";
 
   // Both calendars, resolved in the shop's timezone rather than the server's.
@@ -75,7 +84,7 @@ export default async function LoginPage({
       <BrandPanel />
 
       {/* Counter panel */}
-      <div className="login-counter flex flex-col justify-center px-4 pt-[calc(2.5rem+var(--safe-top))] pb-[calc(2.5rem+var(--safe-bottom))] sm:px-8 lg:px-12">
+      <main className="login-counter flex flex-col justify-center px-4 pt-[calc(2.5rem+var(--safe-top))] pb-[calc(2.5rem+var(--safe-bottom))] sm:px-8 lg:px-12">
         <div className="mx-auto w-full max-w-[26rem]">
           <MobileBrand />
 
@@ -100,7 +109,7 @@ export default async function LoginPage({
                     <span className="font-medium text-slate-700">{safeNext}</span>.
                   </>
                 ) : (
-                  "Pharmacy owners open their shop. The platform administrator opens the account panel."
+                  "Owners and counter staff: sign in with the email and password your pharmacy gave you."
                 )}
               </p>
 
@@ -140,11 +149,14 @@ export default async function LoginPage({
             </div>
 
             {/* Date strip: both calendars, and the year bills are filed under. */}
-            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-slate-200 bg-slate-50 px-5 py-3 text-[11px] text-slate-500">
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-slate-200 bg-slate-50 px-5 py-3 text-xs text-slate-500">
               <span className="tnum">
                 {adLabel}
                 <span className="mx-1.5 text-slate-300">&middot;</span>
-                <span className="font-medium text-slate-600">{formatBs(bs)}</span>
+                {/* No leading zero: "3 Mangsir", the way a date is said. */}
+                <span className="font-medium text-slate-600">
+                  {formatBs(bs).replace(/^0/, "")}
+                </span>
               </span>
               <span className="tnum">FY {nepaliFiscalYear(bs)}</span>
             </div>
@@ -175,7 +187,7 @@ export default async function LoginPage({
             <PackImprint tone="light" />
           </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }
@@ -187,7 +199,7 @@ export default async function LoginPage({
  */
 function BrandPanel() {
   return (
-    <div className="login-ground relative hidden overflow-hidden lg:flex lg:flex-col lg:justify-between lg:p-12 xl:p-14">
+    <div className="login-ground relative hidden overflow-y-auto lg:flex lg:flex-col lg:justify-between lg:gap-8 lg:p-12 xl:p-14 [@media(max-height:760px)]:lg:p-8">
       <div className="login-blister absolute inset-0" aria-hidden="true" />
 
       {/*
@@ -219,12 +231,13 @@ function BrandPanel() {
         follows the emblem's own circle rather than boxing it.
       */}
       <div className="relative flex items-center gap-4">
-        <span className="flex h-28 w-28 shrink-0 items-center justify-center rounded-full bg-white p-2 shadow-xl shadow-brand-950/40 ring-1 ring-white/20">
+        <span className="flex h-28 w-28 shrink-0 items-center justify-center rounded-full bg-white p-2 shadow-xl shadow-brand-950/40 ring-1 ring-white/20 [@media(max-height:760px)]:h-20 [@media(max-height:760px)]:w-20">
           <Image
             src={LOGO.src}
-            alt=""
+            alt="MantraMed logo"
             width={LOGO.width}
             height={LOGO.height}
+            sizes={LOGO_SIZES}
             priority
             className="h-full w-full object-contain"
           />
@@ -248,16 +261,17 @@ function BrandPanel() {
           rival headings on one panel, and the product name loses - it is the
           shorter string and it sits further from the eye's landing point.
         */}
-        <h2 className="mt-3 text-[1.75rem] leading-[1.2] font-semibold tracking-tight text-white">
+        {/* A tagline, not a heading: the page's only h1 is "Sign in". */}
+        <p className="mt-3 text-[1.75rem] leading-[1.2] font-semibold tracking-tight text-white [@media(max-height:760px)]:text-2xl">
           Billing that keeps your stock honest.
-        </h2>
-        <p className="mt-4 text-sm leading-relaxed text-slate-400">
+        </p>
+        <p className="mt-4 text-sm leading-relaxed text-slate-400 [@media(max-height:760px)]:hidden">
           Every sale dispenses the earliest-expiring batch first, deducts stock in
           the same transaction as the bill, and never lets an expired lot reach a
           customer.
         </p>
 
-        <ul className="mt-9 space-y-4">
+        <ul className="mt-9 space-y-4 [@media(max-height:760px)]:mt-5 [@media(max-height:760px)]:space-y-2.5">
           {FEATURES.map((feature, index) => (
             <li key={feature.title}>
               {index > 0 ? (
@@ -269,7 +283,7 @@ function BrandPanel() {
                 </span>
                 <div>
                   <p className="text-sm font-medium text-white">{feature.title}</p>
-                  <p className="mt-0.5 text-[13px] leading-relaxed text-slate-400">
+                  <p className="mt-0.5 text-[13px] leading-relaxed text-slate-400 [@media(max-height:760px)]:hidden">
                     {feature.detail}
                   </p>
                 </div>
@@ -374,10 +388,11 @@ function MobileBrand() {
     <div className="mb-6 flex items-center justify-center gap-3.5 lg:hidden">
       <Image
         src={LOGO.src}
-        alt=""
+        alt="MantraMed logo"
         width={LOGO.width}
         height={LOGO.height}
-        priority
+        sizes={LOGO_SIZES}
+        loading="eager"
         className="h-[72px] w-[72px] shrink-0 object-contain"
       />
       <span className="min-w-0">
@@ -393,15 +408,13 @@ function MobileBrand() {
 }
 
 /**
- * A statement about the session, not a live connection light.
- *
- * A status light that is wrong is worse than no light. The honest live signal
- * is the sign-in attempt itself, which says plainly when the server cannot be
- * reached; this states what is true of every request instead.
+ * A statement about the session, not a live connection light - and styled as
+ * plain text rather than a pill, because a pill with a ring reads as a button
+ * and this does nothing when clicked.
  */
 function SecureBadge() {
   return (
-    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 ring-1 ring-slate-200 ring-inset">
+    <span className="inline-flex shrink-0 items-center gap-1.5 pt-1 text-xs text-slate-500 select-none">
       <svg
         className="h-3.5 w-3.5 text-brand-600"
         viewBox="0 0 24 24"

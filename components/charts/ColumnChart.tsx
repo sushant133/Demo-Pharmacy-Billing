@@ -51,7 +51,8 @@ export function ColumnChart({
   const barWidth = Math.max(2, band - gap);
   const format = (value: number) => (isMoney ? money(value) : String(Math.round(value)));
 
-  if (data.length === 0) {
+  // All zero: a 0-to-1 axis with no bars is just stray numbers. Say so instead.
+  if (data.length === 0 || maxValue <= 0) {
     return (
       <div className="flex h-40 items-center justify-center text-sm text-slate-500">
         Nothing to plot yet.

@@ -7,6 +7,7 @@ import { formatDate, integer, money } from "@/lib/format";
 import { can } from "@/lib/roles";
 import { pharmacyFilter } from "@/lib/tenant";
 import { Customer } from "@/models/Customer";
+import { Sale } from "@/models/Sale";
 import {
   Card,
   EmptyState,
@@ -41,7 +42,7 @@ export default async function CustomersPage({
   const search = (params.q ?? "").trim();
   const page = Math.max(1, Number(params.page) || 1);
 
-  const { rows, total, withPhone, dues } = await withDbRead(async () => {
+  const { rows, total, withPhone, dues, lastBilled } = await withDbRead(async () => {
     const filter: Record<string, unknown> = { ...pharmacyFilter(user) };
     if (search) {
       const rx = new RegExp(escapeRegExp(search), "i");
@@ -62,12 +63,26 @@ export default async function CustomersPage({
     // for the page rather than one per row, and never for the whole register,
     // which on a shop with ten thousand names would be a query nobody asked
     // for to fill a column showing twenty-five numbers.
-    const dues = await outstandingByCustomer(
-      user,
-      rows.map((row) => String(row._id)),
-    );
+    const [dues, lastBills] = await Promise.all([
+      outstandingByCustomer(
+        user,
+        rows.map((row) => String(row._id)),
+      ),
+      // The latest bill per customer on this page, read from the bills
+      // themselves - so rows filed before lastBilledAt existed are right too.
+      Sale.aggregate<{ _id: unknown; at: Date }>([
+        {
+          $match: {
+            ...pharmacyFilter(user),
+            customerId: { $in: rows.map((row) => row._id) },
+          },
+        },
+        { $group: { _id: "$customerId", at: { $max: "$createdAt" } } },
+      ]),
+    ]);
+    const lastBilled = new Map(lastBills.map((row) => [String(row._id), row.at]));
 
-    return { rows, total, withPhone, dues };
+    return { rows, total, withPhone, dues, lastBilled };
   });
 
   const canSeeMoney = can(user.role, "report:financial");
@@ -86,7 +101,7 @@ export default async function CustomersPage({
     <>
       <PageHeader
         title="Customers / patients"
-        subtitle="Filed automatically when a bill is raised in their name."
+        subtitle="Filed when a bill names them with a phone or PAN, or leaves a due."
         actions={
           <Link href="/billing" className="btn-primary">
             New sale
@@ -224,7 +239,11 @@ export default async function CustomersPage({
                         </td>
                       ) : null}
                       <td className="td text-right text-slate-500">
-                        {formatDate(row.updatedAt as unknown as Date)}
+                        {lastBilled.has(id) || row.lastBilledAt
+                          ? formatDate(
+                              (lastBilled.get(id) ?? row.lastBilledAt) as unknown as Date,
+                            )
+                          : "—"}
                       </td>
                       <td className="td col-actions">
                         <ActionBar>

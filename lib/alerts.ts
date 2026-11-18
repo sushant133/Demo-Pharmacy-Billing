@@ -1,7 +1,7 @@
 import type { Types } from "mongoose";
 import { config } from "@/lib/config";
 import { connectDB } from "@/lib/db";
-import { addDays } from "@/lib/dates";
+import { addDays, calendarDaysBetween } from "@/lib/dates";
 import {
   DEFAULT_EXPIRY_THRESHOLDS,
   assessStock,
@@ -105,11 +105,10 @@ export async function getExpiryAlerts(options?: {
     getUnitsSoldByMedicine(addDays(now, -SALES_WINDOW_DAYS), now, options?.scope),
   ]);
 
-  const dayMs = 86_400_000;
 
   const rows: ExpiringBatchAlert[] = batches.map((batch) => {
     const expiry = new Date(batch.expiryDate);
-    const daysRemaining = Math.ceil((expiry.getTime() - now.getTime()) / dayMs);
+    const daysRemaining = calendarDaysBetween(now, expiry);
     const medicine = batch.medicineId as unknown as {
       _id: Types.ObjectId;
       name?: string;

@@ -10,7 +10,8 @@ import { Branch } from "@/models/Branch";
 import { Pharmacy } from "@/models/Pharmacy";
 import { normalizeRole } from "@/lib/roles";
 import { recordSecurityEvent } from "@/lib/audit";
-import { setRequestActor } from "@/lib/request-context";
+import { currentRequestContext, setRequestActor } from "@/lib/request-context";
+import { afterFailure, allowIpAttempt, isLocked, minutesLeft } from "@/lib/login-throttle";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,6 +19,13 @@ export const dynamic = "force-dynamic";
 /** POST /api/auth/login - exchange credentials for a session cookie. */
 export const POST = withRoute(async (req) => {
   const { email, password } = await parseJson(req, loginSchema);
+
+  if (!allowIpAttempt(currentRequestContext()?.ip ?? "")) {
+    throw ApiError.tooManyRequests(
+      "Too many sign-in attempts from this network. Wait a few minutes and try again.",
+    );
+  }
+
   await connectDB();
 
   // passwordHash is `select: false`, so ask for it explicitly.
@@ -41,8 +49,20 @@ export const POST = withRoute(async (req) => {
     await verifyPassword(password, "$2a$12$" + "x".repeat(53));
     throw await refused(invalid, "unknown email");
   }
+  // Locked: refuse before checking the password, so guesses made during the
+  // lock cannot be confirmed either.
+  if (isLocked(user.lockedUntil)) {
+    throw await refused(
+      ApiError.tooManyRequests(
+        `Too many wrong passwords. This account is locked for ${minutesLeft(user.lockedUntil as Date)} more minute(s), or reset the password with "Forgot password?".`,
+      ),
+      "account locked",
+    );
+  }
   if (!(await verifyPassword(password, user.passwordHash))) {
-    throw await refused(invalid, "wrong password");
+    const next = afterFailure(user.failedLoginCount ?? 0);
+    await User.updateOne({ _id: user._id }, { $set: next });
+    throw await refused(invalid, next.lockedUntil ? "wrong password - account locked" : "wrong password");
   }
   if (user.isActive === false) {
     throw await refused(
@@ -117,7 +137,10 @@ export const POST = withRoute(async (req) => {
 
   setRequestActor(sessionUser);
   await recordSecurityEvent({ action: "login", pharmacyId: pharmacyId || null });
-  await User.updateOne({ _id: user._id }, { $set: { lastLoginAt: new Date() } });
+  await User.updateOne(
+    { _id: user._id },
+    { $set: { lastLoginAt: new Date(), failedLoginCount: 0, lockedUntil: null } },
+  );
 
   return created({ user: sessionUser });
 });

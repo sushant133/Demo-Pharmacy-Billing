@@ -304,6 +304,6 @@ describe("paymentStatusFor", () => {
 
   it("is paid when a zero-value invoice has nothing owing", () => {
     // A fully-free sample delivery still needs a sane status.
-    expect(paymentStatusFor(0, 0)).toBe("unpaid");
+    expect(paymentStatusFor(0, 0)).toBe("paid");
   });
 });

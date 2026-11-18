@@ -20,6 +20,7 @@ export type ApiErrorCode =
   | "NOT_FOUND"
   | "CONFLICT"
   | "INSUFFICIENT_STOCK"
+  | "TOO_MANY_REQUESTS"
   | "INTERNAL_ERROR";
 
 const STATUS_BY_CODE: Record<ApiErrorCode, number> = {
@@ -30,6 +31,7 @@ const STATUS_BY_CODE: Record<ApiErrorCode, number> = {
   NOT_FOUND: 404,
   CONFLICT: 409,
   INSUFFICIENT_STOCK: 409,
+  TOO_MANY_REQUESTS: 429,
   INTERNAL_ERROR: 500,
 };
 
@@ -77,6 +79,9 @@ export class ApiError extends Error {
   }
   static insufficientStock(message: string, details?: unknown) {
     return new ApiError("INSUFFICIENT_STOCK", message, details);
+  }
+  static tooManyRequests(message: string) {
+    return new ApiError("TOO_MANY_REQUESTS", message);
   }
 }
 

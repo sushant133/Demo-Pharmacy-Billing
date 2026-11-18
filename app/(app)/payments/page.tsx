@@ -1,4 +1,7 @@
 import type { Metadata } from "next";
+import { DualDateField } from "@/components/DualDateField";
+import { PeriodLinks } from "@/components/reports/PeriodLinks";
+import { nepaliPeriods } from "@/lib/periods";
 import Link from "next/link";
 import { requirePagePermission } from "@/lib/auth";
 import {
@@ -54,7 +57,8 @@ export default async function PaymentsPage({
 
   const page = Math.max(1, Number(params.page) || 1);
   const today = toDateInputValue();
-  const monthStart = `${today.slice(0, 7)}-01`;
+  // Defaults to the current Nepali month, the period the shop keeps its books in.
+  const monthStart = nepaliPeriods(today)?.thisMonth.from ?? `${today.slice(0, 7)}-01`;
 
   const askedFrom = (params.from ?? monthStart).trim();
   const askedTo = (params.to ?? today).trim();
@@ -170,31 +174,16 @@ export default async function PaymentsPage({
       </div>
 
       <Card className="mt-4 mb-4 p-3.5 sm:p-4">
+        <PeriodLinks basePath="/payments" from={from} to={to} keep={{ method: method ?? undefined }} />
         <form method="get" className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="min-w-0">
-            <label htmlFor="from" className="label">
-              From
-            </label>
-            <input
-              id="from"
-              name="from"
-              type="date"
-              defaultValue={from}
-              className="input tnum"
-            />
+            <p className="label">From</p>
+            <DualDateField id="from" name="from" defaultValue={from} compact aria-label="From" />
           </div>
 
           <div className="min-w-0">
-            <label htmlFor="to" className="label">
-              To
-            </label>
-            <input
-              id="to"
-              name="to"
-              type="date"
-              defaultValue={to}
-              className="input tnum"
-            />
+            <p className="label">To</p>
+            <DualDateField id="to" name="to" defaultValue={to} compact aria-label="To" />
           </div>
 
           <div className="min-w-0">

@@ -55,6 +55,7 @@ export const GET = withRoute(async (req) => {
   const [docs, total] = await Promise.all([
     Medicine.find(filter)
       .sort({ name: 1 })
+      .collation({ locale: "en", strength: 2 })
       .skip((page - 1) * pageSize)
       .limit(pageSize)
       .lean(),

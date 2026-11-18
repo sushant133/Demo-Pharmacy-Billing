@@ -78,10 +78,11 @@ export function thinLabels(count: number, maxLabels: number): boolean[] {
   // The last point carries the direct label, so it must always be named.
   keep[count - 1] = true;
 
-  // Drop the penultimate kept label if the final one would crowd it.
-  const secondLast = count - 1 - stride;
-  if (secondLast > 0 && count - 1 - secondLast < stride / 2) {
-    keep[secondLast] = false;
+  // Drop the last regular label if the forced final one sits closer to it
+  // than a full stride - that pair is what overlapped on the report charts.
+  const lastRegular = Math.floor((count - 1) / stride) * stride;
+  if (lastRegular > 0 && lastRegular !== count - 1 && count - 1 - lastRegular < stride) {
+    keep[lastRegular] = false;
   }
 
   return keep;

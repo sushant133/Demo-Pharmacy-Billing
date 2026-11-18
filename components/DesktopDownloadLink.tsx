@@ -38,12 +38,22 @@ export function DesktopDownloadLink() {
 
   useEffect(() => {
     const inDesktopApp = "mantramedDesktop" in window;
-    const onWindows = /Windows/i.test(navigator.userAgent);
+    // A Windows desktop or laptop: Windows in the user agent *and* a mouse and
+    // a desktop-sized screen. Phones, tablets and phone emulation never match.
+    const onWindows =
+      /Windows NT/i.test(navigator.userAgent) &&
+      !/Mobile|Android|iPhone|iPad/i.test(navigator.userAgent) &&
+      window.matchMedia("(pointer: fine) and (min-width: 1024px)").matches;
     setShow(onWindows && !inDesktopApp && !isNativeApp() && !runningInstalled());
     void alreadyInstalled().then(setInstalledHere);
   }, []);
 
   if (!show) return null;
+
+  // Only offered when the browser can actually install it in one click. A
+  // button that can only print instructions (Firefox, or Chrome before the
+  // site qualifies) is a promise it cannot keep, so it stays hidden.
+  if (state !== "ready" && state !== "installed" && !installedHere) return null;
 
   if (state === "installed" || (installedHere && state !== "ready")) {
     return (

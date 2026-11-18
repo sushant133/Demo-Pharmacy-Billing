@@ -1,5 +1,6 @@
 "use client";
 
+import { isSafeAppPath } from "@/lib/safe-path";
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { BrandLoading } from "@/components/BrandLoading";
@@ -21,9 +22,7 @@ import { alertNotifyPlugin, listen } from "@/components/native/AlertNotification
 const OVERLAY_CEILING_MS = 10_000;
 
 /** Same-origin app paths only. */
-function isAppPath(path: unknown): path is string {
-  return typeof path === "string" && path.startsWith("/") && !path.startsWith("//");
-}
+const isAppPath = isSafeAppPath;
 
 export function NotificationOpener() {
   const router = useRouter();

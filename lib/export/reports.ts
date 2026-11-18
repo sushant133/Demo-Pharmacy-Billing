@@ -19,6 +19,7 @@ import { Sale } from "@/models/Sale";
 import { Supplier } from "@/models/Supplier";
 import { SupplierPayment } from "@/models/SupplierPayment";
 import { getBalancesFor } from "@/lib/suppliers";
+import { STILL_OWING_MATCH } from "@/lib/purchase-math";
 import type { ReportDataset } from "@/lib/export/dataset";
 import {
   billNumberGaps,
@@ -565,14 +566,21 @@ async function payablesReport(request: ReportRequest): Promise<ReportDataset> {
       $match: {
         ...tenant,
         status: "posted",
-        paymentStatus: { $ne: "paid" },
+        ...STILL_OWING_MATCH,
         dueDate: { $lt: now },
       },
     },
     {
       $group: {
         _id: "$supplierId",
-        overdue: { $sum: { $subtract: ["$totalAmount", "$amountPaid"] } },
+        overdue: {
+          $sum: {
+            $subtract: [
+              { $subtract: ["$totalAmount", { $ifNull: ["$returnedTotal", 0] }] },
+              { $ifNull: ["$amountPaid", 0] },
+            ],
+          },
+        },
       },
     },
   ]);

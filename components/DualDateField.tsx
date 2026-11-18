@@ -21,6 +21,14 @@ import { cx } from "@/components/ui";
 
 const BS_YEARS = Array.from({ length: 40 }, (_, index) => 2060 + index);
 
+/**
+ * Placeholders follow the current Nepali year, so an empty field hints at
+ * this year (2083 in FY 2083-84) rather than a year hard-coded long ago.
+ */
+const TODAY_BS = parseYmd(adIsoToBsIso(new Date().toISOString().slice(0, 10)) ?? "");
+const BS_YEAR_HINT = TODAY_BS ? String(TODAY_BS.year) : "YYYY";
+const BS_DATE_HINT = `${BS_YEAR_HINT}-MM-DD`;
+
 function bsParts(adIso: string): { year: string; month: string; day: string } {
   const iso = adIso ? adIsoToBsIso(adIso) : null;
   const parsed = iso ? parseYmd(iso) : null;
@@ -161,7 +169,7 @@ export function DualDateField({
             id={`${id}-bs`}
             type="text"
             inputMode="numeric"
-            placeholder="2082-05-20"
+            placeholder={BS_DATE_HINT}
             value={bsText}
             onChange={(event) => onBsText(event.target.value)}
             disabled={disabled}
@@ -209,7 +217,7 @@ export function DualDateField({
             min={2000}
             max={2099}
             list={`${id}-bs-years`}
-            placeholder="2082"
+            placeholder={BS_YEAR_HINT}
             value={bs.year}
             onChange={(event) => onBsPart("year", event.target.value)}
             disabled={disabled}

@@ -47,6 +47,13 @@ const userSchema = new Schema(
     isActive: { type: Boolean, default: true },
     lastLoginAt: { type: Date },
     /**
+     * Sign-in throttling (lib/login-throttle.ts): consecutive wrong passwords
+     * since the last success, and until when the account refuses to sign in
+     * after too many. Cleared by a successful sign-in or a password reset.
+     */
+    failedLoginCount: { type: Number, default: 0 },
+    lockedUntil: { type: Date, default: null },
+    /**
      * When the password was last changed, by a reset or by the owner.
      *
      * Recorded rather than used: sessions are stateless JWTs verified without
@@ -77,7 +84,9 @@ userSchema.set("toJSON", {
 });
 
 // Every change to this collection lands in the audit trail (lib/audit.ts).
-userSchema.plugin(auditPlugin);
+// Sign-in bookkeeping is left out: the login / login-failed security events
+// already record every attempt, and a row per sign-in buried the real edits.
+userSchema.plugin(auditPlugin, { ignore: ["lastLoginAt", "failedLoginCount", "lockedUntil"] });
 
 export type UserDoc = InferSchemaType<typeof userSchema>;
 

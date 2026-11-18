@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { DualDateField } from "@/components/DualDateField";
 import { addDays, toDateInputValue } from "@/lib/dates";
+import { nepaliPeriodList } from "@/lib/periods";
 import { Card, cx } from "@/components/ui";
 
 /**
@@ -45,6 +46,10 @@ export function resolveRange(params: {
 
   const preset = params.preset ?? "30d";
   const to = toDateInputValue(today);
+
+  // Nepali month and fiscal-year periods (lib/periods.ts).
+  const nepali = nepaliPeriodList(to).find((period) => period.key === preset);
+  if (nepali) return { from: nepali.from, to: nepali.to, label: nepali.label, preset };
 
   switch (preset) {
     case "today":
@@ -96,7 +101,7 @@ export function RangeFilter({
     <Card className="mb-4 p-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-wrap items-center gap-1.5">
-          {PRESETS.map((preset) => (
+          {[...PRESETS, ...nepaliPeriodList()].map((preset) => (
             <Link
               key={preset.key}
               href={`${basePath}?preset=${preset.key}`}

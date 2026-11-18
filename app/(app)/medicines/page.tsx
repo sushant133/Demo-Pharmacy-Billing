@@ -226,6 +226,8 @@ export default async function MedicinesPage({
     const [medicines, total, settings, usedCategories, usedUnits] = await Promise.all([
       Medicine.find(filter)
         .sort({ name: 1 })
+        // Case-insensitive: "Calcium" between "CEFADYL" and "CHLOROSOL".
+        .collation({ locale: "en", strength: 2 })
         .skip((page - 1) * PAGE_SIZE)
         .limit(PAGE_SIZE)
         .lean(),

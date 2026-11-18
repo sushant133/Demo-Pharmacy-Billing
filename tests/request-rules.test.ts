@@ -116,7 +116,8 @@ describe("settings number boxes", () => {
 
   it("accept typed numbers, a deliberate zero, and absence", () => {
     expect(settingsSchema.parse({ abbreviatedInvoiceLimit: "7500" }).abbreviatedInvoiceLimit).toBe(7500);
-    expect(settingsSchema.parse({ vatRate: "0" }).vatRate).toBe(0);
+    expect(settingsSchema.safeParse({ vatRate: "0" }).success).toBe(false);
+    expect(settingsSchema.parse({ vatRate: "13" }).vatRate).toBe(13);
     expect(settingsSchema.parse({}).abbreviatedInvoiceLimit).toBe(5000);
     expect(settingsSchema.parse({}).vatRate).toBe(13);
   });

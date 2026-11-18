@@ -184,6 +184,8 @@ const saleSchema = new Schema(
     },
     /** Walk-in name, when the sale is not tied to a saved customer record. */
     customerName: { type: String, trim: true, default: "" },
+    /** Who prescribed the Rx-only lines (doctor or prescription no.). */
+    rxPrescriber: { type: String, trim: true, default: "", maxlength: 160 },
     /** Frozen at sale so a reprint still shows what was on the original. */
     customerPan: { type: String, trim: true, default: "" },
     customerAddress: { type: String, trim: true, default: "" },

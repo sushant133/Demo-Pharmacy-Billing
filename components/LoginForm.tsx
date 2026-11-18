@@ -160,29 +160,19 @@ export function LoginForm({
           <label htmlFor="password" className="label">
             Password
           </label>
-          <div className="mb-1.5 flex items-baseline gap-3 text-xs font-medium">
-            <button
-              type="button"
-              onClick={() => setRevealed((current) => !current)}
-              aria-pressed={revealed}
-              aria-controls="password"
-              className="rounded text-slate-500 transition-colors hover:text-brand-700"
-            >
-              {revealed ? "Hide" : "Show"}
-            </button>
-            {/*
-              Beside the field it belongs to rather than under the button: it
-              is wanted at the moment the password will not come to mind, and
-              that moment is here.
-            */}
-            <Link
-              href="/forgot-password"
-              className="rounded text-brand-700 transition-colors hover:text-brand-800"
-            >
-              Forgot?
-            </Link>
-          </div>
+          {/*
+            Beside the field it belongs to: it is wanted at the moment the
+            password will not come to mind, and that moment is here. After the
+            field in tab order (see below), so Tab goes Email -> Password.
+          */}
+          <Link
+            href="/forgot-password"
+            className="mb-1.5 rounded text-xs font-medium text-brand-700 transition-colors hover:text-brand-800"
+          >
+            Forgot password?
+          </Link>
         </div>
+        <div className="relative">
         <input
           ref={passwordRef}
           id="password"
@@ -201,8 +191,24 @@ export function LoginForm({
             undefined
           }
           className="login-input"
+          style={{ paddingRight: "4.25rem" }}
           placeholder="Your counter password"
         />
+          {/*
+            Inside the field and after it in the DOM, so keyboard order is
+            Email -> Password -> Show, and big enough to hit on a touch screen.
+          */}
+          <button
+            type="button"
+            onClick={() => setRevealed((current) => !current)}
+            aria-pressed={revealed}
+            aria-controls="password"
+            aria-label={revealed ? "Hide password" : "Show password"}
+            className="absolute inset-y-0 right-1 my-auto flex h-9 min-w-11 items-center justify-center rounded-md px-2 text-xs font-medium text-slate-500 transition-colors hover:text-brand-700"
+          >
+            {revealed ? "Hide" : "Show"}
+          </button>
+        </div>
         {errors.password ? (
           <p id="password-error" className="mt-1.5 text-xs text-rose-600">
             {errors.password}

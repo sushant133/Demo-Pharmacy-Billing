@@ -1,7 +1,7 @@
 import { ApiError, ok, parseJson, withRoute } from "@/lib/api";
 import { requirePermission } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
-import { getSupplierBalance } from "@/lib/suppliers";
+import { assertSupplierPanFree, getSupplierBalance } from "@/lib/suppliers";
 import { Batch } from "@/models/Batch";
 import { Purchase } from "@/models/Purchase";
 import { Supplier } from "@/models/Supplier";
@@ -67,6 +67,7 @@ export const PATCH = withRoute<Ctx>(async (req, ctx) => {
   const user = await requirePermission("supplier:write");
   const id = await supplierId(ctx);
   const update = await parseJson(req, supplierUpdateSchema);
+  await assertSupplierPanFree(user, update.panNo, id);
   await connectDB();
 
   const supplier = await Supplier.findOneAndUpdate(

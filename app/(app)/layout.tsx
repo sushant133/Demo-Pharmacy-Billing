@@ -2,7 +2,8 @@ import { redirect } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import { requirePageSession } from "@/lib/auth";
-import { resolveViewScope, switchableBranches } from "@/lib/branch-scope";
+import { Types } from "mongoose";
+import { resolveViewScope, switchableBranches, type BranchScope } from "@/lib/branch-scope";
 import { withDbRead } from "@/lib/db";
 import { getSettings } from "@/lib/settings";
 import { alertAccountKey, getAlertOverview } from "@/lib/alerts";
@@ -32,13 +33,39 @@ export default async function AppLayout({
   const user = await requirePageSession();
   if (user.role === "superadmin") redirect("/superadmin");
 
+  /*
+    If the shell's own lookups fail, draw it anyway from what the session
+    already says. A throw here would escape to the root error boundary, which
+    has no sidebar - the person is left on a bare error page with no way to
+    move. With a fallback shell, the page below either loads or fails inside
+    its own boundary, and the navigation stays usable either way.
+  */
   const [scope, branches, settings] = await withDbRead(() =>
     Promise.all([
       resolveViewScope(user),
       user.role === "admin" ? switchableBranches(user) : Promise.resolve([]),
       getSettings(user.pharmacyId, user.pharmacyName),
     ]),
-  );
+  ).catch((err: unknown) => {
+    console.error("[layout] shell lookups failed, using session fallback", err);
+    const fallbackScope: BranchScope = {
+      pharmacyId: Types.ObjectId.isValid(user.pharmacyId)
+        ? new Types.ObjectId(user.pharmacyId)
+        : null,
+      branchId:
+        user.branchId && Types.ObjectId.isValid(user.branchId)
+          ? new Types.ObjectId(user.branchId)
+          : null,
+      code: user.branchCode || null,
+      label: user.branchName || user.branchCode || "Your branch",
+      switchable: false,
+    };
+    return [
+      fallbackScope,
+      [] as Awaited<ReturnType<typeof switchableBranches>>,
+      { businessName: user.pharmacyName },
+    ] as const;
+  });
 
   // The count on the Alerts badge. Its own read, behind the 15s cache in
   // getAlertOverview and a catch: a counter that cannot be computed must not

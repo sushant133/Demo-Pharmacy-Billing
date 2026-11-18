@@ -63,6 +63,23 @@ export function fiscalYearOf(instant: Date = new Date()): string {
 }
 
 /** The UTC instant of local midnight starting the day containing `instant`. */
+/**
+ * Whole calendar days from one instant to another, counted in the shop's
+ * timezone: tomorrow is 1 whatever the hour now. Every "days to expiry" in the
+ * app goes through this, so Inventory, Alerts and the dashboard agree.
+ */
+export function calendarDaysBetween(
+  from: Date,
+  to: Date,
+  tz: string = config.timezone,
+): number {
+  const a = localParts(from, tz);
+  const b = localParts(to, tz);
+  return Math.round(
+    (Date.UTC(b.year, b.month - 1, b.day) - Date.UTC(a.year, a.month - 1, a.day)) / 86_400_000,
+  );
+}
+
 export function startOfLocalDay(
   instant: Date = new Date(),
   tz: string = config.timezone,

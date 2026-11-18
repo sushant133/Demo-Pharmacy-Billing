@@ -27,8 +27,8 @@ export function AuthShell({
           <Image
             src="/mantramed-logo.png"
             alt=""
-            width={1254}
-            height={1254}
+            width={512}
+            height={512}
             priority
             className="h-[72px] w-[72px] shrink-0 object-contain"
           />

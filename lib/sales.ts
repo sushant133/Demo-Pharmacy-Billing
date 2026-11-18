@@ -1,5 +1,6 @@
 import { Types } from "mongoose";
 import { ApiError } from "@/lib/api";
+import { escapeRegExp } from "@/lib/regex";
 import { getSettings } from "@/lib/settings";
 import { connectDB } from "@/lib/db";
 import { pharmacyFilter, pharmacyObjectId } from "@/lib/tenant";
@@ -317,6 +318,27 @@ export async function createSale(
       );
     }
 
+    // Prescription-only medicines leave the counter against a prescription.
+    // Controlled lines are covered by the register record above.
+    const rxOnly = await Medicine.find({
+      pharmacyId,
+      _id: {
+        $in: plan.lines
+          .filter((line) => !isControlledSchedule(line.schedule))
+          .map((line) => new Types.ObjectId(line.medicineId)),
+      },
+      requiresPrescription: true,
+    })
+      .select("name")
+      .session(session)
+      .lean();
+    const rxPrescriber = (input.rxPrescriber ?? "").trim();
+    if (rxOnly.length > 0 && rxPrescriber.length < 2) {
+      throw ApiError.badRequest(
+        `${rxOnly.map((medicine) => medicine.name).join(", ")} ${rxOnly.length === 1 ? "is" : "are"} prescription-only. Enter who prescribed it (doctor or prescription number).`,
+      );
+    }
+
     // Small retail sales to a buyer with no PAN may go out as an abbreviated
     // invoice. Above the limit IRD wants the buyer named, so a bill that would
     // leave without one is refused here, where the total is finally known.
@@ -370,9 +392,58 @@ export async function createSale(
         "You are not allowed to let a bill leave the counter unpaid.",
       );
     }
+    // Money owed has to be owed by someone. A walk-in bill left short could
+    // never be chased or shown on Receivables.
+    if (settlement.remaining > 0 && !buyerNamed) {
+      throw ApiError.badRequest(
+        "A bill left unpaid or part-paid needs the customer's name, so the due can be collected later.",
+      );
+    }
     let customerPan = buyerPan;
     let customerAddress = input.customerAddress ?? "";
     let customerPhone = input.customerPhone ?? "";
+    /*
+      A typed name with no saved record is filed, and the bill linked to it,
+      when there is something to keep it for: a phone or PAN to reach or bill
+      them by, or a due to collect. A bare name on a paid bill stays a walk-in
+      name printed on the bill, as most counter sales are. Matched on name and
+      phone together - a name alone is shared by too many people to merge on.
+    */
+    let customerId = input.customerId ?? null;
+    const typedName = (input.customerName ?? "").trim();
+    const worthFiling =
+      Boolean(customerPhone.trim() || customerPan) || settlement.remaining > 0;
+    if (!customerId && typedName && worthFiling) {
+      const nameRx = new RegExp(`^${escapeRegExp(typedName)}$`, "i");
+      const existing = await Customer.findOne({
+        pharmacyId,
+        name: nameRx,
+        phone: customerPhone.trim(),
+      })
+        .select("_id")
+        .session(session)
+        .lean();
+      if (existing) {
+        customerId = String(existing._id);
+      } else {
+        const [filed] = await Customer.create(
+          [
+            {
+              pharmacyId,
+              name: typedName,
+              phone: customerPhone.trim(),
+              address: customerAddress.trim(),
+              panNo: customerPan,
+            },
+          ],
+          sessionOption(session),
+        );
+        if (filed) {
+          customerId = String(filed._id);
+          onRollback(() => Customer.deleteOne({ _id: filed._id }).exec());
+        }
+      }
+    }
     if (input.customerId) {
       const saved = await Customer.findOne({
         _id: input.customerId,
@@ -448,7 +519,8 @@ export async function createSale(
                   hasImage: Boolean(input.controlled.prescriptionImage),
                 }
               : null,
-          customerId: input.customerId ? new Types.ObjectId(input.customerId) : null,
+          rxPrescriber: rxOnly.length > 0 ? rxPrescriber : "",
+          customerId: customerId ? new Types.ObjectId(customerId) : null,
           customerName: input.customerName ?? "",
           customerPan,
           customerAddress,
@@ -512,6 +584,15 @@ export async function createSale(
         sessionOption(session),
       );
       onRollback(() => PrescriptionImage.deleteOne({ saleId: sale._id }).exec());
+    }
+
+    // What the Customers list shows as "Last billed".
+    if (customerId) {
+      await Customer.updateOne(
+        { _id: new Types.ObjectId(customerId), pharmacyId },
+        { $set: { lastBilledAt: issuedAt } },
+        sessionOption(session),
+      );
     }
 
     // Queued in the same transaction as the bill, so a bill cannot exist

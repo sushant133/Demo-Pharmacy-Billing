@@ -152,6 +152,7 @@ export function BillingScreen({
   const [customerAddress, setCustomerAddress] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [note, setNote] = useState("");
+  const [rxPrescriber, setRxPrescriber] = useState("");
   const [controlled, setControlled] = useState(EMPTY_CONTROLLED);
   const [prescriptionImage, setPrescriptionImage] = useState<string | null>(null);
   const [prescriptionPhotoError, setPrescriptionPhotoError] = useState<string | null>(null);
@@ -390,6 +391,7 @@ export function BillingScreen({
     setCustomerAddress("");
     setCustomerPhone("");
     setNote("");
+    setRxPrescriber("");
     setControlled(EMPTY_CONTROLLED);
     setPrescriptionImage(null);
     setPrescriptionPhotoError(null);
@@ -453,6 +455,14 @@ export function BillingScreen({
       !controlled.prescriberNmcNo.trim() ||
       !(prescriptionImage || controlled.prescriptionRef.trim()));
 
+  // Rx-only lines that are not controlled (those have the fuller form above).
+  const rxLines = cart.filter(
+    (line) => line.requiresPrescription && !controlledIds.has(line.medicineId),
+  );
+  const rxIncomplete = rxLines.length > 0 && rxPrescriber.trim().length < 2;
+  // A due has to be owed by somebody: the server refuses a walk-in on credit.
+  const creditNeedsName = Boolean(plan) && settlement.remaining > 0 && !customerName.trim();
+
   const readyToConfirm =
     Boolean(plan) &&
     cart.length > 0 &&
@@ -460,6 +470,8 @@ export function BillingScreen({
     !submitting &&
     !paymentBlocked &&
     !controlledIncomplete &&
+    !rxIncomplete &&
+    !creditNeedsName &&
     !planError;
 
   async function attachPrescriptionPhoto(file: File | undefined) {
@@ -502,6 +514,7 @@ export function BillingScreen({
           customerPan: customerPan.trim(),
           customerAddress: customerAddress.trim(),
           customerPhone: customerPhone.trim(),
+          rxPrescriber: rxLines.length > 0 ? rxPrescriber.trim() : "",
           controlled:
             controlledLines.length > 0
               ? {
@@ -568,6 +581,8 @@ export function BillingScreen({
     prescriptionImage,
     quantityFor,
     receivedValue,
+    rxLines.length,
+    rxPrescriber,
     settlement.paid,
     settlement.remaining,
     settlement.status,
@@ -689,11 +704,12 @@ export function BillingScreen({
             </p>
           </div>
           <div className="flex flex-wrap items-end gap-4">
-            <div className="hidden items-center gap-2 text-[11px] text-slate-300 sm:flex">
+            {/* Keyboard hints only where there is a keyboard. */}
+            <div className="hidden items-center gap-2 text-[11px] text-slate-300 lg:[@media(pointer:fine)]:flex">
               <Kbd hint="F4">Search</Kbd>
               <Kbd hint="F9">Complete</Kbd>
             </div>
-            <div className="text-right">
+            <div className="text-left sm:text-right">
               <p className="text-[11px] font-semibold tracking-[0.14em] text-brand-300 uppercase">
                 This bill
               </p>
@@ -805,7 +821,7 @@ export function BillingScreen({
                 aria-controls="medicine-results"
               />
 
-              <kbd className="absolute top-1/2 right-3 -translate-y-1/2 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 ring-1 ring-slate-200 ring-inset">
+              <kbd className="absolute top-1/2 right-3 hidden -translate-y-1/2 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 ring-1 ring-slate-200 ring-inset lg:[@media(pointer:fine)]:block">
                 F4
               </kbd>
             </div>
@@ -1578,7 +1594,8 @@ export function BillingScreen({
                   <span className="text-[10px] font-semibold tracking-wide text-slate-500 uppercase">
                     Payment
                   </span>
-                  <PaymentStatusBadge status={settlement.status} />
+                  {/* Nothing to pay for yet: no status, rather than a green "Paid". */}
+                  {cart.length > 0 ? <PaymentStatusBadge status={settlement.status} /> : null}
                 </div>
 
                 <dl className="mt-2 space-y-1">
@@ -1635,6 +1652,21 @@ export function BillingScreen({
             </section>
 
             <section className="px-4 py-3">
+              {rxLines.length > 0 ? (
+                <div className="mb-3 space-y-2 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                  <label htmlFor="rx-prescriber" className="block text-xs font-medium text-amber-900">
+                    Prescription-only: {rxLines.map((line) => line.name).join(", ")}
+                  </label>
+                  <input
+                    id="rx-prescriber"
+                    value={rxPrescriber}
+                    onChange={(event) => setRxPrescriber(event.target.value)}
+                    placeholder="Prescribed by (doctor) or prescription no."
+                    className="input"
+                    maxLength={160}
+                  />
+                </div>
+              ) : null}
               {controlledLines.length > 0 ? (
                 <div className="mb-3 space-y-2 rounded-xl border border-rose-200 bg-rose-50/60 p-3">
                   <p className="text-xs font-medium text-rose-800">
@@ -1735,6 +1767,14 @@ export function BillingScreen({
               ) : null}
             </div>
 
+          </div>
+
+          {/*
+            Pinned below the scrolling fields, so Complete Sale is always on
+            screen - on a laptop-height display it used to scroll out of the
+            panel behind the payment fields.
+          */}
+          <div className="shrink-0 border-t border-slate-100 pt-3">
             {/*
               The answer, in the brand tint rather than the dark slate the hero
               uses. Two dark panels on one screen fought each other for the
@@ -1767,6 +1807,16 @@ export function BillingScreen({
                   className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
                 >
                   {planError}
+                </div>
+              ) : null}
+
+              {creditNeedsName ? (
+                <div
+                  role="status"
+                  className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+                >
+                  This bill leaves a due. Enter the customer&apos;s name above so it can
+                  be collected later.
                 </div>
               ) : null}
 

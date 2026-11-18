@@ -17,6 +17,7 @@ import {
   type StockFilter,
 } from "@/lib/stock-status";
 import { Batch } from "@/models/Batch";
+import { WriteOffExpiredButton } from "@/components/inventory/WriteOffExpiredButton";
 import {
   Badge,
   Card,
@@ -54,6 +55,7 @@ interface StockRow {
   quantity: number;
   sellable: number;
   expiredUnits: number;
+  expiredValue?: number;
   lots: number;
   stockValue: number;
   saleValue: number;
@@ -116,6 +118,17 @@ export default async function InventoryPage({
           expiredUnits: {
             $sum: { $cond: [{ $lt: ["$expiryDate", now] }, "$quantity", 0] },
           },
+          // Each expired lot at its own cost - the same figure the dashboard
+          // and Alerts add up, not an average spread across fresh lots too.
+          expiredValue: {
+            $sum: {
+              $cond: [
+                { $lt: ["$expiryDate", now] },
+                { $multiply: ["$quantity", "$costPrice"] },
+                0,
+              ],
+            },
+          },
           lots: { $sum: 1 },
           stockValue: { $sum: { $multiply: ["$quantity", "$costPrice"] } },
           saleValue: { $sum: { $multiply: ["$quantity", "$salePrice"] } },
@@ -154,6 +167,7 @@ export default async function InventoryPage({
           quantity: 1,
           sellable: 1,
           expiredUnits: 1,
+          expiredValue: 1,
           lots: 1,
           stockValue: { $round: ["$stockValue", 2] },
           saleValue: { $round: ["$saleValue", 2] },
@@ -165,7 +179,9 @@ export default async function InventoryPage({
         },
       },
       { $sort: { name: 1 } },
-    ]);
+      // Case-insensitive, so "Calcium" sits between "CEFADYL" and "CHLOROSOL"
+      // rather than after every all-caps name.
+    ], { collation: { locale: "en", strength: 2 } });
   });
 
   const needle = search.toLowerCase();
@@ -194,11 +210,10 @@ export default async function InventoryPage({
   const expiredUnits = rows.reduce((sum, row) => sum + row.expiredUnits, 0);
   // What the dead stock cost, valued at its own lots' average - the figure
   // somebody has to write off, not a units count they then have to price.
-  const expiredValue = rows.reduce(
-    (sum, row) =>
-      sum + (row.quantity > 0 ? (row.stockValue / row.quantity) * row.expiredUnits : 0),
-    0,
-  );
+  const expiredValue = rows.reduce((sum, row) => sum + (row.expiredValue ?? 0), 0);
+  // Medicines that can actually be sold today. A line holding only expired
+  // lots is on the shelf but not "in stock".
+  const inStockCount = rows.filter((row) => row.sellable > 0).length;
 
   const baseQuery = new URLSearchParams();
   if (search) baseQuery.set("q", search);
@@ -256,6 +271,9 @@ export default async function InventoryPage({
               </a>
             ) : null}
 
+            {canAdjust && expiredUnits > 0 ? (
+              <WriteOffExpiredButton units={expiredUnits} />
+            ) : null}
             <Link href="/batches" className="btn-secondary">
               Browse lots
             </Link>
@@ -274,7 +292,15 @@ export default async function InventoryPage({
           expiredUnits > 0 ? "lg:grid-cols-5" : "lg:grid-cols-4",
         )}
       >
-        <StatCard label="Medicines in stock" value={integer(rows.length)} />
+        <StatCard
+          label="Medicines in stock"
+          value={integer(inStockCount)}
+          hint={
+            rows.length > inStockCount
+              ? `${integer(rows.length - inStockCount)} more with only expired stock`
+              : undefined
+          }
+        />
         <StatCard
           label="Sellable units"
           value={integer(totalUnits)}

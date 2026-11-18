@@ -35,8 +35,8 @@ export default function PrivacyPage() {
           <Image
             src="/mantramed-logo.png"
             alt=""
-            width={1254}
-            height={1254}
+            width={512}
+            height={512}
             priority
             className="h-14 w-14 shrink-0 object-contain"
           />

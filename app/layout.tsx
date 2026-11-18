@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { getSession } from "@/lib/auth";
 import { getSettings } from "@/lib/settings";
+import { config } from "@/lib/config";
 import { Suspense } from "react";
 import { CapacitorBoot } from "@/components/native/CapacitorBoot";
 import { NotificationOpener } from "@/components/native/NotificationOpener";
@@ -27,13 +28,29 @@ export async function generateMetadata(): Promise<Metadata> {
     titleName = settings.businessName.trim() || session.pharmacyName.trim() || "MantraMed";
   }
 
+  const description =
+    "Point of sale and inventory management for pharmacies: FEFO batch dispensing, expiry tracking and VAT billing.";
   return {
+    metadataBase: new URL(config.appUrl),
     title: {
       default: titleName,
       template: `%s | ${titleName}`,
     },
-    description:
-      "Point of sale and inventory management for pharmacies: FEFO batch dispensing, expiry tracking and VAT billing.",
+    description,
+    // A shared link to the app shows the product, never a tenant's name.
+    openGraph: {
+      type: "website",
+      siteName: "MantraMed",
+      title: "MantraMed - Pharmacy Suite",
+      description,
+      images: [{ url: "/mantramed-logo.png", width: 512, height: 512, alt: "MantraMed logo" }],
+    },
+    twitter: {
+      card: "summary",
+      title: "MantraMed - Pharmacy Suite",
+      description,
+      images: ["/mantramed-logo.png"],
+    },
     appleWebApp: {
       capable: true,
       title: titleName,

@@ -15,6 +15,8 @@ const customerSchema = new Schema(
     /** Optional - needed on bills for VAT-registered business customers. */
     panNo: { type: String, trim: true, default: "", maxlength: 30 },
     notes: { type: String, trim: true, default: "" },
+    /** When the latest bill linked to this customer was raised. */
+    lastBilledAt: { type: Date, default: null },
   },
   { timestamps: true },
 );
@@ -23,7 +25,7 @@ customerSchema.index({ name: "text", phone: "text" });
 customerSchema.index({ pharmacyId: 1, phone: 1 });
 
 // Every change to this collection lands in the audit trail (lib/audit.ts).
-customerSchema.plugin(auditPlugin);
+customerSchema.plugin(auditPlugin, { ignore: ["lastBilledAt"] });
 
 export type CustomerDoc = InferSchemaType<typeof customerSchema>;
 

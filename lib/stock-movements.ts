@@ -298,6 +298,50 @@ export async function writeOffStock(
   });
 }
 
+/**
+ * Write off every expired lot still holding stock in the given branch scope,
+ * in one action. Each lot goes through `writeOffStock`, so every one gets its
+ * own ledger line with reason "Expired" exactly as if it had been written off
+ * by hand - this only saves the clicking.
+ */
+export async function writeOffAllExpired(
+  user: SessionUser,
+  branchMatch: Record<string, unknown>,
+): Promise<{ lots: number; units: number; value: number; failed: string[] }> {
+  await connectDB();
+  const lots = await Batch.find({
+    ...pharmacyFilter(user),
+    ...branchMatch,
+    quantity: { $gt: 0 },
+    expiryDate: { $lt: new Date() },
+  })
+    .select("_id quantity batchNumber")
+    .limit(1000)
+    .lean();
+
+  let units = 0;
+  let value = 0;
+  let done = 0;
+  const failed: string[] = [];
+  for (const lot of lots) {
+    try {
+      const result = await writeOffStock(user, {
+        batchId: String(lot._id),
+        quantity: lot.quantity,
+        reasonCode: "expired",
+        note: "Written off with all other expired stock",
+      });
+      units += result.quantity;
+      value += result.value;
+      done += 1;
+    } catch {
+      // A lot sold or moved meanwhile: leave it for a second pass.
+      failed.push(lot.batchNumber);
+    }
+  }
+  return { lots: done, units, value: round2(value), failed };
+}
+
 export interface TransferResult extends MovementResult {
   transferRef: string;
   toBranchName: string;

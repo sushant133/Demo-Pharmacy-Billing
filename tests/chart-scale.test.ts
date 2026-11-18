@@ -104,6 +104,18 @@ describe("thinLabels", () => {
     expect(keep[keep.length - 1]).toBe(true);
   });
 
+  it("never keeps two labels closer than the stride", () => {
+    for (const count of [9, 14, 30, 31, 45, 90]) {
+      const kept = thinLabels(count, 8)
+        .map((on, index) => (on ? index : -1))
+        .filter((index) => index >= 0);
+      const stride = Math.ceil(count / 8);
+      for (let i = 1; i < kept.length; i += 1) {
+        expect(kept[i]! - kept[i - 1]!).toBeGreaterThanOrEqual(stride);
+      }
+    }
+  });
+
   it("handles an empty axis", () => {
     expect(thinLabels(0, 8)).toEqual([]);
   });

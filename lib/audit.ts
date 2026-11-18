@@ -55,11 +55,15 @@ function normalise(value: unknown): unknown {
 }
 
 /** Field-by-field difference between two versions of one record. */
-export function diffRecords(before: Plain | null, after: Plain | null): AuditChange[] {
+export function diffRecords(
+  before: Plain | null,
+  after: Plain | null,
+  ignore?: ReadonlySet<string>,
+): AuditChange[] {
   const keys = new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})]);
   const changes: AuditChange[] = [];
   for (const key of [...keys].sort()) {
-    if (IGNORED.has(key)) continue;
+    if (IGNORED.has(key) || ignore?.has(key)) continue;
     const old = normalise(before?.[key]);
     const now = normalise(after?.[key]);
     if (JSON.stringify(old) === JSON.stringify(now)) continue;
@@ -250,7 +254,19 @@ function entityName(model: Model<unknown>): string {
   return model.modelName;
 }
 
-export function auditPlugin(schema: Schema, options?: { tenantIsSelf?: boolean }): void {
+export function auditPlugin(
+  schema: Schema,
+  options?: {
+    tenantIsSelf?: boolean;
+    /**
+     * Bookkeeping fields of this model that change as a side effect of
+     * ordinary use (a sign-in stamping lastLoginAt). An update that changes
+     * only these leaves no entry; the security events already record it.
+     */
+    ignore?: string[];
+  },
+): void {
+  const ignore = new Set(options?.ignore ?? []);
   // The record that is itself a tenant carries no pharmacyId: it is its own. Without
   // this, a superadmin's edit to a shop lands where that shop's owner cannot see it.
   const pharmacyOf = (record: Plain | null): unknown =>
@@ -280,7 +296,7 @@ export function auditPlugin(schema: Schema, options?: { tenantIsSelf?: boolean }
   schema.post("save", async function (doc: HydratedDocument<Plain>) {
     const before = (doc.$locals.auditBefore as Plain | null | undefined) ?? null;
     const after = doc.toObject({ depopulate: true }) as Plain;
-    const changes = diffRecords(before, after);
+    const changes = diffRecords(before, after, before ? ignore : undefined);
     if (before && changes.length === 0) return;
     const model = doc.constructor as Model<unknown>;
     await writeEntries(
@@ -358,7 +374,7 @@ export function auditPlugin(schema: Schema, options?: { tenantIsSelf?: boolean }
     for (const id of ids.map(String)) {
       const old = beforeById.get(id) ?? null;
       const now = afterById.get(id) ?? null;
-      const changes = diffRecords(old, now);
+      const changes = diffRecords(old, now, old ? ignore : undefined);
       if (changes.length === 0) continue;
       entries.push({
         action: old ? "update" : "create",

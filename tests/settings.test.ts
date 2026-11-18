@@ -142,8 +142,10 @@ describe("updatePharmacySchema", () => {
 
 describe("settingsSchema", () => {
   it("holds the VAT rate to a sane percentage", () => {
-    expect(settingsSchema.safeParse({ ...valid, vatRate: 0 }).success).toBe(true);
-    expect(settingsSchema.safeParse({ ...valid, vatRate: 100 }).success).toBe(true);
+    // Nepal has one VAT rate; anything else drops or inflates VAT on every bill.
+    expect(settingsSchema.safeParse({ ...valid, vatRate: 13 }).success).toBe(true);
+    expect(settingsSchema.safeParse({ ...valid, vatRate: 0 }).success).toBe(false);
+    expect(settingsSchema.safeParse({ ...valid, vatRate: 100 }).success).toBe(false);
     expect(settingsSchema.safeParse({ ...valid, vatRate: -1 }).success).toBe(false);
     expect(settingsSchema.safeParse({ ...valid, vatRate: 101 }).success).toBe(false);
   });

@@ -2,7 +2,7 @@ import { Types } from "mongoose";
 import { connectDB } from "@/lib/db";
 import { verifyAuditEntry } from "@/lib/audit";
 import { bsDateOf } from "@/lib/export/ird-reports";
-import { formatTime } from "@/lib/format";
+import { formatDateTime, formatTime } from "@/lib/format";
 import { roleName } from "@/lib/roles";
 import { AUDIT_ACTIONS, AuditLog, type AuditAction } from "@/models/AuditLog";
 import type { ReportDataset } from "@/lib/export/dataset";
@@ -154,8 +154,12 @@ export async function auditActors(
 }
 
 /** One value from a change, short enough for a table cell. */
+/** Stored dates come back as UTC ISO strings; shown in the shop's own time. */
+const ISO_INSTANT = /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?Z$/;
+
 export function describeAuditValue(value: unknown): string {
   if (value === null || value === undefined || value === "") return "—";
+  if (typeof value === "string" && ISO_INSTANT.test(value)) return formatDateTime(value);
   if (Array.isArray(value)) return `${value.length} item${value.length === 1 ? "" : "s"}`;
   if (typeof value === "object") {
     const text = JSON.stringify(value);

@@ -112,10 +112,28 @@ export default async function CbmsPage() {
         <div className="border-b border-slate-100 px-4 py-3">
           <h2 className="text-sm font-semibold text-slate-900">Not yet accepted</h2>
         </div>
-        {outstanding.length === 0 ? (
+        {outstanding.length === 0 && neverQueued > 0 ? (
+          /*
+            Bills raised while CBMS was off never joined the queue, so the
+            queue can be empty while IRD has received nothing. Saying
+            "everything has reached IRD" then would be false.
+          */
           <EmptyState
-            title="Everything has reached IRD"
-            description="Every invoice and credit note on the queue has been accepted."
+            title={`${integer(neverQueued)} bill${neverQueued === 1 ? "" : "s"} not sent to IRD`}
+            description={
+              settings.cbmsEnabled
+                ? "These were raised while CBMS was off and are not on the queue yet. Send now pushes them."
+                : "These were raised while CBMS reporting is off. Turn it on in Settings, then Send now pushes them."
+            }
+          />
+        ) : outstanding.length === 0 ? (
+          <EmptyState
+            title={counts.synced > 0 ? "Everything has reached IRD" : "Nothing to report yet"}
+            description={
+              counts.synced > 0
+                ? "Every invoice and credit note on the queue has been accepted."
+                : "No invoices or credit notes have been sent to IRD yet."
+            }
           />
         ) : (
           <TableWrap minWidth="44rem" pinFirst>

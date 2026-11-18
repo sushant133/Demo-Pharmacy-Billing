@@ -41,7 +41,7 @@ import {
   TableWrap,
   cx,
 } from "@/components/ui";
-import { NotWiredYet } from "@/components/ModuleScaffold";
+
 
 export const metadata: Metadata = { title: "Invoices" };
 export const dynamic = "force-dynamic";
@@ -680,7 +680,13 @@ export default async function InvoicesPage({
         <StatCard
           label="Invoices"
           value={integer(total)}
-          hint={filtered ? "Matching these filters" : "All time"}
+          // Bill numbers count every bill; this page lists only those raised in
+          // a customer's name, which is why the two numbers differ.
+          hint={
+            filtered
+              ? "Matching these filters"
+              : "Bills with a customer's name. Walk-in bills are under Sales."
+          }
           tone="brand"
         />
         {canSeeMoney ? (
@@ -924,20 +930,6 @@ export default async function InvoicesPage({
           </>
         )}
       </Card>
-
-      <div className="mt-4 mb-4">
-        <NotWiredYet
-          title="An invoice still cannot be raised ahead of the goods"
-          description="Every invoice here is a bill raised at the till, issued and payable the moment it prints. Billing before dispensing - a proforma, or a monthly account for a clinic - needs its own numbering and a due date, and neither exists yet."
-          covers={[
-            "Proforma and advance invoices",
-            "Payment terms and due dates",
-            "Statement of account per customer",
-            "Emailing a copy to the customer",
-          ]}
-          insteadUse={{ href: "/sales", label: "Open sales" }}
-        />
-      </div>
     </>
   );
 }

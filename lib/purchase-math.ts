@@ -225,10 +225,56 @@ export function unitMargin(
  * Overpayment is treated as fully paid rather than a negative balance; a
  * credit belongs on the supplier ledger, not on one invoice.
  */
+/**
+ * Mongo `$match` clause: a posted purchase that still has money owing on it,
+ * net of goods returned. Used instead of `paymentStatus != "paid"`, which is a
+ * stored flag - a zero-value GRN or one settled by a return can carry a stale
+ * "unpaid" and would otherwise count as an unpaid (or overdue) delivery.
+ */
+export const STILL_OWING_MATCH = {
+  $expr: {
+    $gt: [
+      {
+        $subtract: [
+          { $subtract: ["$totalAmount", { $ifNull: ["$returnedTotal", 0] }] },
+          { $ifNull: ["$amountPaid", 0] },
+        ],
+      },
+      0.005,
+    ],
+  },
+} as const;
+
+/** What is still owed on one purchase, net of returns. Never negative. */
+export function purchaseOutstanding(purchase: {
+  totalAmount: number;
+  returnedTotal?: number | null;
+  amountPaid?: number | null;
+}): number {
+  return Math.max(
+    0,
+    Math.round(
+      (purchase.totalAmount - (purchase.returnedTotal ?? 0) - (purchase.amountPaid ?? 0)) * 100,
+    ) / 100,
+  );
+}
+
+/** Payment state as shown to people: derived from the money, not the stored flag. */
+export function displayPaymentStatus(purchase: {
+  totalAmount: number;
+  returnedTotal?: number | null;
+  amountPaid?: number | null;
+}): "unpaid" | "partial" | "paid" {
+  if (purchaseOutstanding(purchase) <= 0) return "paid";
+  return (purchase.amountPaid ?? 0) > 0 ? "partial" : "unpaid";
+}
+
 export function paymentStatusFor(
   totalAmount: number,
   amountPaid: number,
 ): "unpaid" | "partial" | "paid" {
+  // Nothing owed (free goods, or fully returned) is settled, not "unpaid".
+  if (totalAmount <= 0.005) return "paid";
   if (amountPaid <= 0) return "unpaid";
   // Tolerate sub-paisa rounding so a fully settled bill never reads "partial".
   if (amountPaid + 0.005 >= totalAmount) return "paid";

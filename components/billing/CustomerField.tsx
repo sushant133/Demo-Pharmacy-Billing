@@ -14,7 +14,9 @@ import { cx } from "@/components/ui";
  *
  * Two outputs, deliberately:
  *   - `customerId` set  -> the bill links to a saved customer
- *   - name only         -> a walk-in name printed on the bill, nothing stored
+ *   - name only         -> a walk-in name printed on the bill; the server files
+ *                          it as a customer only when a phone, PAN or due
+ *                          comes with it (lib/sales.ts)
  */
 
 interface CustomerHit {

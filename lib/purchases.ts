@@ -1,5 +1,6 @@
 import { Types, type ClientSession } from "mongoose";
 import { ApiError } from "@/lib/api";
+import { escapeRegExp } from "@/lib/regex";
 import { config } from "@/lib/config";
 import { connectDB } from "@/lib/db";
 import { addDays, fiscalYearOf } from "@/lib/dates";
@@ -136,6 +137,36 @@ function buildItemsAndTotals(
  * Reject two lines that describe the same lot of the same medicine.
  * They would race each other during posting and produce a confusing batch.
  */
+/**
+ * One supplier invoice is one delivery. Entering the same invoice number for
+ * the same supplier twice books the goods - and the debt - twice. Cancelled
+ * GRNs do not count: re-entering a cancelled one is the correction.
+ */
+async function assertInvoiceNotEntered(
+  input: PurchaseInput,
+  pharmacyId: Types.ObjectId,
+  excludeId?: string,
+): Promise<void> {
+  const invoiceNo = input.invoiceNo.trim();
+  if (!invoiceNo) return;
+  const safe = escapeRegExp(invoiceNo);
+  const clash = await Purchase.findOne({
+    pharmacyId,
+    supplierId: new Types.ObjectId(input.supplierId),
+    invoiceNo: new RegExp(`^${safe}$`, "i"),
+    status: { $ne: "cancelled" },
+    ...(excludeId ? { _id: { $ne: new Types.ObjectId(excludeId) } } : {}),
+  })
+    .select("grnNo")
+    .lean();
+  if (clash) {
+    throw ApiError.conflict(
+      `Invoice ${invoiceNo} from this supplier is already entered as ${clash.grnNo}.`,
+      { invoiceNo: [`Already entered as ${clash.grnNo}.`] },
+    );
+  }
+}
+
 function assertNoDuplicateLots(input: PurchaseInput) {
   const seen = new Set<string>();
   for (const item of input.items) {
@@ -172,6 +203,7 @@ export async function createPurchase(
 ): Promise<CreatedPurchase> {
   await connectDB();
   assertNoDuplicateLots(input);
+  await assertInvoiceNotEntered(input, pharmacyObjectId(user));
 
   const created = await withTransaction(async ({ session, onRollback }) => {
     const branch = await branchForWrite(user);
@@ -279,6 +311,7 @@ export async function updateDraftPurchase(
   const purchase = await Purchase.findOne({ _id: id, pharmacyId });
   if (!purchase) throw ApiError.notFound("That purchase no longer exists.");
   assertDraft(purchase.status, purchase.grnNo);
+  await assertInvoiceNotEntered(input, pharmacyId, id);
 
   const { supplier, medicinesById } = await resolveReferences(input, null, pharmacyId);
   const { items, totals } = buildItemsAndTotals(input, medicinesById);

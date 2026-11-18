@@ -1,4 +1,5 @@
 import { config } from "@/lib/config";
+import { calendarDaysBetween } from "@/lib/dates";
 
 /**
  * One word for the state a medicine's shelf position is in.
@@ -71,9 +72,10 @@ export function daysToExpiry(
   asOf: Date = new Date(),
 ): number | null {
   if (!row.nearestExpiry) return null;
-  const expiry = new Date(row.nearestExpiry).getTime();
-  if (Number.isNaN(expiry)) return null;
-  return Math.floor((expiry - asOf.getTime()) / 86_400_000);
+  const expiry = new Date(row.nearestExpiry);
+  if (Number.isNaN(expiry.getTime())) return null;
+  // Calendar days in the shop's timezone - the same count Alerts shows.
+  return calendarDaysBetween(asOf, expiry);
 }
 
 export function stockStatus(

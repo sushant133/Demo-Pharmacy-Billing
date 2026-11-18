@@ -69,11 +69,19 @@ export function formatTime(value: Date | string | null | undefined): string {
   }).format(date);
 }
 
-/** Aug 2026 - how expiry is printed on the pack. */
+/**
+ * 10 Sep 2026 - the exact day the lot stops being sellable.
+ *
+ * Month and year alone ("Sep 2026") is how a pack prints it, but lots are
+ * stored and expired on a specific day; showing only the month made a lot
+ * marked "Sep 2026" vanish from sale on the 1st or the 10th with nothing on
+ * screen to say why.
+ */
 export function formatExpiry(value: Date | string | null | undefined): string {
   const date = toDate(value);
   if (!date) return "-";
   return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
     month: "short",
     year: "numeric",
     timeZone: config.timezone,

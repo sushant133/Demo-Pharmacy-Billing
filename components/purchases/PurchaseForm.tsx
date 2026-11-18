@@ -11,6 +11,7 @@ import {
   unitWord,
 } from "@/lib/pack";
 import { calculatePurchaseTotals, round2, unitMargin } from "@/lib/purchase-math";
+import { SHORT_EXPIRY_DAYS } from "@/lib/validation";
 import {
   SUPPLIER_PAYMENT_METHODS,
   SUPPLIER_PAYMENT_METHOD_LABELS,
@@ -124,6 +125,13 @@ function blankLine(key?: string): LineState {
   };
 }
 
+/**
+ * Markup on cost above which the margin line asks for a second look. Retail
+ * pharmacy markups sit far below this; a lot well above it is nearly always a
+ * strip price typed against a per-tablet cost, or the other way round.
+ */
+const MARGIN_CHECK_PERCENT = 100;
+
 const num = (value: string): number => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -208,6 +216,7 @@ export function PurchaseForm({
   const [paymentReference, setPaymentReference] = useState("");
   const [creditDays, setCreditDays] = useState("");
   const [confirming, setConfirming] = useState(false);
+  const [acceptShortExpiry, setAcceptShortExpiry] = useState(false);
 
   const [lines, setLines] = useState<LineState[]>(() => {
     if (purchase && purchase.items.length > 0) {
@@ -364,6 +373,14 @@ export function PurchaseForm({
     );
     return days <= expiryAlertDays;
   });
+  /** The subset the server refuses without an explicit OK (see SHORT_EXPIRY_DAYS). */
+  const needsShortExpiryOk = pricedLines.some((line) => {
+    if (!line.expiryDate || !receivedDate) return false;
+    const days = Math.floor(
+      (new Date(line.expiryDate).getTime() - new Date(receivedDate).getTime()) / 86_400_000,
+    );
+    return days < SHORT_EXPIRY_DAYS;
+  });
 
   function payload() {
     return {
@@ -387,6 +404,7 @@ export function PurchaseForm({
           }
         : {}),
       notes: notes.trim(),
+      acceptShortExpiry,
       items: pricedLines.map((line) => ({
         medicineId: line.medicineId,
         batchNumber: line.batchNumber.trim(),
@@ -831,10 +849,19 @@ export function PurchaseForm({
                       <p
                         className={cx(
                           "mt-1 text-right text-[11px]",
-                          margin.perUnit < 0 ? "text-rose-600" : "text-slate-500",
+                          margin.perUnit < 0
+                            ? "text-rose-600"
+                            : margin.percent > MARGIN_CHECK_PERCENT
+                              ? "font-medium text-amber-700"
+                              : "text-slate-500",
                         )}
                       >
                         {margin.percent.toFixed(0)}% margin
+                        {margin.perUnit < 0
+                          ? " - selling below cost"
+                          : margin.percent > MARGIN_CHECK_PERCENT
+                            ? " - check the price is per unit"
+                            : ""}
                       </p>
                     ) : null}
                     {lastSale != null && typedSale && typedSale !== lastSale ? (
@@ -1023,6 +1050,17 @@ export function PurchaseForm({
                     </li>
                   ) : null}
                 </ul>
+                {needsShortExpiryOk ? (
+                  <label className="mt-2 flex items-start gap-2 text-xs font-medium text-amber-900">
+                    <input
+                      type="checkbox"
+                      checked={acceptShortExpiry}
+                      onChange={(event) => setAcceptShortExpiry(event.target.checked)}
+                      className="mt-0.5"
+                    />
+                    Receive short-dated lots anyway (under {SHORT_EXPIRY_DAYS} days of shelf life)
+                  </label>
+                ) : null}
               </div>
             ) : null}
           </div>

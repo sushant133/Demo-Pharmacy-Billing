@@ -4,6 +4,7 @@ import { requirePagePermission } from "@/lib/auth";
 import { withDbRead } from "@/lib/db";
 import { formatDate, integer, money } from "@/lib/format";
 import { getBalancesFor, getTotalPayables } from "@/lib/suppliers";
+import { STILL_OWING_MATCH } from "@/lib/purchase-math";
 import { pharmacyFilter, pharmacyObjectId } from "@/lib/tenant";
 import { Purchase } from "@/models/Purchase";
 import { Supplier } from "@/models/Supplier";
@@ -87,7 +88,7 @@ export default async function PayablesPage() {
         $match: {
           ...pharmacyFilter(user),
           status: "posted",
-          paymentStatus: { $ne: "paid" },
+          ...STILL_OWING_MATCH,
         },
       },
       {
@@ -211,8 +212,8 @@ export default async function PayablesPage() {
                       </Link>
                       {row.unpaidCount > 0 ? (
                         <span className="block text-[11px] text-slate-500">
-                          {row.unpaidCount} unpaid delivery
-                          {row.unpaidCount === 1 ? "" : "s"}
+                          {row.unpaidCount} unpaid{" "}
+                          {row.unpaidCount === 1 ? "delivery" : "deliveries"}
                         </span>
                       ) : null}
                     </td>

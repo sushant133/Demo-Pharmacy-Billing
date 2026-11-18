@@ -3,7 +3,8 @@ import Link from "next/link";
 import { requirePagePermission } from "@/lib/auth";
 import { branchFilter, resolveViewScope } from "@/lib/branch-scope";
 import { withDbRead } from "@/lib/db";
-import { dateRangeFromStrings, toDateInputValue } from "@/lib/dates";
+import { dateRangeFromStrings } from "@/lib/dates";
+import { DualDateField } from "@/components/DualDateField";
 import { formatDate, integer } from "@/lib/format";
 import {
   PRESCRIPTION_STATUSES,
@@ -259,34 +260,27 @@ export default async function PrescriptionsPage({
             </select>
           </div>
 
+          {/* English and Nepali, like every other date filter in the app. */}
           <div className="min-w-0">
-            <label htmlFor="from" className="label">
-              Written from
-            </label>
-            <input
+            <p className="label">Written from</p>
+            <DualDateField
               id="from"
               name="from"
-              type="date"
               defaultValue={from}
-              max={toDateInputValue()}
-              className="input tnum"
+              compact
+              aria-label="Written from"
             />
           </div>
 
           <div className="flex min-w-0 flex-col">
-            <label htmlFor="to" className="label">
-              To
-            </label>
-            <div className="flex gap-2">
-              <input
-                id="to"
-                name="to"
-                type="date"
-                defaultValue={to}
-                max={toDateInputValue()}
-                className="input tnum"
-              />
-            </div>
+            <p className="label">To</p>
+            <DualDateField
+              id="to"
+              name="to"
+              defaultValue={to}
+              compact
+              aria-label="To"
+            />
           </div>
 
           <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-5">

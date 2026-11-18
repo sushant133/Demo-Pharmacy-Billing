@@ -153,6 +153,9 @@ export async function completePasswordReset(
 
   user.passwordHash = await hashPassword(password);
   user.passwordChangedAt = new Date();
+  // Proving control of the mailbox is what a lockout asks for: lift it.
+  user.failedLoginCount = 0;
+  user.lockedUntil = null;
   // Chosen by the owner themselves, so it satisfies a pending forced change.
   user.mustChangePassword = false;
   await user.save();

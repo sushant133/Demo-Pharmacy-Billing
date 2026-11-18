@@ -2,7 +2,7 @@ import { created, ok, parseJson, parseQuery, withRoute } from "@/lib/api";
 import { requirePermission } from "@/lib/auth";
 import { connectDB, withDbWrite } from "@/lib/db";
 import { round2 } from "@/lib/purchase-math";
-import { getBalancesFor } from "@/lib/suppliers";
+import { assertSupplierPanFree, getBalancesFor } from "@/lib/suppliers";
 import { Supplier } from "@/models/Supplier";
 import { pharmacyFilter, pharmacyObjectId } from "@/lib/tenant";
 import { supplierQuerySchema, supplierSchema } from "@/lib/validation";
@@ -52,9 +52,9 @@ export const GET = withRoute(async (req) => {
   );
 
   let rows = docs.map((doc) => {
-    const balance = balances.get(String(doc._id)) ?? { purchased: 0, paid: 0 };
+    const balance = balances.get(String(doc._id)) ?? { purchased: 0, returned: 0, paid: 0 };
     const outstanding = round2(
-      (doc.openingBalance ?? 0) + balance.purchased - balance.paid,
+      (doc.openingBalance ?? 0) + balance.purchased - balance.returned - balance.paid,
     );
 
     return {
@@ -92,6 +92,7 @@ export const GET = withRoute(async (req) => {
 export const POST = withRoute(async (req) => {
   const user = await requirePermission("supplier:write");
   const input = await parseJson(req, supplierSchema);
+  await assertSupplierPanFree(user, input.panNo);
 
   const supplier = await withDbWrite(() =>
     Supplier.create({ ...input, ...pharmacyFilter(user) }),

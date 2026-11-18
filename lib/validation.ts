@@ -391,6 +391,12 @@ export const createSaleSchema = z.object({
   customerPhone: z.string().trim().max(30).optional(),
   /** Required by `createSale` when the bill carries a controlled line. */
   controlled: controlledSaleSchema.nullable().optional(),
+  /**
+   * Who prescribed the Rx-only lines on this bill (doctor, clinic, or a
+   * prescription number). Required by `createSale` when any line is marked
+   * "requires prescription"; controlled lines carry their own fuller record.
+   */
+  rxPrescriber: z.string().trim().max(160).default(""),
   discount: z.coerce.number().min(0, "Discount cannot be negative.").default(0),
   /**
    * A percentage of the subtotal, 0-100. When present it decides the rupee
@@ -617,17 +623,32 @@ const taxNumberSchema = (label: string) =>
     .default("")
     .refine((value) => value === "" || /^\d{9}$/.test(value), label);
 
+/** Nepal's statutory VAT rate, as a percentage. */
+export const NEPAL_VAT_PERCENT = 13;
+
 /** A Nepali phone number: exactly ten digits, nothing else. Blank is allowed. */
 export const NEPAL_PHONE_PATTERN = /^\d{10}$/;
 export const NEPAL_PHONE_MESSAGE = "Enter a 10-digit phone number, digits only (e.g. 9841234567).";
 export const PAN_PATTERN = /^\d{9}$/;
 export const PAN_MESSAGE = "PAN/VAT No. must be exactly 9 digits, numbers only.";
 
+/**
+ * One stored format for every number: ten digits. Spaces, dashes, brackets and
+ * a +977 / 977 / 00977 country prefix are stripped first, so "+977 984-1234567"
+ * is accepted and saved as "9841234567" rather than refused or stored as typed.
+ */
+export function normalizeNepalPhone(value: string): string {
+  const digits = value.replace(/[\s\-().]/g, "");
+  const local = digits.replace(/^(?:\+|00)?977(?=\d{9,10}$)/, "");
+  return local;
+}
+
 const nepalPhoneSchema = z
   .string()
   .trim()
   .max(40)
   .default("")
+  .transform(normalizeNepalPhone)
   .refine((value) => value === "" || NEPAL_PHONE_PATTERN.test(value), NEPAL_PHONE_MESSAGE);
 
 /**
@@ -651,7 +672,11 @@ export const settingsSchema = z.object({
       blankIsInvalid,
       numberFromInput("VAT rate must be a number.")
         .min(0, "VAT rate cannot be negative.")
-        .max(100, "VAT rate is a percentage, so it cannot exceed 100."),
+        .max(100, "VAT rate is a percentage, so it cannot exceed 100.")
+        // Nepal has one VAT rate. Exempt medicines are marked exempt item by
+        // item; setting the shop's rate to 0 instead silently drops VAT from
+        // every taxable item, which is the mistake this refuses.
+        .refine((rate) => rate === NEPAL_VAT_PERCENT, `Nepal's VAT rate is ${NEPAL_VAT_PERCENT}%. Mark exempt items as VAT exempt instead of changing the rate.`),
     )
     .default(13),
   /** IRD CBMS. The password is write-only: blank keeps the saved one. */
@@ -773,6 +798,9 @@ export const purchaseItemSchema = z.object({
   applySalePriceToStock: z.coerce.boolean().optional(),
 });
 
+/** Lots with less shelf life than this at delivery need an explicit OK. */
+export const SHORT_EXPIRY_DAYS = 30;
+
 export const purchaseSchema = z
   .object({
     supplierId: objectIdSchema,
@@ -791,6 +819,12 @@ export const purchaseSchema = z
       .max(1, "VAT rate is a fraction, e.g. 0.13 for 13%.")
       .default(0),
     notes: z.string().trim().max(500).default(""),
+    /**
+     * The person receiving has seen that some lots expire within
+     * SHORT_EXPIRY_DAYS of delivery and is taking them anyway. Without it such
+     * lots are refused, so short-dated stock is never received unremarked.
+     */
+    acceptShortExpiry: z.coerce.boolean().default(false),
     /**
      * Credit period for this delivery, overriding the supplier's default.
      *
@@ -869,6 +903,38 @@ export const purchaseSchema = z
           code: z.ZodIssueCode.custom,
           message: "A line must receive at least one unit.",
           path: ["items", index, "quantity"],
+        });
+      }
+      // Billed units at Rs. 0 are a typo (free units go in "free"), and a lot
+      // at Rs. 0 cost or sale price wrecks margins and stock value.
+      if (item.quantity > 0 && item.costPrice <= 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Enter the cost price. Units given free go in the Free column.",
+          path: ["items", index, "costPrice"],
+        });
+      }
+      if (item.salePrice <= 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Enter the selling price (MRP per unit).",
+          path: ["items", index, "salePrice"],
+        });
+      }
+      const shelfDays = Math.floor(
+        (item.expiryDate.getTime() - data.receivedDate.getTime()) / 86_400_000,
+      );
+      if (shelfDays <= 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "This lot had already expired when it was received. Return it to the supplier.",
+          path: ["items", index, "expiryDate"],
+        });
+      } else if (shelfDays < SHORT_EXPIRY_DAYS && !data.acceptShortExpiry) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Expires ${shelfDays} day${shelfDays === 1 ? "" : "s"} after delivery. Tick "Receive short-dated lots anyway" to accept it.`,
+          path: ["items", index, "expiryDate"],
         });
       }
       if (item.mfgDate && item.mfgDate.getTime() > item.expiryDate.getTime()) {

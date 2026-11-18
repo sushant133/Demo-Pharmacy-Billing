@@ -180,6 +180,17 @@ export function SettingsForm({
           ) : null}
         </div>
 
+        <MissingBillDetails
+          vatRegistered={identity.vatRegistered}
+          vatRate={Number(saved.vatRate)}
+          missing={[
+            !saved.address.trim() && "address",
+            !saved.phone.trim() && "phone number",
+            !identity.drugLicenceNo.trim() && "drug licence number (set by the platform administrator)",
+            !identity.pan.trim() && "PAN (set by the platform administrator)",
+          ].filter((item): item is string => Boolean(item))}
+        />
+
         <RegisteredIdentity identity={identity} />
 
         <Section
@@ -464,6 +475,38 @@ export function SettingsForm({
  * one - which is the right shape, because correcting a PAN is a thing the
  * platform has to verify, not a field anybody can retype.
  */
+/**
+ * What is wrong with the bill this shop prints today, at the top of Settings.
+ * Read from what is saved, not what is being typed, so it clears on Save.
+ */
+function MissingBillDetails({
+  vatRegistered,
+  vatRate,
+  missing,
+}: {
+  vatRegistered: boolean;
+  vatRate: number;
+  missing: string[];
+}) {
+  const wrongVat = vatRegistered && vatRate !== 13;
+  if (!wrongVat && missing.length === 0) return null;
+  return (
+    <div role="alert" className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+      {wrongVat ? (
+        <p>
+          <span className="font-semibold">VAT is set to {vatRate}%.</span> Taxable items are
+          being billed at that rate. Set it to 13% and save.
+        </p>
+      ) : null}
+      {missing.length > 0 ? (
+        <p>
+          <span className="font-semibold">Bills are printing without:</span> {missing.join(", ")}.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function RegisteredIdentity({ identity }: { identity: PlatformIdentity }) {
   const rows: Array<{ label: string; value: string; hint?: string }> = [
     {

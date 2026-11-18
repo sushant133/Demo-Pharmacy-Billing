@@ -8,6 +8,7 @@ import {
   type MovementReason,
 } from "@/lib/movement-kinds";
 import { round2 } from "@/lib/sale-payment";
+import { formatDate } from "@/lib/format";
 import { Purchase } from "@/models/Purchase";
 import { Sale } from "@/models/Sale";
 import { StockMovement } from "@/models/StockMovement";
@@ -255,8 +256,18 @@ async function purchaseReceipts(
     .limit(1000)
     .lean();
 
-  return rows.flatMap((purchase) =>
-    purchase.items.map((item, index) => {
+  return rows.flatMap((purchase) => {
+    const postedAt =
+      (purchase.postedAt as unknown as Date) ?? (purchase.createdAt as unknown as Date);
+    const receivedAt = (purchase.receivedDate as unknown as Date | undefined) ?? null;
+    // The register lists a GRN by the day the goods arrived; this ledger by
+    // the moment they went on the shelf. When those differ, say so, so the
+    // two screens never seem to disagree about the same GRN.
+    const receivedNote =
+      receivedAt && formatDate(receivedAt) !== formatDate(postedAt)
+        ? `Delivered ${formatDate(receivedAt)}, posted ${formatDate(postedAt)}`
+        : "";
+    return purchase.items.map((item, index) => {
       // Free units arrive on the shelf exactly like billed ones; only the
       // invoice treats them differently, which is why the shelf figure is the
       // sum and the cost is the one already spread across both.
@@ -265,7 +276,7 @@ async function purchaseReceipts(
 
       return {
         id: `${String(purchase._id)}-${index}`,
-        at: (purchase.postedAt as unknown as Date) ?? (purchase.createdAt as unknown as Date),
+        at: postedAt,
         kind: "purchase" as const,
         direction: "in" as const,
         medicineName: item.medicineName,
@@ -281,11 +292,11 @@ async function purchaseReceipts(
         referenceHref: `/purchases/${String(purchase._id)}`,
         supplier: purchase.supplierName ?? "",
         reason: item.toppedUpExisting ? "Topped up an existing lot" : "",
-        note: "",
+        note: receivedNote,
         by: purchase.createdByName ?? "",
       };
-    }),
-  );
+    });
+  });
 }
 
 /** Units back on the shelf because a customer returned them. */
