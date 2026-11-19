@@ -102,10 +102,6 @@ export default async function LoginPage({
                 </h1>
                 <SecureBadge />
               </div>
-              <p className="mt-1.5 text-sm text-slate-500">
-                Owners and counter staff: sign in with the email and password
-                your pharmacy gave you.
-              </p>
 
               {params.expired === "1" ? (
                 <p
