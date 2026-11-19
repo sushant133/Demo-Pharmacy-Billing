@@ -267,7 +267,8 @@ export function linesFromReply(reply: ApiReply | string, layout: OcrSpaceLayout)
   return lines;
 }
 
-async function callEngine(image: Buffer, layout: OcrSpaceLayout, engine: number): Promise<OcrLine[]> {
+async function callEngine(image: Buffer, layout: OcrSpaceLayout, engine: number, deadline: number): Promise<OcrLine[]> {
+  const waitMs = Math.min(config.ocrSpace.timeoutMs, deadline - Date.now());
   const form = new FormData();
   form.set("file", new Blob([new Uint8Array(image)], { type: "image/jpeg" }), "photo.jpg");
   form.set("filetype", "JPG");
@@ -280,7 +281,7 @@ async function callEngine(image: Buffer, layout: OcrSpaceLayout, engine: number)
   if (layout === "list") form.set("isTable", "true");
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), config.ocrSpace.timeoutMs);
+  const timer = setTimeout(() => controller.abort(), waitMs);
   try {
     const response = await fetch(config.ocrSpace.apiUrl, {
       method: "POST",
@@ -299,7 +300,7 @@ async function callEngine(image: Buffer, layout: OcrSpaceLayout, engine: number)
     return linesFromReply(reply, layout);
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      throw new OcrSpaceError(`No answer within ${Math.round(config.ocrSpace.timeoutMs / 1000)}s.`);
+      throw new OcrSpaceError(`No answer within ${Math.round(waitMs / 1000)}s.`);
     }
     throw error;
   } finally {
@@ -322,6 +323,9 @@ export interface ReadingQuality {
 
 /** No further attempts start after this long. */
 const RETRY_WINDOW_MS = 60_000;
+
+/** Too little time left for a request to be worth sending. */
+const MIN_REQUEST_MS = 3_000;
 
 /** A name with a price after it: a plain list reads like this when upright. */
 const PRICED_LINE = /[a-z]{3,}.*\s\d[\d,]*(?:\.\d+)?$/i;
@@ -359,17 +363,24 @@ export function readingQuality(lines: readonly OcrLine[], layout: OcrSpaceLayout
  * gets one more attempt, enlarged: sending the same image again would only get
  * the same answer. Each costs a request, so neither runs on a clean reading,
  * and neither starts once someone has been waiting at the counter for a minute.
+ *
+ * `deadline` (epoch ms) bounds every request: the proxy in front of the app
+ * gives up on a reply after about a minute, and an answer that late is lost.
  */
-export async function readWithOcrSpace(data: Buffer, layout: OcrSpaceLayout): Promise<OcrLine[]> {
+export async function readWithOcrSpace(
+  data: Buffer,
+  layout: OcrSpaceLayout,
+  deadline = Number.POSITIVE_INFINITY,
+): Promise<OcrLine[]> {
   const started = Date.now();
-  const inTime = () => Date.now() - started < RETRY_WINDOW_MS;
-  let best = await readOneWay(data, layout, 0);
+  const inTime = () => Date.now() - started < RETRY_WINDOW_MS && deadline - Date.now() > MIN_REQUEST_MS;
+  let best = await readOneWay(data, layout, 0, false, deadline);
   let quality = readingQuality(best, layout);
   let bestTurn = 0;
 
   const attempt = async (turn: number, enlarge = false) => {
     try {
-      const lines = await readOneWay(data, layout, turn, enlarge);
+      const lines = await readOneWay(data, layout, turn, enlarge, deadline);
       const next = readingQuality(lines, layout);
       if (next.score > quality.score) {
         best = lines;
@@ -398,16 +409,21 @@ async function readOneWay(
   layout: OcrSpaceLayout,
   turn: number,
   enlarge = false,
+  deadline = Number.POSITIVE_INFINITY,
 ): Promise<OcrLine[]> {
   const image = await prepareUpload(data, turn, enlarge);
   const problems: string[] = [];
   for (const engine of config.ocrSpace.engines) {
+    if (deadline - Date.now() < MIN_REQUEST_MS) {
+      problems.push(`engine ${engine}: out of time`);
+      continue;
+    }
     if ((restingUntil.get(engine) ?? 0) > Date.now()) {
       problems.push(`engine ${engine}: resting after a rate limit`);
       continue;
     }
     try {
-      const lines = await callEngine(image, layout, engine);
+      const lines = await callEngine(image, layout, engine, deadline);
       return lines.map((line) => ({ ...line, reader: engine }));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

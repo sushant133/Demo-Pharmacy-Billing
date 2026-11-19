@@ -537,13 +537,15 @@ function numbersStart(words: readonly OcrWord[]): number {
  * number area is also re-read as one line and kept as an alternative: the
  * parser takes whichever reading adds up (qty x rate = amount).
  */
-async function rereadNumbers(image: Buffer, lines: OcrLine[]): Promise<void> {
+async function rereadNumbers(image: Buffer, lines: OcrLine[], deadline: number): Promise<void> {
   const meta = await sharp(image).metadata();
   const pageWidth = meta.width ?? 0;
   const pageHeight = meta.height ?? 0;
   const worker = await getWorker();
   try {
     for (const line of lines) {
+      // Rows left over keep their first reading: a rougher answer beats none.
+      if (Date.now() > deadline) break;
       const words = line.words ?? [];
       const start = numbersStart(words);
       if (start < 0) continue;
@@ -656,12 +658,26 @@ function score(lines: readonly OcrLine[]): number {
 }
 
 /** A bill: cleaned and levelled, read, then its numbers re-read. */
-async function readDocument(data: Buffer, rotate = 0): Promise<OcrLine[]> {
+async function readDocument(data: Buffer, rotate: number, deadline: number): Promise<OcrLine[]> {
   const image = await prepareDocument(data, { rotate });
   const lines = await recognise(image, "list");
-  await rereadNumbers(image, lines);
+  await rereadNumbers(image, lines, deadline);
   return lines;
 }
+
+/**
+ * How long a whole reading may take, from the request arriving to the answer.
+ * nginx gives up on a reply after 60s by default (and Cloudflare after 100s),
+ * answering 504 while the server keeps working on a reading nobody will see.
+ * This leaves room under that for parsing, catalogue matching and the upload.
+ */
+const READ_BUDGET_MS = 50_000;
+
+/** Kept back from OCR.space so Tesseract still has time for one plain pass if it fails. */
+const TESSERACT_RESERVE_MS = 20_000;
+
+/** A sideways retry is a full extra pass: not started with less than this left. */
+const TURN_MIN_MS = 15_000;
 
 /**
  * Read the text lines in a photo. A pack is read as-is and as its negative
@@ -670,24 +686,27 @@ async function readDocument(data: Buffer, rotate = 0): Promise<OcrLine[]> {
  * almost nothing - a phone photo of a bill is as often sideways as not.
  */
 export async function readImageText(data: Buffer, layout: OcrLayout): Promise<OcrLine[]> {
+  const deadline = Date.now() + READ_BUDGET_MS;
   if (config.ocrSpace.apiKey) {
     try {
-      return await readWithOcrSpace(data, layout);
+      return await readWithOcrSpace(data, layout, deadline - TESSERACT_RESERVE_MS);
     } catch (error) {
       // Limits reached or the service down: slower, but the shop keeps working.
       console.warn("[ocr] OCR.space could not read this photo, using Tesseract:", error instanceof Error ? error.message : error);
     }
   }
-  return readWithTesseract(data, layout);
+  return readWithTesseract(data, layout, deadline);
 }
 
-function readWithTesseract(data: Buffer, layout: OcrLayout): Promise<OcrLine[]> {
+function readWithTesseract(data: Buffer, layout: OcrLayout, deadline: number): Promise<OcrLine[]> {
+  const timeToTurn = () => deadline - Date.now() > TURN_MIN_MS;
   return serialise(async () => {
     if (layout === "list") {
-      let lines = await readDocument(data);
+      let lines = await readDocument(data, 0, deadline);
       if (score(lines) < 4) {
         for (const rotate of [90, 270]) {
-          const turned = await readDocument(data, rotate);
+          if (!timeToTurn()) break;
+          const turned = await readDocument(data, rotate, deadline);
           if (score(turned) > score(lines) * 1.5) lines = turned;
         }
       }
@@ -698,6 +717,7 @@ function readWithTesseract(data: Buffer, layout: OcrLayout): Promise<OcrLine[]> 
     lines = merge(lines, await recognise(await preparePack(data, { invert: true }), "pack"));
     if (score(lines) < 4) {
       for (const rotate of [90, 270]) {
+        if (!timeToTurn()) break;
         const turned = await recognise(await preparePack(data, { rotate }), "pack");
         if (score(turned) > score(lines) * 1.5) lines = turned;
       }

@@ -47,6 +47,14 @@ export async function apiFetch<T>(
           message: "Your session has expired. Please sign in again.",
         };
       }
+      if (response.status === 504 || response.status === 524) {
+        // The proxy in front of the app stopped waiting; the server may still be working.
+        return {
+          ok: false,
+          code: "INTERNAL_ERROR",
+          message: "The server took too long to answer. Please try again.",
+        };
+      }
       return {
         ok: false,
         code: "INTERNAL_ERROR",
