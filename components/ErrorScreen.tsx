@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { startTransition, useCallback, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 
 /** Silent retries per screen before the error is shown. Most failures are a cold pool. */
 const AUTO_RETRY_KEY = "mp_error_autoretry";
@@ -38,6 +39,21 @@ export function ErrorScreen({
     server log, logged by instrumentation's onRequestError) and a timestamp
     plus a random tag make the whole reference unique.
   */
+  /*
+    `reset()` alone only re-renders the boundary on the client with the same
+    server payload, so a failed server component fails again without a single
+    new request - the retry never reached the database. Refreshing the route
+    asks the server to render the segment afresh; `reset` in the same
+    transition clears the boundary once that payload arrives.
+  */
+  const router = useRouter();
+  const retry = useCallback(() => {
+    startTransition(() => {
+      router.refresh();
+      reset();
+    });
+  }, [router, reset]);
+
   const reference = useMemo(() => {
     const now = new Date();
     const stamp = now.toISOString().replace(/[-:]/g, "").slice(0, 15); // YYYYMMDDTHHMMSS
@@ -62,12 +78,12 @@ export function ErrorScreen({
         | null;
       if (last && last.path === path && Date.now() - last.at < AUTO_RETRY_WINDOW_MS) return;
       sessionStorage.setItem(AUTO_RETRY_KEY, JSON.stringify({ path, at: Date.now() }));
-      const timer = window.setTimeout(reset, 800);
+      const timer = window.setTimeout(retry, 800);
       return () => window.clearTimeout(timer);
     } catch {
       // No storage: never auto-retry, so a broken screen cannot loop.
     }
-  }, [reset]);
+  }, [retry]);
 
   return (
     <div
@@ -105,11 +121,16 @@ export function ErrorScreen({
         </p>
 
         <div className="mt-6 flex items-center justify-center gap-2">
-          <button type="button" onClick={reset} className="btn-primary">
+          <button type="button" onClick={retry} className="btn-primary">
             Try again
           </button>
-          <a href="/dashboard" className="btn-secondary">
-            Back to dashboard
+          {/*
+            "/" sends each role to its own home; /dashboard is shop-only. A
+            full page load on purpose: it leaves nothing of the failed render.
+          */}
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+          <a href="/" className="btn-secondary">
+            Back to home
           </a>
         </div>
 
