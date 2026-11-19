@@ -50,7 +50,7 @@ export default async function BillPage({
   searchParams: Promise<{ print?: string }>;
 }) {
   const [{ id }, query] = await Promise.all([params, searchParams]);
-  const user = await requirePageSession(`/bills/${id}`);
+  const user = await requirePageSession();
 
   const sale = await withDbRead(async () => {
     const sale = await Sale.findOne(

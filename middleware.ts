@@ -106,7 +106,7 @@ function isShopAppPath(pathname: string): boolean {
 }
 
 export async function middleware(req: NextRequest) {
-  const { pathname, search } = req.nextUrl;
+  const { pathname } = req.nextUrl;
 
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const presented = token ? await verifySession(token) : null;
@@ -144,7 +144,6 @@ export async function middleware(req: NextRequest) {
     } else {
       const loginUrl = new URL("/login", req.url);
       loginUrl.searchParams.set("expired", "1");
-      if (pathname !== "/") loginUrl.searchParams.set("next", pathname + search);
       response = NextResponse.redirect(loginUrl);
     }
     response.cookies.set({ ...sessionCookieOptions(0), value: "" });
@@ -178,7 +177,7 @@ export async function middleware(req: NextRequest) {
 }
 
 async function gate(req: NextRequest, session: SessionUser | null): Promise<NextResponse> {
-  const { pathname, search } = req.nextUrl;
+  const { pathname } = req.nextUrl;
 
   // Already signed in and heading for the login page - send them to work.
   if (session && pathname === "/login") {
@@ -200,9 +199,8 @@ async function gate(req: NextRequest, session: SessionUser | null): Promise<Next
       );
     }
 
-    const loginUrl = new URL("/login", req.url);
-    if (pathname !== "/") loginUrl.searchParams.set("next", pathname + search);
-    return NextResponse.redirect(loginUrl);
+    // A plain /login: the page someone was on is not carried in the URL.
+    return NextResponse.redirect(new URL("/login", req.url));
   }
 
   /*

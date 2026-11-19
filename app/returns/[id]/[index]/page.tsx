@@ -46,7 +46,7 @@ export default async function ReturnReceiptPage({
   searchParams: Promise<{ print?: string }>;
 }) {
   const [{ id, index }, query] = await Promise.all([params, searchParams]);
-  const user = await requirePageSession(`/returns/${id}/${index}`);
+  const user = await requirePageSession();
 
   const position = Number(index);
   if (!Types.ObjectId.isValid(id) || !Number.isInteger(position) || position < 0) {

@@ -108,16 +108,9 @@ export async function requireRole(
 // ---------------------------------------------------------------------------
 
 /** Require a session in a server component; bounce to /login otherwise. */
-export async function requirePageSession(
-  returnTo?: string,
-): Promise<SessionUser> {
+export async function requirePageSession(): Promise<SessionUser> {
   const session = await getSession();
-  if (!session) {
-    const target = returnTo
-      ? `/login?next=${encodeURIComponent(returnTo)}`
-      : "/login";
-    redirect(target);
-  }
+  if (!session) redirect("/login");
   return session;
 }
 

@@ -103,14 +103,8 @@ export default async function LoginPage({
                 <SecureBadge />
               </div>
               <p className="mt-1.5 text-sm text-slate-500">
-                {safeNext && safeNext !== "/" ? (
-                  <>
-                    Sign in to continue to{" "}
-                    <span className="font-medium text-slate-700">{safeNext}</span>.
-                  </>
-                ) : (
-                  "Owners and counter staff: sign in with the email and password your pharmacy gave you."
-                )}
+                Owners and counter staff: sign in with the email and password
+                your pharmacy gave you.
               </p>
 
               {params.expired === "1" ? (
